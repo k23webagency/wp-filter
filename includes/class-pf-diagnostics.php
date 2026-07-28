@@ -68,6 +68,10 @@ class PF_Diagnostics {
 			array(
 				'headers' => array( 'X-WP-Nonce' => wp_create_nonce( 'wp_rest' ) ),
 				'timeout' => 8,
+				// Без cookie's текущего пользователя WordPress видит этот запрос как
+				// анонимный, и nonce (привязанный к сессии) не проходит проверку
+				// (rest_cookie_invalid_nonce), хотя сам REST API работает исправно.
+				'cookies' => $_COOKIE, // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- пробрасываются как есть, аналогично wp_remote_get() в core (класс WP_Site_Health).
 			)
 		);
 		if ( is_wp_error( $rest_response ) ) {
@@ -212,30 +216,52 @@ class PF_Diagnostics {
 	private function check_required_attributes( DOMXPath $xpath ) {
 		$required = array(
 			'pf-form'      => __( 'Форма фильтра не инициализируется. Плагин не работает.', 'pf-filter' ),
-			'pf-target'    => __( 'JS не знает к какому списку привязана форма. Плагин не работает.', 'pf-filter' ),
 			'pf-output'    => __( 'Группы фильтров не будут вставлены в форму.', 'pf-filter' ),
 			'pf-templates' => __( 'Шаблоны групп не найдены. Фильтр не строится.', 'pf-filter' ),
 			'pf-list'      => __( 'Контейнер карточек не найден. Результаты не обновляются.', 'pf-filter' ),
 		);
 
-		$checks = array();
+		$checks     = array();
+		$node_count = array();
 
 		foreach ( $required as $attribute => $fail_message ) {
-			$nodes = $xpath->query( '//*[@' . $attribute . ']' );
-			$found = $nodes && $nodes->length > 0;
-			$checks[] = $this->result(
+			$nodes                    = $xpath->query( '//*[@' . $attribute . ']' );
+			$found                    = $nodes && $nodes->length > 0;
+			$node_count[ $attribute ] = $nodes ? $nodes->length : 0;
+			$checks[]                 = $this->result(
 				$found ? 'ok' : 'error',
 				'[' . $attribute . ']',
 				$found ? sprintf( 'найдено: %d', $nodes->length ) : $fail_message
 			);
 		}
 
+		$checks[] = $this->check_target_attribute( $xpath, $node_count['pf-form'], $node_count['pf-list'] );
+
+		return $checks;
+	}
+
+	/**
+	 * pf-target нигде не обязателен (см. resolveListElement() в pf-filter.js):
+	 * - при ровно одной [pf-form] и одном [pf-list] на странице они связываются
+	 *   автоматически, атрибут не нужен;
+	 * - при нескольких формах и/или списках без pf-target связь неоднозначна —
+	 *   предупреждение, а не ошибка (JS всё равно попробует связать первую форму
+	 *   с первым списком);
+	 * - если pf-target указан явно, проверяем что селектор что-то находит.
+	 *
+	 * @param DOMXPath $xpath       XPath документа.
+	 * @param int      $form_count  Количество найденных [pf-form].
+	 * @param int      $list_count  Количество найденных [pf-list].
+	 * @return array
+	 */
+	private function check_target_attribute( DOMXPath $xpath, $form_count, $list_count ) {
 		$target_nodes = $xpath->query( '//*[@pf-target]' );
+
 		if ( $target_nodes && $target_nodes->length > 0 ) {
 			$selector = $target_nodes->item( 0 )->getAttribute( 'pf-target' );
 			if ( $selector ) {
-				$exists   = $this->selector_exists( $xpath, $selector );
-				$checks[] = $this->result(
+				$exists = $this->selector_exists( $xpath, $selector );
+				return $this->result(
 					$exists ? 'ok' : 'warning',
 					'pf-target → ' . $selector,
 					$exists
@@ -246,7 +272,24 @@ class PF_Diagnostics {
 			}
 		}
 
-		return $checks;
+		if ( 1 === $form_count && 1 === $list_count ) {
+			return $this->result(
+				'ok',
+				'[pf-target]',
+				__( 'не указан, но на странице ровно одна форма и один список — связаны автоматически', 'pf-filter' )
+			);
+		}
+
+		return $this->result(
+			'warning',
+			'[pf-target]',
+			sprintf(
+				/* translators: 1: количество форм, 2: количество списков */
+				__( 'не указан, а на странице %1$d форм(ы) и %2$d списк(ов) — связь неоднозначна. Добавьте pf-target="#selector". JS попробует связать первую форму с первым списком.', 'pf-filter' ),
+				$form_count,
+				$list_count
+			)
+		);
 	}
 
 	/**
@@ -323,12 +366,42 @@ class PF_Diagnostics {
 	private function check_group_templates( DOMXPath $xpath, array $found_templates ) {
 		$checks = array();
 
+		// [pf-filter-row] / [pf-filter-value] — общая зацепка только для этих
+		// шаблонов. У range и category-tree — свои обязательные зацепки
+		// (pf-filter-range-slider и pf-filter-list-1 соответственно), проверять
+		// их по общему правилу неверно — это всегда давало бы ложную ошибку.
+		$row_value_templates = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+
 		foreach ( $found_templates as $template ) {
 			$template_nodes = $xpath->query( '//*[@pf-template="' . $template . '"]' );
 			if ( ! $template_nodes || 0 === $template_nodes->length ) {
 				continue;
 			}
 			$node = $template_nodes->item( 0 );
+
+			if ( 'range' === $template ) {
+				$has_slider = $xpath->query( './/*[@pf-filter-range-slider]', $node )->length > 0;
+				$checks[]   = $this->result(
+					$has_slider ? 'ok' : 'error',
+					'[pf-template="range"] → [pf-filter-range-slider]',
+					$has_slider ? __( 'найден', 'pf-filter' ) : __( 'Шаблон `range` не будет работать', 'pf-filter' )
+				);
+				continue;
+			}
+
+			if ( 'category-tree' === $template ) {
+				$has_list = $xpath->query( './/*[@pf-filter-list-1]', $node )->length > 0;
+				$checks[] = $this->result(
+					$has_list ? 'ok' : 'error',
+					'[pf-template="category-tree"] → [pf-filter-list-1]',
+					$has_list ? __( 'найден', 'pf-filter' ) : __( 'Дерево категорий не будет построено', 'pf-filter' )
+				);
+				continue;
+			}
+
+			if ( ! in_array( $template, $row_value_templates, true ) ) {
+				continue; // Незнакомый/кастомный тип шаблона — общую зацепку не проверяем.
+			}
 
 			$has_row = $xpath->query( './/*[@pf-filter-row]', $node )->length > 0;
 			$checks[] = $this->result(
@@ -543,6 +616,7 @@ class PF_Diagnostics {
 			array(
 				'headers' => array( 'X-WP-Nonce' => wp_create_nonce( 'wp_rest' ) ),
 				'timeout' => 15,
+				'cookies' => $_COOKIE, // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- пробрасываются как есть, аналогично wp_remote_get() в core.
 			)
 		);
 
@@ -610,6 +684,7 @@ class PF_Diagnostics {
 					)
 				),
 				'timeout' => 15,
+				'cookies' => $_COOKIE, // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- пробрасываются как есть, аналогично wp_remote_get() в core.
 			)
 		);
 
