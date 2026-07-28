@@ -1,0 +1,102 @@
+/**
+ * Стили страницы настроек PF Filter (Настройки → PF Filter).
+ */
+
+.pf-filter-admin .pf-tab-panel {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-top: none;
+	padding: 16px 20px;
+	margin-bottom: 20px;
+}
+
+.pf-filter-admin table.widefat.pf-groups-table td,
+.pf-filter-admin table.widefat.pf-sort-table td {
+	vertical-align: middle;
+	padding: 8px;
+}
+
+.pf-filter-admin .pf-drag-handle {
+	cursor: grab;
+	text-align: center;
+	color: #787c82;
+	width: 24px;
+}
+
+.pf-filter-admin tr.pf-dragging {
+	opacity: 0.4;
+}
+
+.pf-filter-admin tr.pf-drag-over {
+	box-shadow: inset 0 2px 0 #2271b1;
+}
+
+.pf-filter-admin .pf-extra-range,
+.pf-filter-admin .pf-extra-tree,
+.pf-filter-admin .pf-extra-colors {
+	display: none;
+}
+
+.pf-filter-admin tr[data-template="range"] .pf-extra-range {
+	display: table-cell;
+}
+
+.pf-filter-admin tr[data-template="category-tree"] .pf-extra-tree {
+	display: table-cell;
+}
+
+.pf-filter-admin tr[data-template="checkbox"] .pf-extra-colors,
+.pf-filter-admin tr[data-template="radio"] .pf-extra-colors,
+.pf-filter-admin tr[data-template="tags"] .pf-extra-colors,
+.pf-filter-admin tr[data-template="dropdown-checkbox"] .pf-extra-colors,
+.pf-filter-admin tr[data-template="dropdown-radio"] .pf-extra-colors {
+	display: table-cell;
+}
+
+.pf-filter-admin .pf-color-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+
+.pf-filter-admin .pf-color-row input[type="text"] {
+	width: 80px;
+}
+
+.pf-filter-admin .pf-category-override {
+	margin-top: 20px;
+	padding-top: 16px;
+	border-top: 1px solid #dcdcde;
+}
+
+.pf-filter-admin template {
+	display: none;
+}
+
+.pf-diag-section .notice.inline {
+	margin: 0 0 4px;
+}
+
+.pf-diag-tag {
+	display: inline-block;
+	background: #f0f0f1;
+	border: 1px solid #c3c4c7;
+	border-radius: 3px;
+	padding: 2px 8px;
+	font-family: monospace;
+	font-size: 12px;
+}
+
+.pf-diag-log {
+	background: #1d2327;
+	color: #f0f0f1;
+	padding: 10px;
+	overflow-x: auto;
+}
+
+#pf-diag-spinner.is-active {
+	visibility: visible;
+	float: none;
+	display: inline-block;
+}

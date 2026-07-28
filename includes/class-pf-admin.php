@@ -1,0 +1,400 @@
+<?php
+/**
+ * Страница настроек плагина в админке WordPress.
+ *
+ * @package PF_Filter
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Class PF_Admin
+ */
+class PF_Admin {
+
+	/**
+	 * Slug страницы настроек.
+	 *
+	 * @var string
+	 */
+	const PAGE_SLUG = 'pf-filter-settings';
+
+	/**
+	 * Сканер таксономий/атрибутов.
+	 *
+	 * @var PF_Attributes
+	 */
+	private $attributes;
+
+	/**
+	 * Диагностика окружения/разметки/REST API.
+	 *
+	 * @var PF_Diagnostics
+	 */
+	private $diagnostics;
+
+	/**
+	 * Конструктор.
+	 */
+	public function __construct() {
+		$this->attributes  = new PF_Attributes();
+		$this->diagnostics = new PF_Diagnostics();
+	}
+
+	/**
+	 * Регистрация хуков админки.
+	 */
+	public function init() {
+		add_action( 'admin_menu', array( $this, 'register_page' ) );
+		add_action( 'admin_init', array( $this, 'register_setting' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'wp_ajax_pf_run_diagnostics', array( $this, 'ajax_run_diagnostics' ) );
+	}
+
+	/**
+	 * Регистрация пункта меню Настройки → PF Filter.
+	 */
+	public function register_page() {
+		add_options_page(
+			__( 'PF Filter', 'pf-filter' ),
+			__( 'PF Filter', 'pf-filter' ),
+			'manage_options',
+			self::PAGE_SLUG,
+			array( $this, 'render_page' )
+		);
+	}
+
+	/**
+	 * Регистрация настройки через Settings API.
+	 */
+	public function register_setting() {
+		register_setting(
+			'pf_filter_settings_group',
+			PF_Config::OPTION_KEY,
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( $this, 'sanitize' ),
+				'default'           => PF_Config::get_defaults(),
+			)
+		);
+	}
+
+	/**
+	 * Подключить JS/CSS только на странице настроек плагина.
+	 *
+	 * @param string $hook Текущий admin hook.
+	 */
+	public function enqueue_assets( $hook ) {
+		if ( 'settings_page_' . self::PAGE_SLUG !== $hook ) {
+			return;
+		}
+
+		wp_enqueue_style( 'pf-admin', PF_FILTER_URL . 'assets/css/pf-admin.css', array(), PF_FILTER_VERSION );
+		wp_enqueue_script( 'pf-admin', PF_FILTER_URL . 'assets/js/pf-admin.js', array(), PF_FILTER_VERSION, true );
+		wp_enqueue_script( 'pf-diagnostics', PF_FILTER_URL . 'assets/js/pf-diagnostics.js', array(), PF_FILTER_VERSION, true );
+
+		wp_localize_script(
+			'pf-admin',
+			'pfAdminConfig',
+			array(
+				'realCategoryDepth' => $this->attributes->get_real_category_depth(),
+			)
+		);
+
+		wp_localize_script(
+			'pf-diagnostics',
+			'pfDiagnosticsConfig',
+			array(
+				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+				'nonce'      => wp_create_nonce( 'pf_diagnostics' ),
+				'defaultUrl' => function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' ),
+			)
+		);
+	}
+
+	/**
+	 * AJAX-обработчик кнопки «Запустить проверку» на вкладке «Диагностика».
+	 * Результаты никогда не кешируются — каждый вызов делает свежие проверки.
+	 */
+	public function ajax_run_diagnostics() {
+		check_ajax_referer( 'pf_diagnostics', 'nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Недостаточно прав.', 'pf-filter' ) ), 403 );
+		}
+
+		$url = isset( $_POST['url'] ) ? esc_url_raw( wp_unslash( $_POST['url'] ) ) : '';
+
+		wp_send_json_success(
+			array(
+				'environment' => $this->diagnostics->check_environment(),
+				'markup'      => $url ? $this->diagnostics->analyze_markup( $url ) : null,
+				'rest_api'    => $this->diagnostics->test_rest_api(),
+			)
+		);
+	}
+
+	/**
+	 * Санировать сохраняемые настройки перед записью в wp_options.
+	 *
+	 * @param array $input Сырые данные из $_POST (уже собранные Settings API).
+	 * @return array
+	 */
+	public function sanitize( $input ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return PF_Config::get_settings();
+		}
+
+		$input = is_array( $input ) ? $input : array();
+		$clean = PF_Config::get_defaults();
+
+		$clean['logic']            = in_array( $input['logic'] ?? '', array( 'and', 'or' ), true ) ? $input['logic'] : 'and';
+		$clean['search_threshold'] = isset( $input['search_threshold'] ) ? absint( $input['search_threshold'] ) : 7;
+		$clean['show_counts']      = ! empty( $input['show_counts'] );
+		$clean['tree_depth']       = isset( $input['tree_depth'] ) ? max( 1, absint( $input['tree_depth'] ) ) : 4;
+		$clean['scan_url']         = isset( $input['scan_url'] ) ? esc_url_raw( $input['scan_url'] ) : '';
+
+		$clean['groups']       = $this->sanitize_groups( $input['groups'] ?? array() );
+		$clean['sort_options'] = $this->sanitize_sort_options( $input['sort_options'] ?? array() );
+
+		$clean['category_overrides'] = array();
+		if ( ! empty( $input['category_overrides'] ) && is_array( $input['category_overrides'] ) ) {
+			foreach ( $input['category_overrides'] as $slug => $override ) {
+				$slug = sanitize_title( $slug );
+				if ( '' === $slug ) {
+					continue;
+				}
+				$clean['category_overrides'][ $slug ] = array(
+					'groups' => $this->sanitize_groups( $override['groups'] ?? array() ),
+				);
+			}
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Санировать список групп фильтров (общий для глобальных и по-категорийных).
+	 *
+	 * @param array $groups Сырые данные групп.
+	 * @return array
+	 */
+	private function sanitize_groups( $groups ) {
+		if ( ! is_array( $groups ) ) {
+			return array();
+		}
+
+		$clean = array();
+
+		foreach ( $groups as $group ) {
+			if ( empty( $group['field'] ) ) {
+				continue;
+			}
+
+			$row = array(
+				'field'    => sanitize_text_field( $group['field'] ),
+				'label'    => sanitize_text_field( $group['label'] ?? '' ),
+				'template' => sanitize_key( $group['template'] ?? 'checkbox' ),
+				'logic'    => in_array( $group['logic'] ?? 'or', array( 'and', 'or' ), true ) ? $group['logic'] : 'or',
+				'enabled'  => ! empty( $group['enabled'] ),
+			);
+
+			if ( isset( $group['step'] ) && '' !== $group['step'] ) {
+				$row['step'] = floatval( $group['step'] );
+			}
+			if ( isset( $group['unit'] ) ) {
+				$row['unit'] = sanitize_text_field( $group['unit'] );
+			}
+			if ( isset( $group['tree_depth'] ) && '' !== $group['tree_depth'] ) {
+				$row['tree_depth'] = absint( $group['tree_depth'] );
+			}
+
+			if ( ! empty( $group['colors'] ) && is_array( $group['colors'] ) ) {
+				$colors = array();
+				foreach ( $group['colors'] as $slug => $hex ) {
+					$slug = sanitize_title( $slug );
+					$hex  = sanitize_hex_color( $hex );
+					if ( $slug && $hex ) {
+						$colors[ $slug ] = $hex;
+					}
+				}
+				$row['colors'] = $colors;
+			}
+
+			$clean[] = $row;
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Санировать список опций сортировки.
+	 *
+	 * @param array $options Сырые данные опций.
+	 * @return array
+	 */
+	private function sanitize_sort_options( $options ) {
+		if ( ! is_array( $options ) ) {
+			return array();
+		}
+
+		$whitelist = PF_Query::ORDERBY_WHITELIST;
+		$clean     = array();
+
+		foreach ( $options as $option ) {
+			if ( empty( $option['value'] ) || ! in_array( $option['value'], $whitelist, true ) ) {
+				continue;
+			}
+			$clean[] = array(
+				'value' => $option['value'],
+				'label' => sanitize_text_field( $option['label'] ?? $option['value'] ),
+			);
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Список шаблонов групп по умолчанию (используется если сканирование разметки
+	 * не задано или не нашло ни одного pf-template в разметке).
+	 *
+	 * @var array
+	 */
+	const DEFAULT_TEMPLATES = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio', 'range', 'category-tree' );
+
+	/**
+	 * Отрендерить страницу настроек.
+	 */
+	public function render_page() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		$settings           = PF_Config::get_settings();
+		$available_fields   = array_merge(
+			$this->attributes->get_all_attribute_taxonomies(),
+			array(
+				array(
+					'field' => 'price',
+					'label' => __( 'Цена', 'pf-filter' ),
+				),
+				array(
+					'field' => 'product_cat',
+					'label' => __( 'Категории', 'pf-filter' ),
+				),
+			)
+		);
+		$real_depth          = $this->attributes->get_real_category_depth();
+		$configured_depth    = (int) $settings['tree_depth'];
+		$categories          = get_terms( array( 'taxonomy' => 'product_cat', 'hide_empty' => false ) );
+		$categories          = is_wp_error( $categories ) ? array() : $categories;
+		$available_templates = $this->get_available_templates( $settings['scan_url'] );
+		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
+
+		require PF_FILTER_PATH . 'includes/views/admin-page.php';
+	}
+
+	/**
+	 * Отрендерить одну строку группы фильтра (используется и для существующих
+	 * групп, и как HTML-шаблон для JS при добавлении новой строки).
+	 *
+	 * @param string $name_prefix         Префикс имени поля, напр. "pf_filter_settings[groups]".
+	 * @param string $index               Индекс строки (число либо "__INDEX__" для JS-шаблона).
+	 * @param array  $group               Данные группы (field/label/template/logic/enabled/...).
+	 * @param array  $available_fields    Список доступных полей [ [field,label], ... ].
+	 * @param array  $available_templates Список доступных значений pf-template.
+	 */
+	public function render_group_row( $name_prefix, $index, array $group, array $available_fields, array $available_templates ) {
+		$n = $name_prefix . '[' . $index . ']';
+		$field    = $group['field'] ?? '';
+		$label    = $group['label'] ?? '';
+		$template = $group['template'] ?? 'checkbox';
+		$logic    = $group['logic'] ?? 'or';
+		$enabled  = ! empty( $group['enabled'] );
+		$step     = $group['step'] ?? '';
+		$unit     = $group['unit'] ?? '';
+		$tree_d   = $group['tree_depth'] ?? '';
+		$colors   = $group['colors'] ?? array();
+		?>
+		<tr class="pf-group-row" draggable="true" data-index="<?php echo esc_attr( $index ); ?>">
+			<td class="pf-drag-handle" title="<?php esc_attr_e( 'Перетащить для изменения порядка', 'pf-filter' ); ?>">☰</td>
+			<td>
+				<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[enabled]" value="1" <?php checked( $enabled ); ?> />
+			</td>
+			<td>
+				<select name="<?php echo esc_attr( $n ); ?>[field]" class="pf-field-select">
+					<?php foreach ( $available_fields as $f ) : ?>
+						<option value="<?php echo esc_attr( $f['field'] ); ?>" <?php selected( $field, $f['field'] ); ?>><?php echo esc_html( $f['label'] ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</td>
+			<td>
+				<input type="text" name="<?php echo esc_attr( $n ); ?>[label]" value="<?php echo esc_attr( $label ); ?>" placeholder="<?php esc_attr_e( 'Название', 'pf-filter' ); ?>" />
+			</td>
+			<td>
+				<select name="<?php echo esc_attr( $n ); ?>[template]" class="pf-template-select">
+					<?php foreach ( $available_templates as $tpl ) : ?>
+						<option value="<?php echo esc_attr( $tpl ); ?>" <?php selected( $template, $tpl ); ?>><?php echo esc_html( $tpl ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</td>
+			<td>
+				<select name="<?php echo esc_attr( $n ); ?>[logic]">
+					<option value="or" <?php selected( $logic, 'or' ); ?>><?php esc_html_e( 'OR', 'pf-filter' ); ?></option>
+					<option value="and" <?php selected( $logic, 'and' ); ?>><?php esc_html_e( 'AND', 'pf-filter' ); ?></option>
+				</select>
+			</td>
+			<td class="pf-extra-range">
+				<input type="number" step="any" name="<?php echo esc_attr( $n ); ?>[step]" value="<?php echo esc_attr( $step ); ?>" placeholder="<?php esc_attr_e( 'Шаг', 'pf-filter' ); ?>" style="width:70px" />
+				<input type="text" name="<?php echo esc_attr( $n ); ?>[unit]" value="<?php echo esc_attr( $unit ); ?>" placeholder="<?php esc_attr_e( 'Ед.', 'pf-filter' ); ?>" style="width:50px" />
+			</td>
+			<td class="pf-extra-tree">
+				<input type="number" min="1" name="<?php echo esc_attr( $n ); ?>[tree_depth]" value="<?php echo esc_attr( $tree_d ); ?>" placeholder="<?php esc_attr_e( 'Глубина', 'pf-filter' ); ?>" style="width:70px" />
+			</td>
+			<td class="pf-extra-colors">
+				<div class="pf-color-rows">
+					<?php foreach ( $colors as $slug => $hex ) : ?>
+						<div class="pf-color-row">
+							<input type="text" name="<?php echo esc_attr( $n ); ?>[colors][<?php echo esc_attr( $slug ); ?>]" value="<?php echo esc_attr( $hex ); ?>" placeholder="#hex" />
+							<span class="pf-color-slug"><?php echo esc_html( $slug ); ?></span>
+							<button type="button" class="button-link pf-remove-color">&times;</button>
+						</div>
+					<?php endforeach; ?>
+				</div>
+				<button type="button" class="button pf-add-color"><?php esc_html_e( '+ Цвет', 'pf-filter' ); ?></button>
+			</td>
+			<td>
+				<button type="button" class="button-link-delete pf-remove-row"><?php esc_html_e( 'Удалить', 'pf-filter' ); ?></button>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Получить список доступных значений pf-template — либо просканировав разметку
+	 * по указанному URL, либо (по умолчанию) статичный список всех типов шаблонов.
+	 *
+	 * @param string $scan_url URL страницы для сканирования (может быть пустым).
+	 * @return array
+	 */
+	private function get_available_templates( $scan_url ) {
+		if ( empty( $scan_url ) ) {
+			return self::DEFAULT_TEMPLATES;
+		}
+
+		$response = wp_remote_get( $scan_url, array( 'timeout' => 8 ) );
+		if ( is_wp_error( $response ) ) {
+			return self::DEFAULT_TEMPLATES;
+		}
+
+		$body = wp_remote_retrieve_body( $response );
+		if ( empty( $body ) ) {
+			return self::DEFAULT_TEMPLATES;
+		}
+
+		preg_match_all( '/pf-template=["\']([a-z-]+)["\']/i', $body, $matches );
+		$found = array_unique( array_map( 'strtolower', $matches[1] ?? array() ) );
+
+		return empty( $found ) ? self::DEFAULT_TEMPLATES : array_values( $found );
+	}
+}
