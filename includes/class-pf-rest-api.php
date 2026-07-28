@@ -45,7 +45,10 @@ class PF_REST_API {
 	 */
 	public function __construct() {
 		$this->attributes    = new PF_Attributes();
-		$this->query_builder = new PF_Query();
+		// Общий экземпляр PF_Attributes — сканирование кастомных атрибутов
+		// (_product_attributes по всем товарам) кэшируется на нём за запрос,
+		// незачем сканировать дважды в одном REST-вызове.
+		$this->query_builder = new PF_Query( $this->attributes );
 		$this->renderer      = new PF_Renderer();
 	}
 

@@ -21,7 +21,6 @@
 		initAddSort( root );
 		initRemoveRow( root );
 		initColorRows( root );
-		initCategorySelect( root );
 	}
 
 	// ---- Табы -----------------------------------------------------------
@@ -168,7 +167,7 @@
 	function initAddGroup( root ) {
 		root.querySelectorAll( '.pf-add-group' ).forEach( function ( btn ) {
 			btn.addEventListener( 'click', function () {
-				var panel = btn.closest( '.pf-tab-panel, .pf-category-override' );
+				var panel = btn.closest( '.pf-tab-panel' );
 				var table = panel ? panel.querySelector( 'table.pf-groups-table' ) : null;
 				var tpl = document.getElementById( 'pf-group-row-template' );
 				if ( ! table || ! tpl ) {
@@ -285,17 +284,4 @@
 		} );
 	}
 
-	// ---- Переключение видимости блоков переопределения по категории ------
-
-	function initCategorySelect( root ) {
-		var select = root.querySelector( '#pf-category-select' );
-		if ( ! select ) {
-			return;
-		}
-		select.addEventListener( 'change', function () {
-			root.querySelectorAll( '.pf-category-override' ).forEach( function ( block ) {
-				block.style.display = block.getAttribute( 'data-category' ) === select.value ? '' : 'none';
-			} );
-		} );
-	}
 } )();

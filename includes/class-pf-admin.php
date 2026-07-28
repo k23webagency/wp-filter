@@ -157,24 +157,11 @@ class PF_Admin {
 		$clean['groups']       = $this->sanitize_groups( $input['groups'] ?? array() );
 		$clean['sort_options'] = $this->sanitize_sort_options( $input['sort_options'] ?? array() );
 
-		$clean['category_overrides'] = array();
-		if ( ! empty( $input['category_overrides'] ) && is_array( $input['category_overrides'] ) ) {
-			foreach ( $input['category_overrides'] as $slug => $override ) {
-				$slug = sanitize_title( $slug );
-				if ( '' === $slug ) {
-					continue;
-				}
-				$clean['category_overrides'][ $slug ] = array(
-					'groups' => $this->sanitize_groups( $override['groups'] ?? array() ),
-				);
-			}
-		}
-
 		return $clean;
 	}
 
 	/**
-	 * Санировать список групп фильтров (общий для глобальных и по-категорийных).
+	 * Санировать список групп фильтров.
 	 *
 	 * @param array $groups Сырые данные групп.
 	 * @return array
@@ -286,8 +273,6 @@ class PF_Admin {
 		);
 		$real_depth          = $this->attributes->get_real_category_depth();
 		$configured_depth    = (int) $settings['tree_depth'];
-		$categories          = get_terms( array( 'taxonomy' => 'product_cat', 'hide_empty' => false ) );
-		$categories          = is_wp_error( $categories ) ? array() : $categories;
 		$available_templates = $this->get_available_templates( $settings['scan_url'] );
 		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
 

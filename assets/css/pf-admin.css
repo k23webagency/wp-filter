@@ -64,12 +64,6 @@
 	width: 80px;
 }
 
-.pf-filter-admin .pf-category-override {
-	margin-top: 20px;
-	padding-top: 16px;
-	border-top: 1px solid #dcdcde;
-}
-
 .pf-filter-admin template {
 	display: none;
 }

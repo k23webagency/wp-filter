@@ -57,7 +57,6 @@ class PF_Config {
 					'label' => 'Цена ↓',
 				),
 			),
-			'category_overrides' => array(),
 		);
 	}
 
@@ -103,26 +102,6 @@ class PF_Config {
 		$merged      = wp_parse_args( $data, self::get_defaults() );
 		self::$cache = null;
 		return update_option( self::OPTION_KEY, $merged );
-	}
-
-	/**
-	 * Получить переопределение групп для конкретной категории, если оно задано.
-	 *
-	 * @param string $category_slug Slug категории товаров.
-	 * @return array|null Массив групп или null если переопределения нет.
-	 */
-	public static function get_category_override( $category_slug ) {
-		if ( empty( $category_slug ) ) {
-			return null;
-		}
-
-		$overrides = self::get( 'category_overrides', array() );
-
-		if ( isset( $overrides[ $category_slug ]['groups'] ) && ! empty( $overrides[ $category_slug ]['groups'] ) ) {
-			return $overrides[ $category_slug ]['groups'];
-		}
-
-		return null;
 	}
 
 	/**

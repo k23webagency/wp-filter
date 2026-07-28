@@ -235,20 +235,45 @@
 		// оно должно быть заменено реальными группами, а не остаться рядом с ними.
 		this.outputEl.innerHTML = '';
 
+		if ( ! this._consumedTemplates ) {
+			this._consumedTemplates = new WeakSet();
+		}
+		if ( ! this._templateCache ) {
+			// Кэш узлов-шаблонов по имени: первую группу с данным pf-template мы
+			// физически ПЕРЕМЕЩАЕМ из [pf-templates] (см. ниже), и после этого его
+			// уже не найти свежим querySelector внутри templatesEl. Кэш хранит
+			// ссылку на узел независимо от того, где он сейчас находится в DOM.
+			this._templateCache = {};
+		}
+
 		groups.forEach( function ( groupConfig ) {
-			var tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
+			var tpl = self._templateCache[ groupConfig.template ];
+			if ( undefined === tpl ) {
+				tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
+				self._templateCache[ groupConfig.template ] = tpl;
+			}
 			if ( ! tpl ) {
 				console.warn( 'PF Filter: шаблон [pf-template="' + groupConfig.template + '"] не найден, группа "' + groupConfig.field + '" пропущена.' );
 				return;
 			}
 
+			// Дропдауны и другие Webflow-интерактивы (w-dropdown-toggle и т.п.) внутри
+			// шаблона работают через обработчики, которые Webflow навешивает на
+			// оригинальный узел при загрузке страницы — cloneNode() их не копирует.
+			// Поэтому для ПЕРВОЙ группы, использующей этот тип шаблона, забираем
+			// оригинальный узел целиком (перемещаем — Webflow-интерактивность
+			// сохраняется), а не клонируем. Если тот же pf-template используется ещё
+			// одной группой — для неё клонируем, как раньше (иначе взять нечего).
+			var groupNode = self._consumedTemplates.has( tpl ) ? tpl.cloneNode( true ) : tpl;
+			self._consumedTemplates.add( tpl );
+
 			var clone;
 			if ( 'range' === groupConfig.template ) {
-				clone = self.buildRangeGroup( groupConfig, tpl );
+				clone = self.buildRangeGroup( groupConfig, groupNode );
 			} else if ( 'category-tree' === groupConfig.template ) {
-				clone = self.buildCategoryTreeGroup( groupConfig, tpl );
+				clone = self.buildCategoryTreeGroup( groupConfig, groupNode );
 			} else {
-				clone = self.buildListGroup( groupConfig, tpl );
+				clone = self.buildListGroup( groupConfig, groupNode );
 			}
 
 			if ( clone ) {
@@ -259,9 +284,12 @@
 	};
 
 	/** checkbox / radio / tags / dropdown-checkbox / dropdown-radio — общий алгоритм строк. */
-	PFForm.prototype.buildListGroup = function ( groupConfig, tpl ) {
+	PFForm.prototype.buildListGroup = function ( groupConfig, groupNode ) {
 		var self = this;
-		var clone = tpl.cloneNode( true );
+		// groupNode уже решён вызывающим кодом (buildGroups) — это либо перемещённый
+		// оригинальный узел шаблона (первое использование, Webflow-интерактивность
+		// сохранена), либо его клон (повторное использование того же pf-template).
+		var clone = groupNode;
 
 		var nameEl = qs( clone, '[pf-filter-name]' );
 		if ( nameEl ) {
@@ -375,9 +403,9 @@
 	};
 
 	/** Диапазон цены (или любой другой range-группы). */
-	PFForm.prototype.buildRangeGroup = function ( groupConfig, tpl ) {
+	PFForm.prototype.buildRangeGroup = function ( groupConfig, groupNode ) {
 		var self = this;
-		var clone = tpl.cloneNode( true );
+		var clone = groupNode; // см. комментарий в buildGroups() про move-vs-clone.
 
 		var nameEl = qs( clone, '[pf-filter-name]' );
 		if ( nameEl ) {
@@ -553,8 +581,8 @@
 	};
 
 	/** Дерево категорий — рекурсивный алгоритм buildLevel по нумерованным уровням. */
-	PFForm.prototype.buildCategoryTreeGroup = function ( groupConfig, tpl ) {
-		var clone = tpl.cloneNode( true );
+	PFForm.prototype.buildCategoryTreeGroup = function ( groupConfig, groupNode ) {
+		var clone = groupNode; // см. комментарий в buildGroups() про move-vs-clone.
 
 		var nameEl = qs( clone, '[pf-filter-name]' );
 		if ( nameEl ) {
@@ -820,7 +848,6 @@
 		}
 
 		var self = this;
-		var list = qs( this.sortEl, '.w-dropdown-list' );
 		var triggerLabel = qs( this.sortEl, '[pf-sort-trigger-label]' );
 		// Снимок ДО клонирования: может содержать не только сам шаблон, но и
 		// дизайн-превью — например несколько статичных «Опция» внутри вложенной
@@ -829,8 +856,17 @@
 		var existingOptions = qsa( this.sortEl, '[pf-sort-option]' );
 		var optionTpl = existingOptions[ 0 ];
 
-		if ( ! optionTpl || ! list ) {
+		if ( ! optionTpl ) {
 			console.warn( 'PF Filter: [pf-sort-option] не найден, список сортировки не построен.' );
+			return;
+		}
+
+		// Контейнер для вставки — родитель уже существующего элемента списка
+		// (найденного по pf-sort-option), а не угаданный по классу Webflow/темы:
+		// реальный родитель может быть на уровень глубже общей обёртки дропдауна.
+		var list = optionTpl.parentElement;
+		if ( ! list ) {
+			console.warn( 'PF Filter: у [pf-sort-option] нет родителя, список сортировки не построен.' );
 			return;
 		}
 
@@ -915,8 +951,11 @@
 		if ( 'pages' === this.paginationMode || 'both' === this.paginationMode ) {
 			var prevBtn = document.querySelector( '[pf-page-prev]' );
 			var nextBtn = document.querySelector( '[pf-page-next]' );
+			// pf-page-prev/next обычно <a href="#"> — без preventDefault клик
+			// прыгал бы в начало страницы вместо запуска AJAX-фильтрации.
 			if ( prevBtn ) {
-				prevBtn.addEventListener( 'click', function () {
+				prevBtn.addEventListener( 'click', function ( e ) {
+					e.preventDefault();
 					if ( self.state.paged > 1 ) {
 						self.state.paged -= 1;
 						self.runFilter( { forceReplace: true } );
@@ -924,7 +963,8 @@
 				} );
 			}
 			if ( nextBtn ) {
-				nextBtn.addEventListener( 'click', function () {
+				nextBtn.addEventListener( 'click', function ( e ) {
+					e.preventDefault();
 					if ( self.state.paged < self.totalPages ) {
 						self.state.paged += 1;
 						self.runFilter( { forceReplace: true } );
@@ -980,7 +1020,8 @@
 					clone.classList.remove( 'pf-hidden' );
 
 					( function ( pageNum ) {
-						clone.addEventListener( 'click', function () {
+						clone.addEventListener( 'click', function ( e ) {
+							e.preventDefault();
 							this.state.paged = pageNum;
 							this.runFilter( { forceReplace: true } );
 						}.bind( this ) );

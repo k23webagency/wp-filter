@@ -2,7 +2,7 @@
 /**
  * Разметка страницы настроек PF Filter.
  * Переменные приходят из PF_Admin::render_page(): $settings, $available_fields,
- * $real_depth, $configured_depth, $categories, $available_templates.
+ * $real_depth, $configured_depth, $available_templates.
  *
  * @package PF_Filter
  */
@@ -31,7 +31,6 @@ defined( 'ABSPATH' ) || exit;
 		<a href="#pf-tab-global" class="nav-tab nav-tab-active" data-tab="global"><?php esc_html_e( 'Общие настройки', 'pf-filter' ); ?></a>
 		<a href="#pf-tab-groups" class="nav-tab" data-tab="groups"><?php esc_html_e( 'Группы фильтров', 'pf-filter' ); ?></a>
 		<a href="#pf-tab-sort" class="nav-tab" data-tab="sort"><?php esc_html_e( 'Сортировка', 'pf-filter' ); ?></a>
-		<a href="#pf-tab-categories" class="nav-tab" data-tab="categories"><?php esc_html_e( 'По категориям', 'pf-filter' ); ?></a>
 		<a href="#pf-tab-diagnostics" class="nav-tab" data-tab="diagnostics"><?php esc_html_e( 'Диагностика', 'pf-filter' ); ?></a>
 	</h2>
 
@@ -80,6 +79,7 @@ defined( 'ABSPATH' ) || exit;
 
 		<div class="pf-tab-panel" id="pf-tab-groups" data-tab="groups" style="display:none">
 			<p><?php esc_html_e( 'Порядок строк = порядок групп в форме фильтра. Перетаскивайте за ☰.', 'pf-filter' ); ?></p>
+			<p class="description"><?php esc_html_e( 'Список групп общий для всего каталога. В конкретной категории показываются только те из включённых групп, для которых у товаров этой категории есть хотя бы одно значение — остальные скрываются автоматически.', 'pf-filter' ); ?></p>
 			<table class="widefat pf-groups-table" data-name-prefix="pf_filter_settings[groups]">
 				<thead>
 					<tr>
@@ -193,54 +193,6 @@ defined( 'ABSPATH' ) || exit;
 				</tr>
 				</tbody></table>
 			</template>
-		</div>
-
-		<div class="pf-tab-panel" id="pf-tab-categories" data-tab="categories" style="display:none">
-			<p><?php esc_html_e( 'Переопределение набора групп для конкретной категории товаров. Если для категории нет переопределения — используется глобальный список.', 'pf-filter' ); ?></p>
-
-			<select id="pf-category-select">
-				<option value=""><?php esc_html_e( '— выбрать категорию —', 'pf-filter' ); ?></option>
-				<?php foreach ( $categories as $cat ) : ?>
-					<option value="<?php echo esc_attr( $cat->slug ); ?>"><?php echo esc_html( $cat->name ); ?></option>
-				<?php endforeach; ?>
-			</select>
-
-			<?php foreach ( $categories as $cat ) : ?>
-				<?php $override_groups = $settings['category_overrides'][ $cat->slug ]['groups'] ?? array(); ?>
-				<div class="pf-category-override" data-category="<?php echo esc_attr( $cat->slug ); ?>" style="display:none">
-					<h3><?php echo esc_html( $cat->name ); ?></h3>
-					<table class="widefat pf-groups-table" data-name-prefix="pf_filter_settings[category_overrides][<?php echo esc_attr( $cat->slug ); ?>][groups]">
-						<thead>
-							<tr>
-								<th></th>
-								<th><?php esc_html_e( 'Вкл.', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Поле', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Название', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Шаблон', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Логика в группе', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Range: шаг / ед.', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Дерево: глубина', 'pf-filter' ); ?></th>
-								<th><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></th>
-								<th></th>
-							</tr>
-						</thead>
-						<tbody class="pf-groups-body">
-							<?php foreach ( $override_groups as $index => $group ) : ?>
-								<?php
-								$this->render_group_row(
-									'pf_filter_settings[category_overrides][' . $cat->slug . '][groups]',
-									$index,
-									$group,
-									$available_fields,
-									$available_templates
-								);
-								?>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
-					<p><button type="button" class="button pf-add-group"><?php esc_html_e( '+ Добавить группу', 'pf-filter' ); ?></button></p>
-				</div>
-			<?php endforeach; ?>
 		</div>
 
 		<?php submit_button(); ?>
