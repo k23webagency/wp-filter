@@ -176,6 +176,15 @@
 
 		this.loadingEl = document.querySelector( '[pf-loading]' );
 		this.emptyEl = document.querySelector( '[pf-empty]' );
+		// Плагин сам гарантирует, что оба скрыты по умолчанию — не полагается на то,
+		// что тема пропишет для них display:none. is-hidden снимается/добавляется
+		// в runFilter()/handleResponse(), а не только после первого запроса.
+		if ( this.loadingEl ) {
+			this.loadingEl.classList.add( 'is-hidden' );
+		}
+		if ( this.emptyEl ) {
+			this.emptyEl.classList.add( 'is-hidden' );
+		}
 		this.paginationEl = document.querySelector( '[pf-pagination]' );
 		this.paginationMode = this.paginationEl ? this.paginationEl.getAttribute( 'pf-pagination' ) : null;
 
@@ -722,7 +731,7 @@
 		this.abortController = new AbortController();
 
 		if ( this.loadingEl ) {
-			this.loadingEl.classList.add( 'is-visible' );
+			this.loadingEl.classList.remove( 'is-hidden' );
 		}
 
 		var body = {
@@ -762,14 +771,14 @@
 				}
 				console.error( 'PF Filter: ошибка запроса /products.', err );
 				if ( self.loadingEl ) {
-					self.loadingEl.classList.remove( 'is-visible' );
+					self.loadingEl.classList.add( 'is-hidden' );
 				}
 			} );
 	};
 
 	PFForm.prototype.handleResponse = function ( data ) {
 		if ( this.loadingEl ) {
-			this.loadingEl.classList.remove( 'is-visible' );
+			this.loadingEl.classList.add( 'is-hidden' );
 		}
 
 		this.totalPages = data.pages || 1;
@@ -778,14 +787,14 @@
 
 		if ( 0 === data.count ) {
 			if ( this.emptyEl ) {
-				this.emptyEl.classList.add( 'is-visible' );
+				this.emptyEl.classList.remove( 'is-hidden' );
 			}
 			if ( this.listEl ) {
 				this.listEl.innerHTML = '';
 			}
 		} else {
 			if ( this.emptyEl ) {
-				this.emptyEl.classList.remove( 'is-visible' );
+				this.emptyEl.classList.add( 'is-hidden' );
 			}
 
 			if ( this.listEl ) {
