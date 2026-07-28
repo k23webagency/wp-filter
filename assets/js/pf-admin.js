@@ -16,6 +16,7 @@
 
 		initTabs( root );
 		initTemplateDataAttr( root );
+		initFieldTemplateFilter( root );
 		initDragAndDrop( root );
 		initAddGroup( root );
 		initAddSort( root );
@@ -65,6 +66,64 @@
 				sync( e.target );
 			}
 		} );
+	}
+
+	// ---- Список шаблонов сужается до совместимых с выбранным полем -------
+
+	function initFieldTemplateFilter( root ) {
+		var map = ( window.pfAdminConfig && window.pfAdminConfig.fieldCompatibleTemplates ) || null;
+		if ( ! map ) {
+			return;
+		}
+
+		function allOptionsOf( templateSelect ) {
+			if ( ! templateSelect._pfAllOptions ) {
+				templateSelect._pfAllOptions = Array.prototype.map.call( templateSelect.options, function ( o ) {
+					return { value: o.value, label: o.textContent };
+				} );
+			}
+			return templateSelect._pfAllOptions;
+		}
+
+		function applyFilter( fieldSelect ) {
+			var row = fieldSelect.closest( 'tr' );
+			var templateSelect = row ? row.querySelector( '.pf-template-select' ) : null;
+			if ( ! templateSelect ) {
+				return;
+			}
+
+			var all = allOptionsOf( templateSelect );
+			var compatible = map[ fieldSelect.value ];
+			var filtered = compatible ? all.filter( function ( o ) { return compatible.indexOf( o.value ) !== -1; } ) : all;
+			if ( ! filtered.length ) {
+				filtered = all; // неизвестное поле — не оставлять пустой список.
+			}
+
+			var currentValue = templateSelect.value;
+
+			templateSelect.innerHTML = '';
+			filtered.forEach( function ( o ) {
+				var opt = document.createElement( 'option' );
+				opt.value = o.value;
+				opt.textContent = o.label;
+				templateSelect.appendChild( opt );
+			} );
+
+			var stillValid = filtered.some( function ( o ) { return o.value === currentValue; } );
+			templateSelect.value = stillValid ? currentValue : filtered[ 0 ].value;
+
+			templateSelect.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+		}
+
+		root.addEventListener( 'change', function ( e ) {
+			if ( e.target.classList && e.target.classList.contains( 'pf-field-select' ) ) {
+				applyFilter( e.target );
+			}
+		} );
+
+		// Применить сразу к уже отрисованным строкам (в т.ч. по умолчанию при
+		// первом заходе на страницу).
+		root.querySelectorAll( '.pf-field-select' ).forEach( applyFilter );
 	}
 
 	// ---- Drag-and-drop реордера строк ------------------------------------
@@ -193,6 +252,13 @@
 				body.appendChild( newRow );
 				initTemplateDataAttr( root );
 				initColorRows( root );
+
+				// Список шаблонов новой строки сразу сузить до совместимых с её
+				// полем по умолчанию (тот же делегированный обработчик change).
+				var newFieldSelect = newRow.querySelector( '.pf-field-select' );
+				if ( newFieldSelect ) {
+					newFieldSelect.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+				}
 			} );
 		} );
 	}

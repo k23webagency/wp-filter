@@ -126,7 +126,15 @@ class PF_Attributes {
 		}
 
 		if ( 'product_cat' === $field ) {
-			return $this->build_category_tree_group( $config );
+			// Категории — не обязательно дерево: админ может выбрать любой из
+			// плоских шаблонов (checkbox/radio/tags/dropdown-*) точно так же,
+			// как для обычного таксономического атрибута. category-tree — только
+			// когда шаблон явно выбран таким (или не задан вовсе — по умолчанию).
+			$template = isset( $config['template'] ) ? $config['template'] : 'category-tree';
+			if ( 'category-tree' === $template ) {
+				return $this->build_category_tree_group( $config );
+			}
+			return $this->build_taxonomy_group( $config, $category_product_ids );
 		}
 
 		if ( 0 === strpos( $field, 'pa_' ) ) {
@@ -625,5 +633,72 @@ class PF_Attributes {
 			);
 		}
 		return $out;
+	}
+
+	/**
+	 * Список шаблонов, совместимых с данным полем (для страницы админки —
+	 * не даёт назначить бессмысленную комбинацию, например range для группы
+	 * с нечисловыми значениями).
+	 *
+	 * @param string $field Field-идентификатор (pa_*, custom_*, price, product_cat).
+	 * @return array
+	 */
+	public function get_compatible_templates( $field ) {
+		if ( 'price' === $field ) {
+			return array( 'range' );
+		}
+
+		if ( 'product_cat' === $field ) {
+			return array( 'category-tree', 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+		}
+
+		$flat = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+
+		if ( $this->field_values_are_numeric( $field ) ) {
+			$flat[] = 'range';
+		}
+
+		return $flat;
+	}
+
+	/**
+	 * Все ли значения данного поля (термины таксономии, либо значения
+	 * кастомного атрибута) — числа. Используется только чтобы решить,
+	 * стоит ли предлагать шаблон range для этого поля.
+	 *
+	 * @param string $field Field-идентификатор.
+	 * @return bool
+	 */
+	private function field_values_are_numeric( $field ) {
+		$labels = array();
+
+		if ( 0 === strpos( $field, 'pa_' ) && taxonomy_exists( $field ) ) {
+			$terms  = get_terms(
+				array(
+					'taxonomy'   => $field,
+					'hide_empty' => false,
+					'fields'     => 'names',
+				)
+			);
+			$labels = is_wp_error( $terms ) ? array() : $terms;
+		} elseif ( 0 === strpos( $field, 'custom_' ) ) {
+			$raw_name = $this->resolve_custom_attribute_name( $field );
+			if ( $raw_name ) {
+				$attributes = $this->scan_custom_attributes();
+				$labels     = isset( $attributes[ $raw_name ] ) ? array_keys( $attributes[ $raw_name ] ) : array();
+			}
+		}
+
+		if ( empty( $labels ) ) {
+			return false; // нет данных — безопасный дефолт: не числовое.
+		}
+
+		foreach ( $labels as $label ) {
+			if ( ! is_numeric( trim( (string) $label ) ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 }

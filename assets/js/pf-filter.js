@@ -1102,10 +1102,13 @@
 			}
 		}
 
+		// Стрелки показываются только когда реально есть куда листать —
+		// не просто "неактивны", а полностью скрыты (pf-hidden).
 		var prevBtn = document.querySelector( '[pf-page-prev]' );
 		if ( prevBtn ) {
 			var isFirst = this.state.paged <= 1;
 			prevBtn.classList.toggle( 'is-disabled', isFirst );
+			prevBtn.classList.toggle( 'pf-hidden', isFirst );
 			if ( isFirst ) {
 				prevBtn.setAttribute( 'disabled', 'disabled' );
 			} else {
@@ -1117,6 +1120,7 @@
 		if ( nextBtn ) {
 			var isLast = this.state.paged >= this.totalPages;
 			nextBtn.classList.toggle( 'is-disabled', isLast );
+			nextBtn.classList.toggle( 'pf-hidden', isLast );
 			if ( isLast ) {
 				nextBtn.setAttribute( 'disabled', 'disabled' );
 			} else {
@@ -1149,10 +1153,35 @@
 			chipTpl.classList.add( 'pf-hidden' );
 		} );
 
+		// Кнопка сброса по умолчанию скрыта — показывается только когда есть
+		// хоть один реально активный фильтр (см. updateActiveFilters()).
 		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
+			btn.classList.add( 'pf-hidden' );
 			btn.addEventListener( 'click', function () {
 				self.resetAllFilters();
 			} );
+		} );
+	};
+
+	/**
+	 * Есть ли хотя бы один реально активный фильтр. Для price — «активен»
+	 * только если диапазон отличается от полного (min/max шаблона), иначе он
+	 * технически присутствует в collectFilters(), но фильтром не является.
+	 *
+	 * @param {Object} filters Результат collectFilters().
+	 * @return {boolean}
+	 */
+	PFForm.prototype.hasActiveFilters = function ( filters ) {
+		var self = this;
+		return Object.keys( filters ).some( function ( field ) {
+			if ( 'price' === field ) {
+				var group = self.groups.price;
+				var slider = group ? qs( group.el, '[pf-filter-range-slider]' ) : null;
+				var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
+				var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
+				return ! ( filters.price.min === fullMin && filters.price.max === fullMax );
+			}
+			return ( filters[ field ] || [] ).length > 0;
 		} );
 	};
 
@@ -1197,6 +1226,10 @@
 	PFForm.prototype.updateActiveFilters = function () {
 		var self = this;
 		var filters = this.collectFilters();
+
+		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
+			btn.classList.toggle( 'pf-hidden', ! self.hasActiveFilters( filters ) );
+		} );
 
 		qsa( document, '[pf-active-filters]' ).forEach( function ( container ) {
 			var chipTpl = qs( container, '[pf-active-chip]' );

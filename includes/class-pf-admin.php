@@ -97,7 +97,8 @@ class PF_Admin {
 			'pf-admin',
 			'pfAdminConfig',
 			array(
-				'realCategoryDepth' => $this->attributes->get_real_category_depth(),
+				'realCategoryDepth'        => $this->attributes->get_real_category_depth(),
+				'fieldCompatibleTemplates' => $this->get_field_compatible_templates_map(),
 			)
 		);
 
@@ -395,5 +396,35 @@ class PF_Admin {
 		$found = array_unique( array_map( 'strtolower', $matches[1] ?? array() ) );
 
 		return empty( $found ) ? self::DEFAULT_TEMPLATES : array_values( $found );
+	}
+
+	/**
+	 * Карта field => совместимые шаблоны, для JS страницы настроек — чтобы
+	 * при выборе поля список шаблонов сужался до применимых (например, range
+	 * только для полей с исключительно числовыми значениями).
+	 *
+	 * @return array
+	 */
+	private function get_field_compatible_templates_map() {
+		$fields = array_merge(
+			$this->attributes->get_all_attribute_taxonomies(),
+			array(
+				array(
+					'field' => 'price',
+					'label' => __( 'Цена', 'pf-filter' ),
+				),
+				array(
+					'field' => 'product_cat',
+					'label' => __( 'Категории', 'pf-filter' ),
+				),
+			)
+		);
+
+		$map = array();
+		foreach ( $fields as $f ) {
+			$map[ $f['field'] ] = $this->attributes->get_compatible_templates( $f['field'] );
+		}
+
+		return $map;
 	}
 }
