@@ -153,7 +153,8 @@ class PF_REST_API {
 
 		$query = $this->query_builder->build( $filters, $logic, $orderby, $order, $paged, $per_page );
 
-		$html = $this->renderer->render( $query );
+		$page_url = isset( $body['page_url'] ) ? esc_url_raw( (string) $body['page_url'] ) : '';
+		$html     = $this->render_in_page_context( $query, $page_url );
 
 		$active_category = isset( $filters['product_cat'][0] ) ? $filters['product_cat'][0] : '';
 		$groups          = $this->attributes->get_groups( $active_category );
@@ -168,6 +169,47 @@ class PF_REST_API {
 		);
 
 		return new WP_REST_Response( $response, 200 );
+	}
+
+	/**
+	 * Отрендерить карточки в контексте реального URL страницы каталога, а не URL
+	 * REST-эндпоинта.
+	 *
+	 * Разметка карточки — ответственность темы, и часто она строит ссылки (например,
+	 * «В корзину» через add_query_arg() без явного базового URL) на основе текущего
+	 * REQUEST_URI. Внутри REST-запроса REQUEST_URI равен '/wp-json/pf/v1/products',
+	 * поэтому такие ссылки ломаются. Подставляем на время рендера реальный URL
+	 * страницы (который прислал клиент) и обязательно возвращаем исходный обратно.
+	 *
+	 * @param WP_Query $query    Выполненный запрос товаров.
+	 * @param string   $page_url URL страницы каталога, на которой находится пользователь.
+	 * @return string
+	 */
+	private function render_in_page_context( WP_Query $query, $page_url ) {
+		$original_request_uri = $_SERVER['REQUEST_URI'] ?? '';
+		$replaced              = false;
+
+		if ( $page_url ) {
+			$parts     = wp_parse_url( $page_url );
+			$site_host = wp_parse_url( home_url() )['host'] ?? '';
+
+			if ( ! empty( $parts['host'] ) && ! empty( $site_host ) && strtolower( $parts['host'] ) === strtolower( $site_host ) ) {
+				$path = $parts['path'] ?? '/';
+				if ( ! empty( $parts['query'] ) ) {
+					$path .= '?' . $parts['query'];
+				}
+				$_SERVER['REQUEST_URI'] = $path; // phpcs:ignore WordPress.VIP.SuperGlobalInputUsage.AccessDetected -- временно, только для контекста рендера, значение проверено на совпадение хоста.
+				$replaced                = true;
+			}
+		}
+
+		try {
+			return $this->renderer->render( $query );
+		} finally {
+			if ( $replaced ) {
+				$_SERVER['REQUEST_URI'] = $original_request_uri;
+			}
+		}
 	}
 
 	/**

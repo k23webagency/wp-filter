@@ -165,7 +165,12 @@
 		}
 
 		this.templatesEl = qs( this.formEl, '[pf-templates]' );
-		if ( ! this.templatesEl ) {
+		if ( this.templatesEl ) {
+			// [pf-templates] — библиотека шаблонов для клонирования, на живой странице
+			// её саму видно быть не должно (иначе пользователь увидит сырую разметку
+			// верстальщика вместо реальных данных).
+			this.templatesEl.classList.add( 'pf-hidden' );
+		} else {
 			console.error( 'PF Filter: [pf-templates] не найден, фильтр не будет построен.' );
 		}
 
@@ -224,6 +229,12 @@
 
 	PFForm.prototype.buildGroups = function ( groups ) {
 		var self = this;
+
+		// [pf-output] — точка вставки плагина. Если верстальщик оставил там
+		// дизайн-превью (например, не убрал пример разметки после вёрстки в Webflow),
+		// оно должно быть заменено реальными группами, а не остаться рядом с ними.
+		this.outputEl.innerHTML = '';
+
 		groups.forEach( function ( groupConfig ) {
 			var tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
 			if ( ! tpl ) {
@@ -257,7 +268,12 @@
 			nameEl.textContent = groupConfig.label;
 		}
 
-		var rowTpl = qs( clone, '[pf-filter-row]' );
+		// Снимок ДО клонирования: дизайн-шаблон группы часто содержит несколько
+		// примеров [pf-filter-row] сразу (разные визуальные состояния), а не один.
+		// Все они должны быть удалены после наполнения реальными значениями —
+		// не только тот единственный элемент, который взят как шаблон.
+		var existingRows = qsa( clone, '[pf-filter-row]' );
+		var rowTpl = existingRows[ 0 ];
 		if ( ! rowTpl ) {
 			console.warn( 'PF Filter: [pf-filter-row] не найден в шаблоне группы "' + groupConfig.field + '", группа не наполнена.' );
 			return clone;
@@ -297,7 +313,9 @@
 			rowParent.appendChild( rowClone );
 		} );
 
-		rowTpl.remove();
+		existingRows.forEach( function ( el ) {
+			el.remove();
+		} );
 
 		this.initGroupSearch( clone, groupConfig, values.length );
 
@@ -560,6 +578,14 @@
 			return;
 		}
 
+		// container на этом уровне уже содержит шаблонные узлы pf-filter-parent-N /
+		// pf-filter-row-N — либо оригинальные (уровень 1, внутри templateRoot),
+		// либо их неиспользуемые копии (если container — часть только что
+		// склонированного родителя предыдущего уровня, а вместе с ним скопировалось
+		// и всё вложенное поддерево шаблонов). В обоих случаях после наполнения
+		// контейнера реальными данными эти узлы — лишние, их нужно убрать.
+		var staleTemplateNodes = qsa( container, '[pf-filter-parent-' + level + '], [pf-filter-row-' + level + ']' );
+
 		items.forEach( function ( item ) {
 			if ( item.children && item.children.length > 0 ) {
 				var parentTpl = qs( templateRoot, '[pf-filter-parent-' + level + ']' );
@@ -587,6 +613,10 @@
 
 				container.appendChild( rowClone );
 			}
+		} );
+
+		staleTemplateNodes.forEach( function ( el ) {
+			el.remove();
 		} );
 	};
 
@@ -674,6 +704,9 @@
 			order: this.state.order,
 			paged: this.state.paged,
 			posts_per_page: this.perPage,
+			// Тема часто строит ссылки карточки (например «В корзину») от текущего URL —
+			// сервер подставляет этот URL на время рендера вместо адреса REST-эндпоинта.
+			page_url: window.location.href,
 		};
 
 		var self = this;
@@ -788,8 +821,13 @@
 
 		var self = this;
 		var list = qs( this.sortEl, '.w-dropdown-list' );
-		var optionTpl = qs( this.sortEl, '[pf-sort-option]' );
 		var triggerLabel = qs( this.sortEl, '[pf-sort-trigger-label]' );
+		// Снимок ДО клонирования: может содержать не только сам шаблон, но и
+		// дизайн-превью — например несколько статичных «Опция» внутри вложенной
+		// обёртки, которые верстальщик не убрал. Все они должны быть удалены,
+		// а не только тот единственный элемент, который мы взяли как шаблон.
+		var existingOptions = qsa( this.sortEl, '[pf-sort-option]' );
+		var optionTpl = existingOptions[ 0 ];
 
 		if ( ! optionTpl || ! list ) {
 			console.warn( 'PF Filter: [pf-sort-option] не найден, список сортировки не построен.' );
@@ -813,7 +851,9 @@
 			list.appendChild( clone );
 		} );
 
-		optionTpl.remove();
+		existingOptions.forEach( function ( el ) {
+			el.remove();
+		} );
 
 		if ( sortOptions.length ) {
 			this.applyOrderby( sortOptions[ 0 ].value );
@@ -920,6 +960,15 @@
 			var pagesContainer = document.querySelector( '[pf-pagination-pages]' );
 			var itemTpl = document.querySelector( '[pf-page-item]' );
 			if ( pagesContainer && itemTpl ) {
+				// Кроме самого шаблона и наших предыдущих клонов, в разметке может
+				// остаться статичный дизайн-превью (например, Webflow-пример «активной
+				// второй страницы») — его тоже нужно убрать, иначе он будет висеть рядом
+				// с реальной пагинацией.
+				qsa( pagesContainer, '[pf-page-item]' ).forEach( function ( el ) {
+					if ( el !== itemTpl && ! el.hasAttribute( 'data-pf-generated' ) ) {
+						el.remove();
+					}
+				} );
 				qsa( pagesContainer, '[data-pf-generated]' ).forEach( function ( el ) {
 					el.remove();
 				} );
@@ -981,6 +1030,15 @@
 
 	PFForm.prototype.initActiveFilters = function () {
 		var self = this;
+
+		// [pf-active-chip] — шаблон одного чипа, который клонируется в updateActiveFilters().
+		// Сам шаблон должен быть скрыт сразу, а не только после первого реального
+		// обновления фильтров — иначе на пустой странице виден необработанный чип
+		// с текстом-заглушкой из разметки.
+		qsa( document, '[pf-active-chip]' ).forEach( function ( chipTpl ) {
+			chipTpl.classList.add( 'pf-hidden' );
+		} );
+
 		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
 			btn.addEventListener( 'click', function () {
 				self.resetAllFilters();
