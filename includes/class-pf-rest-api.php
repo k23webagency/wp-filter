@@ -119,9 +119,10 @@ class PF_REST_API {
 			'groups'       => $this->attributes->get_groups( $category ),
 			'sort_options' => $settings['sort_options'],
 			'settings'     => array(
-				'logic'            => $settings['logic'],
-				'search_threshold' => (int) $settings['search_threshold'],
-				'show_counts'      => (bool) $settings['show_counts'],
+				'logic'               => $settings['logic'],
+				'search_threshold'    => (int) $settings['search_threshold'],
+				'show_counts'         => (bool) $settings['show_counts'],
+				'pagination_strategy' => $settings['pagination_strategy'],
 			),
 		);
 

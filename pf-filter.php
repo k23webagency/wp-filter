@@ -3,7 +3,7 @@
  * Plugin Name:       PF Filter
  * Plugin URI:        https://example.com/pf-filter
  * Description:       Движок фильтрации каталога WooCommerce, работающий через HTML-атрибуты pf-* в разметке темы. Не диктует внешний вид карточек и сетки.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * WC requires at least: 7.0
@@ -16,7 +16,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Константы плагина.
-define( 'PF_FILTER_VERSION', '1.1.0' );
+define( 'PF_FILTER_VERSION', '1.2.0' );
 define( 'PF_FILTER_FILE', __FILE__ );
 define( 'PF_FILTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'PF_FILTER_URL', plugin_dir_url( __FILE__ ) );

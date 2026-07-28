@@ -148,11 +148,14 @@ class PF_Admin {
 		$input = is_array( $input ) ? $input : array();
 		$clean = PF_Config::get_defaults();
 
-		$clean['logic']            = in_array( $input['logic'] ?? '', array( 'and', 'or' ), true ) ? $input['logic'] : 'and';
-		$clean['search_threshold'] = isset( $input['search_threshold'] ) ? absint( $input['search_threshold'] ) : 7;
-		$clean['show_counts']      = ! empty( $input['show_counts'] );
-		$clean['tree_depth']       = isset( $input['tree_depth'] ) ? max( 1, absint( $input['tree_depth'] ) ) : 4;
-		$clean['scan_url']         = isset( $input['scan_url'] ) ? esc_url_raw( $input['scan_url'] ) : '';
+		$clean['logic']              = in_array( $input['logic'] ?? '', array( 'and', 'or' ), true ) ? $input['logic'] : 'and';
+		$clean['search_threshold']   = isset( $input['search_threshold'] ) ? absint( $input['search_threshold'] ) : 7;
+		$clean['show_counts']        = ! empty( $input['show_counts'] );
+		$clean['tree_depth']         = isset( $input['tree_depth'] ) ? max( 1, absint( $input['tree_depth'] ) ) : 4;
+		$clean['scan_url']           = isset( $input['scan_url'] ) ? esc_url_raw( $input['scan_url'] ) : '';
+		$clean['pagination_strategy'] = in_array( $input['pagination_strategy'] ?? '', PF_Config::PAGINATION_STRATEGIES, true )
+			? $input['pagination_strategy']
+			: 'pages';
 
 		$clean['groups']       = $this->sanitize_groups( $input['groups'] ?? array() );
 		$clean['sort_options'] = $this->sanitize_sort_options( $input['sort_options'] ?? array() );
@@ -184,6 +187,7 @@ class PF_Admin {
 				'template' => sanitize_key( $group['template'] ?? 'checkbox' ),
 				'logic'    => in_array( $group['logic'] ?? 'or', array( 'and', 'or' ), true ) ? $group['logic'] : 'or',
 				'enabled'  => ! empty( $group['enabled'] ),
+				'search'   => ! empty( $group['search'] ),
 			);
 
 			if ( isset( $group['step'] ) && '' !== $group['step'] ) {
@@ -296,6 +300,9 @@ class PF_Admin {
 		$template = $group['template'] ?? 'checkbox';
 		$logic    = $group['logic'] ?? 'or';
 		$enabled  = ! empty( $group['enabled'] );
+		// По умолчанию (для новых групп и уже существующих без явной настройки)
+		// поиск включён — как и было раньше, до появления этого переключателя.
+		$search   = ! isset( $group['search'] ) || ! empty( $group['search'] );
 		$step     = $group['step'] ?? '';
 		$unit     = $group['unit'] ?? '';
 		$tree_d   = $group['tree_depth'] ?? '';
@@ -328,6 +335,12 @@ class PF_Admin {
 					<option value="or" <?php selected( $logic, 'or' ); ?>><?php esc_html_e( 'OR', 'pf-filter' ); ?></option>
 					<option value="and" <?php selected( $logic, 'and' ); ?>><?php esc_html_e( 'AND', 'pf-filter' ); ?></option>
 				</select>
+			</td>
+			<td>
+				<label title="<?php esc_attr_e( 'Если выключено — поле поиска в этой группе не показывается никогда, независимо от порога', 'pf-filter' ); ?>">
+					<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[search]" value="1" <?php checked( $search ); ?> />
+					<?php esc_html_e( 'Поиск', 'pf-filter' ); ?>
+				</label>
 			</td>
 			<td class="pf-extra-range">
 				<input type="number" step="any" name="<?php echo esc_attr( $n ); ?>[step]" value="<?php echo esc_attr( $step ); ?>" placeholder="<?php esc_attr_e( 'Шаг', 'pf-filter' ); ?>" style="width:70px" />

@@ -51,6 +51,23 @@
 		return prefix + '-' + uidCounter;
 	}
 
+	/**
+	 * Программно установить input.checked и разослать событие 'change'.
+	 *
+	 * Многие конструкторы (в т.ч. Webflow) рисуют кастомный чекбокс отдельным
+	 * элементом рядом со скрытым нативным input и обновляют его ТОЛЬКО по
+	 * событию change/click на этом input. Простое присвоение input.checked
+	 * такое событие не порождает — визуальный чекбокс останется в старом
+	 * состоянии, хотя реальное значение уже изменилось.
+	 */
+	function setChecked( input, value ) {
+		if ( ! input || input.checked === value ) {
+			return;
+		}
+		input.checked = value;
+		input.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+	}
+
 	/** Прочитать/записать значение элемента диапазона: input -> .value, иначе textContent. */
 	function getRangeDisplayValue( el ) {
 		if ( ! el ) {
@@ -104,6 +121,7 @@
 		this.abortController = null;
 		this.infiniteObserver = null;
 		this._forceReplace = false; // true когда список нужно заменить целиком (фильтр/сортировка/сброс), даже в режиме load-more/infinite.
+		this._suppressAutoFilter = false; // true во время пачечного восстановления/сброса контролов — подавляет автозапуск runFilter() по change.
 
 		this.runFilterDebounced = debounce( this.runFilter.bind( this ), 0 );
 		this.rangeDebounced = debounce( this.runFilter.bind( this ), 400 );
@@ -186,7 +204,11 @@
 			this.emptyEl.classList.add( 'is-hidden' );
 		}
 		this.paginationEl = document.querySelector( '[pf-pagination]' );
-		this.paginationMode = this.paginationEl ? this.paginationEl.getAttribute( 'pf-pagination' ) : null;
+		// Явное значение в разметке всегда в приоритете; если атрибута нет — берём
+		// стратегию по умолчанию из настроек админки (устанавливается ниже, после
+		// загрузки /config).
+		this._explicitPaginationMode = this.paginationEl ? this.paginationEl.getAttribute( 'pf-pagination' ) : null;
+		this.paginationMode = this._explicitPaginationMode;
 
 		var explicitLogic = this.formEl.getAttribute( 'pf-logic' );
 		this.logic = ( 'and' === explicitLogic || 'or' === explicitLogic ) ? explicitLogic : 'and';
@@ -200,6 +222,7 @@
 				if ( ! self.formEl.getAttribute( 'pf-logic' ) ) {
 					self.logic = ( config.settings && config.settings.logic ) || 'and';
 				}
+				self.paginationMode = self._explicitPaginationMode || ( config.settings && config.settings.pagination_strategy ) || null;
 
 				if ( self.outputEl && self.templatesEl ) {
 					self.buildGroups( config.groups || [] );
@@ -338,6 +361,9 @@
 					label.setAttribute( 'for', id );
 				}
 				input.addEventListener( 'change', function () {
+					if ( self._suppressAutoFilter ) {
+						return;
+					}
 					self.runFilter( { resetPage: true, forceReplace: true } );
 				} );
 			} else if ( isTags ) {
@@ -388,14 +414,19 @@
 		}
 	};
 
-	/** Поиск внутри группы: показать/скрыть по порогу, фильтровать строки по вводу. */
+	/** Поиск внутри группы: показать/скрыть по порогу (или отключить принудительно), фильтровать строки по вводу. */
 	PFForm.prototype.initGroupSearch = function ( groupClone, groupConfig, valuesCount ) {
 		var searchInput = qs( groupClone, 'input[type="text"]' );
 		if ( ! searchInput ) {
 			return;
 		}
 
-		if ( valuesCount < this.searchThreshold ) {
+		// Админ может полностью отключить поиск для конкретной группы (search:
+		// false в настройках группы) — независимо от порога и числа значений.
+		// По умолчанию (search не задан) — обычное поведение по порогу.
+		var searchDisabled = false === groupConfig.search;
+
+		if ( searchDisabled || valuesCount < this.searchThreshold ) {
 			searchInput.classList.add( 'pf-hidden' );
 		} else {
 			searchInput.classList.remove( 'pf-hidden' );
@@ -606,7 +637,26 @@
 
 		this.buildTreeLevel( groupConfig.values || [], rootContainer, 1, clone );
 
+		// В отличие от плоских списков, дерево категорий раньше вообще не
+		// получало обработку поиска — поле поиска, если оно есть в шаблоне,
+		// никогда не скрывалось и не фильтровало. Считаем общее число узлов
+		// на всех уровнях дерева и применяем ту же логику, что и для остальных
+		// групп (порог показа + отключение через настройки группы).
+		this.initGroupSearch( clone, groupConfig, this.countTreeValues( groupConfig.values || [] ) );
+
 		return clone;
+	};
+
+	/** Посчитать общее количество узлов дерева на всех уровнях (для порога показа поиска). */
+	PFForm.prototype.countTreeValues = function ( items ) {
+		var total = 0;
+		items.forEach( function ( item ) {
+			total += 1;
+			if ( item.children && item.children.length ) {
+				total += this.countTreeValues( item.children );
+			}
+		}, this );
+		return total;
 	};
 
 	PFForm.prototype.buildTreeLevel = function ( items, container, level, templateRoot ) {
@@ -663,6 +713,9 @@
 		qsa( clone, 'input[type="checkbox"], input[type="radio"]' ).forEach( function ( input ) {
 			input.value = value;
 			input.addEventListener( 'change', function () {
+				if ( self._suppressAutoFilter ) {
+					return;
+				}
 				self.runFilter( { resetPage: true, forceReplace: true } );
 			} );
 		} );
@@ -941,7 +994,9 @@
 	// -----------------------------------------------------------------
 
 	PFForm.prototype.initPagination = function () {
-		if ( ! this.paginationEl || ! this.paginationMode ) {
+		// this.paginationEl не обязателен — режим может быть взят из настроек
+		// админки, даже если атрибут pf-pagination нигде в разметке не указан.
+		if ( ! this.paginationMode ) {
 			return;
 		}
 
@@ -1036,7 +1091,11 @@
 						}.bind( this ) );
 					}.bind( this ) )( i );
 
-					pagesContainer.appendChild( clone );
+					// Вставляем на место шаблона (перед itemTpl), а не в конец
+					// контейнера — иначе номера страниц оказываются ПОСЛЕ
+					// pf-page-next, если в разметке стрелки лежат внутри того же
+					// контейнера, что и pf-page-item (частый случай).
+					itemTpl.insertAdjacentElement( 'beforebegin', clone );
 				}
 				itemTpl.classList.add( 'pf-hidden' );
 			}
@@ -1097,10 +1156,15 @@
 	};
 
 	PFForm.prototype.resetAllFilters = function () {
+		// Пока сбрасываем контролы группа за группой, не даём каждому отдельному
+		// change-событию запускать свой runFilter() — иначе на N чекбоксов будет
+		// N лишних запросов вместо одного общего в конце.
+		this._suppressAutoFilter = true;
+
 		Object.keys( this.groups ).forEach( function ( field ) {
 			var group = this.groups[ field ];
 			qsa( group.el, 'input[type="checkbox"], input[type="radio"]' ).forEach( function ( input ) {
-				input.checked = false;
+				setChecked( input, false );
 			} );
 			qsa( group.el, '[data-pf-value].is-active' ).forEach( function ( row ) {
 				row.classList.remove( 'is-active' );
@@ -1125,6 +1189,7 @@
 			}
 		}, this );
 
+		this._suppressAutoFilter = false;
 		this.runFilter( { resetPage: true, forceReplace: true } );
 	};
 
@@ -1207,7 +1272,9 @@
 		if ( row ) {
 			var input = qs( row, 'input' );
 			if ( input ) {
-				input.checked = false;
+				this._suppressAutoFilter = true;
+				setChecked( input, false );
+				this._suppressAutoFilter = false;
 			}
 			row.classList.remove( 'is-active' );
 		}
@@ -1283,6 +1350,10 @@
 		var self = this;
 		var hasRelevantParams = false;
 
+		// Восстанавливаем состояние контролов пачкой — не даём change-событиям
+		// от каждого отдельного чекбокса запускать свой runFilter().
+		this._suppressAutoFilter = true;
+
 		params.forEach( function ( rawValue, key ) {
 			if ( 'orderby' === key ) {
 				hasRelevantParams = true;
@@ -1313,12 +1384,14 @@
 				}
 				var input = qs( row, 'input' );
 				if ( input ) {
-					input.checked = true;
+					setChecked( input, true );
 				} else {
 					row.classList.add( 'is-active' );
 				}
 			} );
 		} );
+
+		this._suppressAutoFilter = false;
 
 		if ( hasRelevantParams ) {
 			this.runFilter( { forceReplace: true } );

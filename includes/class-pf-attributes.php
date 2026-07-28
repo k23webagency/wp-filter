@@ -208,6 +208,7 @@ class PF_Attributes {
 			'label'    => isset( $config['label'] ) ? $config['label'] : $taxonomy,
 			'template' => isset( $config['template'] ) ? $config['template'] : 'checkbox',
 			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'values'   => $values,
 		);
 	}
@@ -427,6 +428,7 @@ class PF_Attributes {
 			'label'    => isset( $config['label'] ) ? $config['label'] : $raw_name,
 			'template' => isset( $config['template'] ) ? $config['template'] : 'checkbox',
 			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'values'   => $values,
 		);
 	}
@@ -518,6 +520,7 @@ class PF_Attributes {
 			'label'      => isset( $config['label'] ) ? $config['label'] : 'Категории',
 			'template'   => 'category-tree',
 			'logic'      => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'     => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'tree_depth' => $depth,
 			'values'     => $this->get_category_tree( 0, $depth, 1 ),
 		);

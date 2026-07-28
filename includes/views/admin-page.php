@@ -74,6 +74,16 @@ defined( 'ABSPATH' ) || exit;
 						<p class="description"><?php esc_html_e( 'Страница с разметкой pf-template. Если не задано — используется стандартный список из 7 шаблонов.', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
+				<tr>
+					<th><?php esc_html_e( 'Стратегия пагинации по умолчанию', 'pf-filter' ); ?></th>
+					<td>
+						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="pages" <?php checked( $settings['pagination_strategy'], 'pages' ); ?> /> <?php esc_html_e( 'Страницы', 'pf-filter' ); ?></label><br />
+						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="load-more" <?php checked( $settings['pagination_strategy'], 'load-more' ); ?> /> <?php esc_html_e( 'Кнопка «Загрузить ещё»', 'pf-filter' ); ?></label><br />
+						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="both" <?php checked( $settings['pagination_strategy'], 'both' ); ?> /> <?php esc_html_e( 'Кнопка + страницы вместе', 'pf-filter' ); ?></label><br />
+						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="infinite" <?php checked( $settings['pagination_strategy'], 'infinite' ); ?> /> <?php esc_html_e( 'Автозагрузка по скроллу', 'pf-filter' ); ?></label>
+						<p class="description"><?php esc_html_e( 'Используется, если атрибут pf-pagination не указан в разметке явно (явное значение в разметке всегда в приоритете).', 'pf-filter' ); ?></p>
+					</td>
+				</tr>
 			</table>
 		</div>
 
@@ -89,6 +99,7 @@ defined( 'ABSPATH' ) || exit;
 						<th><?php esc_html_e( 'Название', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Шаблон', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Логика в группе', 'pf-filter' ); ?></th>
+						<th><?php esc_html_e( 'Поиск', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Range: шаг / ед.', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Дерево: глубина', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></th>

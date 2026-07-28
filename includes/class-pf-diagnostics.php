@@ -106,7 +106,45 @@ class PF_Diagnostics {
 			$debug_log_enabled ? '' : __( 'Логирование ошибок отключено — debug.log вести не будет.', 'pf-filter' )
 		);
 
+		$checks[] = $this->check_card_template_override();
+
 		return $checks;
+	}
+
+	/**
+	 * Плагин рендерит карточки товара через wc_get_template_part('content','product') —
+	 * ту же функцию, что вызывает тема при обычной загрузке страницы. Но если
+	 * тема сама эту функцию не использует (например, рисует карточку вручную
+	 * прямо в своём шаблоне архива, как в Webflow-сборках), а woocommerce/content-product.php
+	 * в теме не переопределён — при AJAX-обновлении подставится карточка ПО
+	 * УМОЛЧАНИЮ из WooCommerce (с кнопкой «В корзину» и бейджем «Распродажа»),
+	 * которая не будет совпадать с реальным оформлением темы.
+	 *
+	 * @return array
+	 */
+	private function check_card_template_override() {
+		if ( ! function_exists( 'wc_locate_template' ) ) {
+			return $this->make_check(
+				'content_product_override',
+				__( 'Переопределение шаблона карточки (content-product.php)', 'pf-filter' ),
+				false,
+				'warning',
+				__( 'WooCommerce не активен — проверить нельзя.', 'pf-filter' )
+			);
+		}
+
+		$template_path   = wc_locate_template( 'content-product.php' );
+		$is_theme_override = $template_path && false !== strpos( wp_normalize_path( $template_path ), wp_normalize_path( get_stylesheet_directory() ) );
+
+		return $this->make_check(
+			'content_product_override',
+			__( 'Переопределение шаблона карточки (content-product.php)', 'pf-filter' ),
+			$is_theme_override,
+			'warning',
+			$is_theme_override
+				? $template_path
+				: __( 'Тема не переопределяет woocommerce/content-product.php. Если тема рендерит карточку на странице каталога вручную (не через wc_get_template_part), AJAX-обновления от плагина будут показывать карточку по умолчанию из WooCommerce — с кнопкой «В корзину» и бейджем «Распродажа», без стилей темы. Решение: добавить в тему файл woocommerce/content-product.php с той же разметкой, что и в её собственном цикле товаров.', 'pf-filter' )
+		);
 	}
 
 	/**

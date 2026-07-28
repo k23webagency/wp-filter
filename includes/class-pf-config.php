@@ -20,6 +20,13 @@ class PF_Config {
 	const OPTION_KEY = 'pf_filter_settings';
 
 	/**
+	 * Допустимые значения стратегии пагинации.
+	 *
+	 * @var array
+	 */
+	const PAGINATION_STRATEGIES = array( 'load-more', 'pages', 'both', 'infinite' );
+
+	/**
 	 * Кэш настроек за запрос.
 	 *
 	 * @var array|null
@@ -38,6 +45,7 @@ class PF_Config {
 			'show_counts'        => true,
 			'tree_depth'         => 4,
 			'scan_url'           => '',
+			'pagination_strategy' => 'pages',
 			'groups'             => array(),
 			'sort_options'       => array(
 				array(
