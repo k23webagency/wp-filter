@@ -215,7 +215,8 @@ class PF_Diagnostics {
 
 		$checks = array();
 
-		$checks = array_merge( $checks, $this->check_required_attributes( $xpath ) );
+		$checks[] = $this->check_card_template_extraction( $url );
+		$checks   = array_merge( $checks, $this->check_required_attributes( $xpath ) );
 
 		$found_templates = $this->find_template_values( $xpath );
 		$checks          = array_merge( $checks, $this->check_group_templates( $xpath, $found_templates ) );
@@ -242,6 +243,29 @@ class PF_Diagnostics {
 			'status'  => $status,
 			'label'   => $label,
 			'message' => $message,
+		);
+	}
+
+	/**
+	 * Проверить, удалось ли автоматически извлечь шаблон карточки из PHP-файла
+	 * этой страницы (PF_Card_Template) — тот самый механизм, который рендерит
+	 * карточки при AJAX-фильтрации. Если не удалось — плагин молча откатится
+	 * на wc_get_template_part('content','product'), что может не совпадать
+	 * с оформлением темы (см. предупреждение про content-product.php выше).
+	 *
+	 * @param string $url URL страницы, которую анализируем.
+	 * @return array
+	 */
+	private function check_card_template_extraction( $url ) {
+		$card_template = new PF_Card_Template();
+		$cache_file    = $card_template->get_cached_template_file( $url );
+
+		return $this->result(
+			$cache_file ? 'ok' : 'warning',
+			__( 'Автоматическое извлечение шаблона карточки', 'pf-filter' ),
+			$cache_file
+				? __( 'Найден и используется PHP-шаблон страницы — карточки при AJAX-фильтрации рендерятся тем же кодом, что и при обычной загрузке.', 'pf-filter' )
+				: __( 'Не удалось найти/разобрать PHP-шаблон этой страницы. Плагин использует wc_get_template_part(\'content\',\'product\') — если тема не переопределяет content-product.php, карточки при AJAX-фильтрации могут отличаться от исходной страницы.', 'pf-filter' )
 		);
 	}
 

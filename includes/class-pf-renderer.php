@@ -14,14 +14,89 @@ defined( 'ABSPATH' ) || exit;
 class PF_Renderer {
 
 	/**
-	 * Рендерит карточки товаров результата запроса через тему.
-	 * Плагин не знает и не должен знать как выглядит карточка —
-	 * это template part `content-product.php` темы/WooCommerce.
+	 * Сканер/извлекатель шаблона карточки из PHP-файла реальной страницы.
 	 *
-	 * @param WP_Query $query Выполненный запрос товаров.
+	 * @var PF_Card_Template
+	 */
+	private $card_template;
+
+	/**
+	 * Конструктор.
+	 */
+	public function __construct() {
+		$this->card_template = new PF_Card_Template();
+	}
+
+	/**
+	 * Рендерит карточки товаров результата запроса.
+	 *
+	 * Приоритет — автоматически извлечённый из PHP-файла страницы шаблон
+	 * (см. PF_Card_Template): он воспроизводит карточку темы один в один,
+	 * включая условные блоки, без ручного создания content-product.php.
+	 * Если извлечь не удалось (или извлечённый код не выполнился без ошибок) —
+	 * откат на стандартный wc_get_template_part('content','product').
+	 *
+	 * @param WP_Query $query    Выполненный запрос товаров.
+	 * @param string   $page_url URL страницы каталога (для поиска её PHP-шаблона), может быть пустым.
 	 * @return string HTML карточек.
 	 */
-	public function render( WP_Query $query ) {
+	public function render( WP_Query $query, $page_url = '' ) {
+		if ( $page_url ) {
+			$cache_file = $this->card_template->get_cached_template_file( $page_url );
+			if ( $cache_file ) {
+				try {
+					return $this->render_with_extracted_template( $query, $cache_file );
+				} catch ( \Throwable $e ) {
+					// Извлечённый шаблон скомпилировался, но упал во время выполнения
+					// (например, вызвал функцию темы, которой в этом контексте нет) —
+					// тихо откатываемся на стандартный рендер ниже.
+					$query->rewind_posts();
+				}
+			}
+		}
+
+		return $this->render_default( $query );
+	}
+
+	/**
+	 * Рендер через кусок PHP, извлечённый из настоящего шаблона страницы:
+	 * include один раз на товар, с setup_postdata() перед каждым (через
+	 * $query->the_post()) — так же, как это делает сама тема в своём цикле.
+	 *
+	 * @param WP_Query $query      Выполненный запрос товаров.
+	 * @param string   $cache_file Путь к закэшированному извлечённому шаблону.
+	 * @return string
+	 */
+	private function render_with_extracted_template( WP_Query $query, $cache_file ) {
+		ob_start();
+
+		try {
+			while ( $query->have_posts() ) {
+				$query->the_post();
+				include $cache_file;
+			}
+		} catch ( \Throwable $e ) {
+			ob_end_clean();
+			wp_reset_postdata();
+			throw $e;
+		}
+
+		$html = ob_get_clean();
+		wp_reset_postdata();
+
+		return $html;
+	}
+
+	/**
+	 * Стандартный рендер через WooCommerce loop — используется если
+	 * извлечь шаблон страницы не удалось (или он не заработал).
+	 * Тема может переопределить эту карточку через свой
+	 * woocommerce/content-product.php.
+	 *
+	 * @param WP_Query $query Выполненный запрос товаров.
+	 * @return string
+	 */
+	private function render_default( WP_Query $query ) {
 		ob_start();
 
 		if ( function_exists( 'wc_set_loop_prop' ) ) {

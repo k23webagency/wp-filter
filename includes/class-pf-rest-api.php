@@ -208,7 +208,7 @@ class PF_REST_API {
 		}
 
 		try {
-			return $this->renderer->render( $query );
+			return $this->renderer->render( $query, $page_url );
 		} finally {
 			if ( $replaced ) {
 				$_SERVER['REQUEST_URI'] = $original_request_uri;
