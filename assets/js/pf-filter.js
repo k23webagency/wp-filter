@@ -219,6 +219,7 @@
 				self.config = config;
 				self.showCounts = !! ( config.settings && config.settings.show_counts );
 				self.searchThreshold = ( config.settings && config.settings.search_threshold ) || 7;
+				self.perPage = ( config.settings && config.settings.posts_per_page ) || 12;
 				if ( ! self.formEl.getAttribute( 'pf-logic' ) ) {
 					self.logic = ( config.settings && config.settings.logic ) || 'and';
 				}

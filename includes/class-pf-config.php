@@ -46,6 +46,7 @@ class PF_Config {
 			'tree_depth'         => 4,
 			'scan_url'           => '',
 			'pagination_strategy' => 'pages',
+			'posts_per_page'     => 12,
 			'groups'             => array(),
 			'sort_options'       => array(
 				array(

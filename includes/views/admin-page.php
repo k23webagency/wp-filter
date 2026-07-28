@@ -84,6 +84,12 @@ defined( 'ABSPATH' ) || exit;
 						<p class="description"><?php esc_html_e( 'Используется, если атрибут pf-pagination не указан в разметке явно (явное значение в разметке всегда в приоритете).', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
+				<tr>
+					<th><label for="pf-posts-per-page"><?php esc_html_e( 'Товаров на странице', 'pf-filter' ); ?></label></th>
+					<td>
+						<input type="number" min="1" id="pf-posts-per-page" name="pf_filter_settings[posts_per_page]" value="<?php echo esc_attr( $settings['posts_per_page'] ); ?>" style="width:80px" />
+					</td>
+				</tr>
 			</table>
 		</div>
 

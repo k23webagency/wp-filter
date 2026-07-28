@@ -123,6 +123,7 @@ class PF_REST_API {
 				'search_threshold'    => (int) $settings['search_threshold'],
 				'show_counts'         => (bool) $settings['show_counts'],
 				'pagination_strategy' => $settings['pagination_strategy'],
+				'posts_per_page'      => (int) $settings['posts_per_page'],
 			),
 		);
 
