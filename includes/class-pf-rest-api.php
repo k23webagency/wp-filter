@@ -162,6 +162,10 @@ class PF_REST_API {
 		$page_url = isset( $body['page_url'] ) ? esc_url_raw( (string) $body['page_url'] ) : '';
 		$html     = $this->render_in_page_context( $query, $page_url );
 
+		// "Активная категория" (авто-сужение счётчиков/видимости остальных
+		// групп) намеренно всё ещё захардкожена на product_cat — этот механизм
+		// не обобщён на произвольную таксономию/тип записи (см. ROADMAP.md);
+		// для не-WooCommerce настроек просто не активируется.
 		$active_category = isset( $filters['product_cat'][0] ) ? $filters['product_cat'][0] : '';
 		$groups          = $this->attributes->get_groups( $active_category );
 		$counts          = $this->renderer->get_counts( $groups, $filters, $logic, $this->query_builder );

@@ -60,7 +60,7 @@ class PF_Query {
 		// одним товаром, и границы цены схлопывались в цену этого товара.
 		$per_page = (int) $per_page;
 		$args     = array(
-			'post_type'           => 'product',
+			'post_type'           => PF_Config::get_post_type(),
 			'post_status'         => 'publish',
 			'paged'               => max( 1, absint( $paged ) ),
 			'posts_per_page'      => -1 === $per_page ? -1 : max( 1, absint( $per_page ) ),
@@ -77,12 +77,9 @@ class PF_Query {
 				continue;
 			}
 
-			if ( 'product_cat' === $field || 'product_tag' === $field ) {
-				$tax_clauses[] = $this->build_tax_clause( $field, $value );
-				continue;
-			}
-
-			if ( 0 === strpos( $field, 'pa_' ) && taxonomy_exists( $field ) ) {
+			// Любая реальная таксономия обрабатывается одинаково, независимо от
+			// её имени — раньше здесь были спецкейсы под product_cat/product_tag/pa_*.
+			if ( taxonomy_exists( $field ) ) {
 				$tax_clauses[] = $this->build_tax_clause( $field, $value );
 				continue;
 			}
@@ -175,7 +172,7 @@ class PF_Query {
 		$query = new WP_Query(
 			array_merge(
 				array(
-					'post_type'           => 'product',
+					'post_type'           => PF_Config::get_post_type(),
 					'post_status'         => 'publish',
 					'posts_per_page'      => -1,
 					'fields'              => 'ids',

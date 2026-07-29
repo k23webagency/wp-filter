@@ -97,7 +97,6 @@ class PF_Admin {
 			'pf-admin',
 			'pfAdminConfig',
 			array(
-				'realCategoryDepth'        => $this->attributes->get_real_category_depth(),
 				'fieldCompatibleTemplates' => $this->get_field_compatible_templates_map(),
 				'acfFieldsByField'         => $this->get_acf_fields_map(),
 			)
@@ -150,6 +149,9 @@ class PF_Admin {
 		$input = is_array( $input ) ? $input : array();
 		$clean = PF_Config::get_defaults();
 
+		$clean['post_type']          = array_key_exists( $input['post_type'] ?? '', $this->get_public_post_types() )
+			? $input['post_type']
+			: $clean['post_type'];
 		$clean['logic']              = in_array( $input['logic'] ?? '', array( 'and', 'or' ), true ) ? $input['logic'] : 'and';
 		$clean['search_threshold']   = isset( $input['search_threshold'] ) ? absint( $input['search_threshold'] ) : 7;
 		$clean['show_counts']        = ! empty( $input['show_counts'] );
@@ -272,6 +274,21 @@ class PF_Admin {
 	}
 
 	/**
+	 * Публичные типы записи сайта (в т.ч. кастомные) — источник для выпадашки
+	 * «Тип записи» в общих настройках. Ключ — слаг типа записи, значение —
+	 * его подпись (labels->name).
+	 *
+	 * @return array slug => label
+	 */
+	private function get_public_post_types() {
+		$out = array();
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $post_type ) {
+			$out[ $post_type->name ] = $post_type->labels->name ?? $post_type->name;
+		}
+		return $out;
+	}
+
+	/**
 	 * Отрендерить страницу настроек.
 	 */
 	public function render_page() {
@@ -279,33 +296,25 @@ class PF_Admin {
 			return;
 		}
 
-		$settings           = PF_Config::get_settings();
-		$available_fields   = array_merge(
-			$this->attributes->get_all_attribute_taxonomies(),
+		$settings         = PF_Config::get_settings();
+		$post_types       = $this->get_public_post_types();
+		$available_fields = array_merge(
+			$this->attributes->get_available_taxonomy_fields(),
 			array(
 				array(
 					'field' => 'price',
 					'label' => __( 'Цена', 'pf-filter' ),
 				),
-				array(
-					'field' => 'product_cat',
-					'label' => __( 'Категории', 'pf-filter' ),
-				),
-				array(
-					'field' => 'product_tag',
-					'label' => __( 'Метки', 'pf-filter' ),
-				),
 			)
 		);
-		$real_depth          = $this->attributes->get_real_category_depth();
-		$configured_depth    = (int) $settings['tree_depth'];
+		$configured_depth = (int) $settings['tree_depth'];
 		// Страница магазина используется как образец разметки для двух вспомогательных
 		// проверок ниже — списка доступных pf-template и доступности стратегий
 		// пагинации. Раньше для этого нужно было вручную вписывать URL в отдельное
 		// поле настроек; теперь берём тот же URL, что уже используется как дефолт
 		// для ручной диагностики разметки.
 		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
-		$available_templates    = $this->get_available_templates( $diagnostics_default_url );
+		$available_templates     = $this->get_available_templates( $diagnostics_default_url );
 		// Один скан образца разметки на всю страницу настроек — переиспользуется
 		// и для доступности стратегий пагинации, и для точечных предупреждений
 		// "для этой настройки в вёрстке нет нужного элемента" (см. ниже
@@ -347,13 +356,27 @@ class PF_Admin {
 		// Поля ACF термина ЭТОГО поля группы (если оно вообще таксономия) —
 		// список для выпадашки «поле с цветом». У кастомных атрибутов и цены
 		// термов не существует, для них всегда пусто.
-		$acf_fields = ( 'product_cat' === $field || 0 === strpos( $field, 'pa_' ) )
-			? $this->attributes->get_acf_term_fields( $field )
-			: array();
+		$acf_fields = taxonomy_exists( $field ) ? $this->attributes->get_acf_term_fields( $field ) : array();
 		// null — сканирование недоступно (тогда ничего не предупреждаем, как и
 		// в остальных местах, завязанных на скан образца разметки).
 		$search_available = $scan_xpath ? PF_Diagnostics::has_text_input( $scan_xpath, $template ) : null;
 		$colors_available = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter-swatch', $template ) : null;
+		// Реальная глубина дерева этой таксономии vs эффективно настроенная
+		// (своя tree_depth группы, иначе глобальная настройка) — только для
+		// иерархических таксономий с шаблоном category-tree.
+		$tree_depth_warning = null;
+		if ( 'category-tree' === $template && taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) ) {
+			$effective_depth = '' !== $tree_d ? (int) $tree_d : (int) PF_Config::get( 'tree_depth', 4 );
+			$real_depth      = $this->attributes->get_real_category_depth( $field );
+			if ( $real_depth > $effective_depth ) {
+				$tree_depth_warning = sprintf(
+					/* translators: 1: реальная глубина дерева, 2: настроенная глубина */
+					__( 'реальная глубина — %1$d, показывается %2$d', 'pf-filter' ),
+					$real_depth,
+					$effective_depth
+				);
+			}
+		}
 		?>
 		<tr class="pf-group-row" draggable="true" data-index="<?php echo esc_attr( $index ); ?>">
 			<td class="pf-drag-handle" title="<?php esc_attr_e( 'Перетащить для изменения порядка', 'pf-filter' ); ?>">☰</td>
@@ -398,6 +421,9 @@ class PF_Admin {
 			</td>
 			<td class="pf-extra-tree">
 				<input type="number" min="1" name="<?php echo esc_attr( $n ); ?>[tree_depth]" value="<?php echo esc_attr( $tree_d ); ?>" placeholder="<?php esc_attr_e( 'Глубина', 'pf-filter' ); ?>" style="width:70px" />
+				<?php if ( $tree_depth_warning ) : ?>
+					<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'Значения глубже настроенного уровня не будут показаны в этой группе.', 'pf-filter' ); ?>">⚠ <?php echo esc_html( $tree_depth_warning ); ?></span>
+				<?php endif; ?>
 			</td>
 			<td class="pf-extra-colors">
 				<select name="<?php echo esc_attr( $n ); ?>[color_meta_key]" class="pf-color-meta-select" title="<?php esc_attr_e( 'Поле ACF/term meta термина, где хранится его цвет.', 'pf-filter' ); ?>">
@@ -462,19 +488,11 @@ class PF_Admin {
 	 */
 	private function get_field_compatible_templates_map() {
 		$fields = array_merge(
-			$this->attributes->get_all_attribute_taxonomies(),
+			$this->attributes->get_available_taxonomy_fields(),
 			array(
 				array(
 					'field' => 'price',
 					'label' => __( 'Цена', 'pf-filter' ),
-				),
-				array(
-					'field' => 'product_cat',
-					'label' => __( 'Категории', 'pf-filter' ),
-				),
-				array(
-					'field' => 'product_tag',
-					'label' => __( 'Метки', 'pf-filter' ),
 				),
 			)
 		);
@@ -490,19 +508,18 @@ class PF_Admin {
 	/**
 	 * Карта field => поля ACF термина этой таксономии, для JS страницы
 	 * настроек — выпадашка «поле с цветом» у группы сужается под выбранное
-	 * поле. Только для реальных таксономий (pa_*, product_cat) — у
-	 * кастомных/локальных атрибутов термов не существует.
+	 * поле. Только для реальных таксономий — у кастомных/локальных атрибутов
+	 * термов не существует.
 	 *
 	 * @return array
 	 */
 	private function get_acf_fields_map() {
 		$map = array();
-		foreach ( $this->attributes->get_all_attribute_taxonomies() as $f ) {
-			if ( 0 === strpos( $f['field'], 'pa_' ) ) {
+		foreach ( $this->attributes->get_available_taxonomy_fields() as $f ) {
+			if ( taxonomy_exists( $f['field'] ) ) {
 				$map[ $f['field'] ] = $this->attributes->get_acf_term_fields( $f['field'] );
 			}
 		}
-		$map['product_cat'] = $this->attributes->get_acf_term_fields( 'product_cat' );
 
 		return $map;
 	}

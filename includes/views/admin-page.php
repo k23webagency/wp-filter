@@ -1,8 +1,8 @@
 <?php
 /**
  * Разметка страницы настроек PF Filter.
- * Переменные приходят из PF_Admin::render_page(): $settings, $available_fields,
- * $real_depth, $configured_depth, $available_templates.
+ * Переменные приходят из PF_Admin::render_page(): $settings, $post_types,
+ * $available_fields, $configured_depth, $available_templates.
  *
  * @package PF_Filter
  */
@@ -11,21 +11,6 @@ defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap pf-filter-admin">
 	<h1><?php esc_html_e( 'PF Filter — настройки', 'pf-filter' ); ?></h1>
-
-	<?php if ( $real_depth > $configured_depth ) : ?>
-		<div class="notice notice-warning">
-			<p>
-				<?php
-				printf(
-					/* translators: 1: реальная глубина дерева категорий, 2: настроенная глубина шаблона */
-					esc_html__( 'ⓘ Реальная глубина дерева категорий — %1$d уровней, шаблон поддерживает %2$d. Категории глубже поддерживаемого уровня не будут показаны в фильтре. Расширьте шаблон category-tree или увеличьте «Глубину дерева» ниже.', 'pf-filter' ),
-					(int) $real_depth,
-					(int) $configured_depth
-				);
-				?>
-			</p>
-		</div>
-	<?php endif; ?>
 
 	<h2 class="nav-tab-wrapper pf-tabs">
 		<a href="#pf-tab-global" class="nav-tab nav-tab-active" data-tab="global"><?php esc_html_e( 'Общие настройки', 'pf-filter' ); ?></a>
@@ -39,6 +24,17 @@ defined( 'ABSPATH' ) || exit;
 
 		<div class="pf-tab-panel" id="pf-tab-global" data-tab="global">
 			<table class="form-table">
+				<tr>
+					<th><label for="pf-post-type"><?php esc_html_e( 'Тип записи', 'pf-filter' ); ?></label></th>
+					<td>
+						<select id="pf-post-type" name="pf_filter_settings[post_type]">
+							<?php foreach ( $post_types as $slug => $post_type_label ) : ?>
+								<option value="<?php echo esc_attr( $slug ); ?>" <?php selected( $settings['post_type'], $slug ); ?>><?php echo esc_html( $post_type_label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+						<p class="description"><?php esc_html_e( 'Какой тип записи фильтрует плагин. При смене типа записи группы фильтров, настроенные под старый тип, нужно будет пересобрать вручную — поле группы, ссылающееся на таксономию другого типа записи, работать не будет.', 'pf-filter' ); ?></p>
+					</td>
+				</tr>
 				<tr>
 					<th><?php esc_html_e( 'Логика между группами', 'pf-filter' ); ?></th>
 					<td>
@@ -71,10 +67,10 @@ defined( 'ABSPATH' ) || exit;
 					</td>
 				</tr>
 				<tr>
-					<th><label for="pf-tree-depth"><?php esc_html_e( 'Глубина дерева категорий', 'pf-filter' ); ?></label></th>
+					<th><label for="pf-tree-depth"><?php esc_html_e( 'Глубина дерева категорий (по умолчанию)', 'pf-filter' ); ?></label></th>
 					<td>
 						<input type="number" min="1" id="pf-tree-depth" name="pf_filter_settings[tree_depth]" value="<?php echo esc_attr( $configured_depth ); ?>" />
-						<p class="description"><?php esc_html_e( 'Реальная глубина на сайте: ', 'pf-filter' ); ?><?php echo esc_html( $real_depth ); ?></p>
+						<p class="description"><?php esc_html_e( 'Используется для групп с шаблоном category-tree, у которых глубина не задана явно в самой группе. Реальная глубина по каждой такой группе сравнивается с эффективной на вкладке «Группы фильтров».', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
 				<?php
@@ -172,7 +168,7 @@ defined( 'ABSPATH' ) || exit;
 								array(
 									'field'    => $f['field'],
 									'label'    => $f['label'],
-									'template' => 'price' === $f['field'] ? 'range' : ( 'product_cat' === $f['field'] ? 'category-tree' : 'checkbox' ),
+									'template' => 'price' === $f['field'] ? 'range' : ( is_taxonomy_hierarchical( $f['field'] ) ? 'category-tree' : 'checkbox' ),
 									'logic'    => 'or',
 									'enabled'  => true,
 								),

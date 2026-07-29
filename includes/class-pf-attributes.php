@@ -1,6 +1,7 @@
 <?php
 /**
- * Сканирование таксономий и атрибутов WooCommerce, построение данных для /config.
+ * Сканирование таксономий настроенного типа записи (плюс кастомные/локальные
+ * атрибуты товаров — WooCommerce-специфика) и построение данных для /config.
  *
  * @package PF_Filter
  */
@@ -68,25 +69,28 @@ class PF_Attributes {
 
 	/**
 	 * Если в настройках ещё нет ни одной сконфигурированной группы — построить
-	 * набор по умолчанию из всех зарегистрированных атрибутов WooCommerce
-	 * (глобальных таксономий pa_* и кастомных/локальных атрибутов товаров),
-	 * плюс цена и дерево категорий.
+	 * набор по умолчанию из всех публичных таксономий настроенного типа
+	 * записи (см. PF_Config::get_post_type()) плюс кастомные/локальные
+	 * атрибуты товаров (WooCommerce-специфика, см. scan_custom_attributes())
+	 * и цену.
 	 *
 	 * @return array
 	 */
 	private function build_default_group_configs() {
-		$configs = array();
+		$post_type = PF_Config::get_post_type();
+		$configs   = array();
 
-		if ( function_exists( 'wc_get_attribute_taxonomies' ) ) {
-			foreach ( wc_get_attribute_taxonomies() as $taxonomy ) {
-				$configs[] = array(
-					'field'    => 'pa_' . $taxonomy->attribute_name,
-					'label'    => $taxonomy->attribute_label,
-					'template' => 'checkbox',
-					'logic'    => 'or',
-					'enabled'  => true,
-				);
+		foreach ( get_object_taxonomies( $post_type, 'objects' ) as $taxonomy ) {
+			if ( ! $taxonomy->public ) {
+				continue;
 			}
+			$configs[] = array(
+				'field'    => $taxonomy->name,
+				'label'    => $taxonomy->label,
+				'template' => $taxonomy->hierarchical ? 'category-tree' : 'checkbox',
+				'logic'    => 'or',
+				'enabled'  => true,
+			);
 		}
 
 		foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
@@ -103,23 +107,6 @@ class PF_Attributes {
 			'field'    => 'price',
 			'label'    => 'Цена',
 			'template' => 'range',
-			'enabled'  => true,
-		);
-
-		$configs[] = array(
-			'field'      => 'product_cat',
-			'label'      => 'Категории',
-			'template'   => 'category-tree',
-			'logic'      => 'or',
-			'enabled'    => true,
-			'tree_depth' => (int) PF_Config::get( 'tree_depth', 4 ),
-		);
-
-		$configs[] = array(
-			'field'    => 'product_tag',
-			'label'    => 'Метки',
-			'template' => 'checkbox',
-			'logic'    => 'or',
 			'enabled'  => true,
 		);
 
@@ -145,19 +132,17 @@ class PF_Attributes {
 			return $this->build_price_group( $config, $category_product_ids );
 		}
 
-		if ( 'product_cat' === $field ) {
-			// Категории — не обязательно дерево: админ может выбрать любой из
-			// плоских шаблонов (checkbox/radio/tags/dropdown-*) точно так же,
-			// как для обычного таксономического атрибута. category-tree — только
-			// когда шаблон явно выбран таким (или не задан вовсе — по умолчанию).
-			$template = isset( $config['template'] ) ? $config['template'] : 'category-tree';
-			if ( 'category-tree' === $template ) {
+		// Любая реальная таксономия обрабатывается одинаково, независимо от
+		// её имени (раньше здесь были спецкейсы под product_cat/product_tag/pa_*).
+		// category-tree — только когда шаблон явно выбран таким (или не задан
+		// вовсе для иерархической таксономии) И таксономия действительно
+		// иерархическая; для плоской таксономии дерево не имеет смысла.
+		if ( taxonomy_exists( $field ) ) {
+			$hierarchical = is_taxonomy_hierarchical( $field );
+			$template     = isset( $config['template'] ) ? $config['template'] : ( $hierarchical ? 'category-tree' : 'checkbox' );
+			if ( 'category-tree' === $template && $hierarchical ) {
 				return $this->build_category_tree_group( $config );
 			}
-			return $this->build_taxonomy_group( $config, $category_product_ids );
-		}
-
-		if ( 'product_tag' === $field || 0 === strpos( $field, 'pa_' ) ) {
 			return $this->build_taxonomy_group( $config, $category_product_ids );
 		}
 
@@ -173,7 +158,9 @@ class PF_Attributes {
 	}
 
 	/**
-	 * Группа фильтра по товарному атрибуту WooCommerce (pa_*).
+	 * Группа фильтра по значениям обычной (плоской или иерархической — тогда
+	 * это плоский список без вложенности, см. build_category_tree_group())
+	 * таксономии.
 	 *
 	 * @param array      $config               Конфигурация группы.
 	 * @param int[]|null $category_product_ids ID товаров текущей категории, или null.
@@ -301,6 +288,11 @@ class PF_Attributes {
 
 	/**
 	 * ID опубликованных товаров в заданной категории (для авто-релевантности групп).
+	 *
+	 * Намеренно всё ещё захардкожено на product_cat/post_type=product — этот
+	 * механизм ("активная категория" в /config сужает счётчики/видимость
+	 * остальных групп) пока не обобщён на произвольную таксономию/тип записи;
+	 * для не-WooCommerce настроек он просто не активируется (см. ROADMAP.md).
 	 *
 	 * @param string $category_slug Slug категории товаров.
 	 * @return int[]
@@ -560,19 +552,26 @@ class PF_Attributes {
 	}
 
 	/**
-	 * Группа фильтра — дерево категорий товаров.
+	 * Группа фильтра — дерево значений иерархической таксономии (для
+	 * WooCommerce-товаров это обычно product_cat, для блога — category,
+	 * либо любая другая иерархическая таксономия выбранного типа записи).
 	 *
-	 * @param array $config Конфигурация группы.
-	 * @return array
+	 * @param array $config Конфигурация группы (field — таксономия).
+	 * @return array|null
 	 */
 	private function build_category_tree_group( array $config ) {
+		$taxonomy = isset( $config['field'] ) ? $config['field'] : '';
+		if ( '' === $taxonomy || ! taxonomy_exists( $taxonomy ) ) {
+			return null;
+		}
+
 		$depth = isset( $config['tree_depth'] ) ? (int) $config['tree_depth'] : (int) PF_Config::get( 'tree_depth', 4 );
-		$tree  = $this->get_category_tree( 0, $depth, 1 );
+		$tree  = $this->get_category_tree( $taxonomy, 0, $depth, 1 );
 		$tree  = $this->sort_values( $tree, $config['value_sort'] ?? 'name_asc' );
 
 		return array(
-			'field'      => 'product_cat',
-			'label'      => isset( $config['label'] ) ? $config['label'] : 'Категории',
+			'field'      => $taxonomy,
+			'label'      => isset( $config['label'] ) ? $config['label'] : $taxonomy,
 			'template'   => 'category-tree',
 			'logic'      => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'     => ! array_key_exists( 'search', $config ) || false !== $config['search'],
@@ -624,21 +623,22 @@ class PF_Attributes {
 	}
 
 	/**
-	 * Рекурсивно построить дерево категорий товаров начиная с parent_id.
+	 * Рекурсивно построить дерево значений таксономии начиная с parent_id.
 	 *
-	 * @param int $parent_id ID родительского термина (0 — корень).
-	 * @param int $max_depth Максимальная глубина из настроек шаблона.
-	 * @param int $level     Текущий уровень (с 1).
+	 * @param string $taxonomy  Слаг иерархической таксономии.
+	 * @param int    $parent_id ID родительского термина (0 — корень).
+	 * @param int    $max_depth Максимальная глубина из настроек шаблона.
+	 * @param int    $level     Текущий уровень (с 1).
 	 * @return array
 	 */
-	public function get_category_tree( $parent_id = 0, $max_depth = 4, $level = 1 ) {
+	public function get_category_tree( $taxonomy, $parent_id = 0, $max_depth = 4, $level = 1 ) {
 		if ( $level > $max_depth ) {
 			return array();
 		}
 
 		$terms = get_terms(
 			array(
-				'taxonomy'   => 'product_cat',
+				'taxonomy'   => $taxonomy,
 				'hide_empty' => true,
 				'parent'     => $parent_id,
 			)
@@ -654,7 +654,7 @@ class PF_Attributes {
 				'value'    => $term->slug,
 				'label'    => $term->name,
 				'count'    => (int) $term->count,
-				'children' => $this->get_category_tree( $term->term_id, $max_depth, $level + 1 ),
+				'children' => $this->get_category_tree( $taxonomy, $term->term_id, $max_depth, $level + 1 ),
 			);
 		}
 
@@ -662,26 +662,55 @@ class PF_Attributes {
 	}
 
 	/**
-	 * Реальная максимальная глубина дерева категорий товаров (без учёта ограничения шаблона).
-	 * Используется для предупреждения в админке.
+	 * Реальная максимальная глубина дерева значений таксономии (без учёта
+	 * ограничения шаблона). Используется для предупреждения в админке у
+	 * группы с шаблоном category-tree.
 	 *
+	 * @param string $taxonomy Слаг иерархической таксономии.
 	 * @return int
 	 */
-	public function get_real_category_depth() {
-		return $this->measure_depth( 0, 1 );
+	public function get_real_category_depth( $taxonomy ) {
+		return $this->measure_depth( $taxonomy, 0, 1 );
+	}
+
+	/**
+	 * Таксономия для проверки диагностикой «Глубина дерева категорий» — берётся
+	 * из первой сконфигурированной группы с шаблоном category-tree, а если
+	 * группы ещё не настроены (свежая установка) — первая иерархическая
+	 * публичная таксономия настроенного типа записи (см. PF_Config::get_post_type()).
+	 *
+	 * @return string Слаг таксономии, либо '' если подходящей не нашлось.
+	 */
+	public function get_configured_category_tree_taxonomy() {
+		foreach ( PF_Config::get( 'groups', array() ) as $group ) {
+			$field = $group['field'] ?? '';
+			if ( 'category-tree' === ( $group['template'] ?? '' ) && '' !== $field && taxonomy_exists( $field ) ) {
+				return $field;
+			}
+		}
+
+		$post_type = PF_Config::get_post_type();
+		foreach ( get_object_taxonomies( $post_type, 'objects' ) as $taxonomy ) {
+			if ( $taxonomy->public && $taxonomy->hierarchical ) {
+				return $taxonomy->name;
+			}
+		}
+
+		return '';
 	}
 
 	/**
 	 * Вспомогательный рекурсивный подсчёт реальной глубины без ограничения по $max_depth.
 	 *
-	 * @param int $parent_id ID родителя.
-	 * @param int $level     Текущий уровень.
+	 * @param string $taxonomy  Слаг иерархической таксономии.
+	 * @param int    $parent_id ID родителя.
+	 * @param int    $level     Текущий уровень.
 	 * @return int
 	 */
-	private function measure_depth( $parent_id, $level ) {
+	private function measure_depth( $taxonomy, $parent_id, $level ) {
 		$terms = get_terms(
 			array(
-				'taxonomy'   => 'product_cat',
+				'taxonomy'   => $taxonomy,
 				'hide_empty' => true,
 				'parent'     => $parent_id,
 				'fields'     => 'ids',
@@ -694,29 +723,34 @@ class PF_Attributes {
 
 		$deepest = $level;
 		foreach ( $terms as $term_id ) {
-			$deepest = max( $deepest, $this->measure_depth( $term_id, $level + 1 ) );
+			$deepest = max( $deepest, $this->measure_depth( $taxonomy, $term_id, $level + 1 ) );
 		}
 
 		return $deepest;
 	}
 
 	/**
-	 * Список всех зарегистрированных на сайте атрибутов WooCommerce (для страницы админки) —
-	 * и глобальных таксономий (pa_*), и кастомных/локальных атрибутов, найденных
-	 * непосредственно у товаров.
+	 * Список полей, доступных для группы фильтра на странице админки: все
+	 * публичные таксономии настроенного типа записи (PF_Config::get_post_type()),
+	 * плюс кастомные/локальные атрибуты товаров (WooCommerce-специфика, см.
+	 * scan_custom_attributes()) — для другого типа записи их список всегда пуст.
 	 *
 	 * @return array
 	 */
-	public function get_all_attribute_taxonomies() {
-		$out = array();
-		if ( function_exists( 'wc_get_attribute_taxonomies' ) ) {
-			foreach ( wc_get_attribute_taxonomies() as $taxonomy ) {
-				$out[] = array(
-					'field' => 'pa_' . $taxonomy->attribute_name,
-					'label' => $taxonomy->attribute_label,
-				);
+	public function get_available_taxonomy_fields() {
+		$post_type = PF_Config::get_post_type();
+		$out       = array();
+
+		foreach ( get_object_taxonomies( $post_type, 'objects' ) as $taxonomy ) {
+			if ( ! $taxonomy->public ) {
+				continue;
 			}
+			$out[] = array(
+				'field' => $taxonomy->name,
+				'label' => $taxonomy->label,
+			);
 		}
+
 		foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
 			$out[] = array(
 				'field' => $this->get_custom_attribute_field( $raw_name ),
@@ -735,7 +769,7 @@ class PF_Attributes {
 	 * возвращаются вообще все поля, привязанные к таксономии, выбор
 	 * "какое из них — цвет" остаётся за админом.
 	 *
-	 * @param string $taxonomy Слаг таксономии (pa_* или product_cat).
+	 * @param string $taxonomy Слаг таксономии.
 	 * @return array [{name, label}, ...] — пусто, если ACF не активен или полей нет.
 	 */
 	public function get_acf_term_fields( $taxonomy ) {
@@ -766,7 +800,7 @@ class PF_Attributes {
 	 * не даёт назначить бессмысленную комбинацию, например range для группы
 	 * с нечисловыми значениями).
 	 *
-	 * @param string $field Field-идентификатор (pa_*, custom_*, price, product_cat).
+	 * @param string $field Field-идентификатор (имя таксономии, custom_*, price).
 	 * @return array
 	 */
 	public function get_compatible_templates( $field ) {
@@ -774,7 +808,7 @@ class PF_Attributes {
 			return array( 'range' );
 		}
 
-		if ( 'product_cat' === $field ) {
+		if ( taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) ) {
 			return array( 'category-tree', 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
 		}
 
@@ -798,7 +832,7 @@ class PF_Attributes {
 	private function field_values_are_numeric( $field ) {
 		$labels = array();
 
-		if ( 0 === strpos( $field, 'pa_' ) && taxonomy_exists( $field ) ) {
+		if ( taxonomy_exists( $field ) ) {
 			$terms  = get_terms(
 				array(
 					'taxonomy'   => $field,

@@ -697,7 +697,14 @@ class PF_Diagnostics {
 			return array();
 		}
 
-		$real_depth = $this->attributes->get_real_category_depth();
+		$taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+		if ( '' === $taxonomy ) {
+			return array(
+				$this->result( 'warning', __( 'Глубина дерева категорий', 'pf-filter' ), __( 'Не удалось определить иерархическую таксономию для проверки — настройте группу с шаблоном category-tree.', 'pf-filter' ) ),
+			);
+		}
+
+		$real_depth = $this->attributes->get_real_category_depth( $taxonomy );
 
 		$max_level = 0;
 		$found_levels = array();
