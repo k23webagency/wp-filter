@@ -55,13 +55,18 @@
 	 * Программно установить input.checked и разослать события 'click' и 'change'.
 	 *
 	 * Многие конструкторы (в т.ч. Webflow) рисуют кастомный чекбокс/радио
-	 * отдельным элементом рядом со скрытым нативным input и обновляют его
-	 * ТОЛЬКО по событию change/click на этом input — какое из двух именно,
-	 * зависит от конкретного виджета (замечено на практике: часть Webflow
-	 * radio-виджетов синхронизирует визуал по click, а не по change).
-	 * Простое присвоение input.checked само по себе ни одно из них не
-	 * порождает — визуальный элемент останется в старом состоянии, хотя
-	 * реальное значение уже изменилось. Поэтому рассылаются оба события.
+	 * отдельным элементом рядом со скрытым нативным input и обновляют его по
+	 * событию change/click на этом input — простое присвоение input.checked
+	 * само по себе такое событие не порождает, визуальный элемент остаётся в
+	 * старом состоянии, хотя реальное значение уже изменилось.
+	 *
+	 * Для СНЯТИЯ отметки (value === false) этого недостаточно для Webflow:
+	 * его виджет держит "визуально отмечен" отдельным классом
+	 * w--redirected-checked на соседнем элементе, который сама Webflow
+	 * добавляет/убирает ТОЛЬКО в ответ на клик по конкретному input. Кликом
+	 * принципиально нельзя представить "сними выбор со всех" (клик по radio
+	 * всегда означает "выбери этот один") — событий тут ждать бессмысленно,
+	 * класс снимается явно. На темах без Webflow такой класс просто не найдётся.
 	 */
 	function setChecked( input, value ) {
 		if ( ! input || input.checked === value ) {
@@ -70,6 +75,13 @@
 		input.checked = value;
 		input.dispatchEvent( new Event( 'click', { bubbles: true } ) );
 		input.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+
+		if ( false === value ) {
+			var row = input.closest( 'label' ) || input.parentElement;
+			qsa( row, '.w--redirected-checked' ).forEach( function ( el ) {
+				el.classList.remove( 'w--redirected-checked' );
+			} );
+		}
 	}
 
 	/** Прочитать/записать значение элемента диапазона: input -> .value, иначе textContent. */
@@ -244,6 +256,7 @@
 
 				if ( self.outputEl && self.templatesEl ) {
 					self.buildGroups( config.groups || [] );
+					self.reinitWebflow();
 				}
 
 				self.initSort( config.sort_options || [] );
@@ -338,6 +351,38 @@
 				self.groups[ groupConfig.field ] = { config: groupConfig, el: clone };
 			}
 		} );
+	};
+
+	/**
+	 * Попросить сам Webflow пересканировать текущий DOM и заново
+	 * инициализировать свои дропдауны/интерэкшены (анимации открытия-закрытия
+	 * и т.п. настроены в самом Webflow — плагин их не повторяет и не должен).
+	 *
+	 * Зачем это вообще нужно: Webflow инициализирует свои виджеты один раз при
+	 * загрузке страницы. Форма фильтра строится позже — асинхронно, уже после
+	 * ответа /config — поэтому построенные узлы (включая клоны дерева
+	 * категорий, где, в отличие от групп верхнего уровня, нельзя один раз
+	 * "переместить" оригинал: узлов на одном уровне обычно несколько) Webflow
+	 * при своей исходной инициализации просто не видел. Публичный API Webflow
+	 * умеет пересканировать DOM заново — на сайтах без Webflow window.Webflow
+	 * не существует, вызов — no-op.
+	 */
+	PFForm.prototype.reinitWebflow = function () {
+		if ( ! window.Webflow ) {
+			return;
+		}
+		try {
+			window.Webflow.destroy();
+			window.Webflow.ready();
+			if ( window.Webflow.require ) {
+				var ix2 = window.Webflow.require( 'ix2' );
+				if ( ix2 && ix2.init ) {
+					ix2.init();
+				}
+			}
+		} catch ( err ) {
+			console.warn( 'PF Filter: не удалось переинициализировать Webflow.', err );
+		}
 	};
 
 	/** checkbox / radio / tags / dropdown-checkbox / dropdown-radio — общий алгоритм строк. */
@@ -464,10 +509,44 @@
 
 		searchInput.addEventListener( 'input', function () {
 			var query = searchInput.value.trim().toLowerCase();
-			qsa( groupClone, '[data-pf-value]' ).forEach( function ( row ) {
+			var rows  = qsa( groupClone, '[data-pf-value]' );
+
+			if ( ! query ) {
+				rows.forEach( function ( row ) {
+					row.classList.remove( 'pf-hidden' );
+				} );
+				return;
+			}
+
+			// Для плоских списков "своё совпадение" и "видимость" — одно и то же.
+			// Но для дерева категорий строка-родитель со своим pf-hidden скрывает
+			// и всех потомков (display:none у предка перекрывает детей), даже если
+			// у совпавшего потомка pf-hidden уже снят. Поэтому строка должна быть
+			// видима, если совпала ОНА САМА, ЛИБО совпал любой её потомок (тогда
+			// её саму нужно показать как контейнер) — предки совпавших строк
+			// собираются проходом вверх по дереву.
+			var visible = [];
+
+			rows.forEach( function ( row ) {
 				var valueEl = qs( row, '[pf-filter-value]' );
 				var text = valueEl ? valueEl.textContent.toLowerCase() : '';
-				row.classList.toggle( 'pf-hidden', query.length > 0 && ! text.includes( query ) );
+				if ( ! text.includes( query ) ) {
+					return;
+				}
+				if ( visible.indexOf( row ) === -1 ) {
+					visible.push( row );
+				}
+				var ancestor = row.parentElement;
+				while ( ancestor && ancestor !== groupClone ) {
+					if ( ancestor.hasAttribute( 'data-pf-value' ) && visible.indexOf( ancestor ) === -1 ) {
+						visible.push( ancestor );
+					}
+					ancestor = ancestor.parentElement;
+				}
+			} );
+
+			rows.forEach( function ( row ) {
+				row.classList.toggle( 'pf-hidden', visible.indexOf( row ) === -1 );
 			} );
 		} );
 	};
@@ -531,7 +610,12 @@
 
 		function positionHandle( handle, value ) {
 			if ( handle ) {
+				// left:X% позиционирует ЛЕВЫЙ КРАЙ ползунка, а не его центр — без
+				// компенсации transform ползунок на 100% вылезает вправо за пределы
+				// трека на свою собственную ширину (симметрично на 0% — влево).
+				// translateX(-50%) центрирует ползунок ровно на вычисленном проценте.
 				handle.style.left = percentFor( value ) + '%';
+				handle.style.transform = 'translateX(-50%)';
 			}
 		}
 
