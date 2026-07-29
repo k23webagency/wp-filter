@@ -73,17 +73,6 @@
 	visibility: hidden;
 }
 
-.pf-filter-admin .pf-color-row {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	margin-bottom: 4px;
-}
-
-.pf-filter-admin .pf-color-row input[type="text"] {
-	width: 80px;
-}
-
 .pf-filter-admin template {
 	display: none;
 }

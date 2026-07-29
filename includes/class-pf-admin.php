@@ -99,6 +99,7 @@ class PF_Admin {
 			array(
 				'realCategoryDepth'        => $this->attributes->get_real_category_depth(),
 				'fieldCompatibleTemplates' => $this->get_field_compatible_templates_map(),
+				'acfFieldsByField'         => $this->get_acf_fields_map(),
 			)
 		);
 
@@ -203,16 +204,8 @@ class PF_Admin {
 				$row['tree_depth'] = absint( $group['tree_depth'] );
 			}
 
-			if ( ! empty( $group['colors'] ) && is_array( $group['colors'] ) ) {
-				$colors = array();
-				foreach ( $group['colors'] as $slug => $hex ) {
-					$slug = sanitize_title( $slug );
-					$hex  = sanitize_hex_color( $hex );
-					if ( $slug && $hex ) {
-						$colors[ $slug ] = $hex;
-					}
-				}
-				$row['colors'] = $colors;
+			if ( isset( $group['color_meta_key'] ) && '' !== trim( (string) $group['color_meta_key'] ) ) {
+				$row['color_meta_key'] = sanitize_key( $group['color_meta_key'] );
 			}
 
 			$clean[] = $row;
@@ -349,8 +342,14 @@ class PF_Admin {
 		$step     = $group['step'] ?? '';
 		$unit     = $group['unit'] ?? '';
 		$tree_d   = $group['tree_depth'] ?? '';
-		$colors   = $group['colors'] ?? array();
 		$value_sort = $group['value_sort'] ?? 'name_asc';
+		$color_meta_key = $group['color_meta_key'] ?? '';
+		// Поля ACF термина ЭТОГО поля группы (если оно вообще таксономия) —
+		// список для выпадашки «поле с цветом». У кастомных атрибутов и цены
+		// термов не существует, для них всегда пусто.
+		$acf_fields = ( 'product_cat' === $field || 0 === strpos( $field, 'pa_' ) )
+			? $this->attributes->get_acf_term_fields( $field )
+			: array();
 		// null — сканирование недоступно (тогда ничего не предупреждаем, как и
 		// в остальных местах, завязанных на скан образца разметки).
 		$search_available = $scan_xpath ? PF_Diagnostics::has_text_input( $scan_xpath, $template ) : null;
@@ -401,17 +400,13 @@ class PF_Admin {
 				<input type="number" min="1" name="<?php echo esc_attr( $n ); ?>[tree_depth]" value="<?php echo esc_attr( $tree_d ); ?>" placeholder="<?php esc_attr_e( 'Глубина', 'pf-filter' ); ?>" style="width:70px" />
 			</td>
 			<td class="pf-extra-colors">
-				<div class="pf-color-rows">
-					<?php foreach ( $colors as $slug => $hex ) : ?>
-						<div class="pf-color-row">
-							<input type="text" name="<?php echo esc_attr( $n ); ?>[colors][<?php echo esc_attr( $slug ); ?>]" value="<?php echo esc_attr( $hex ); ?>" placeholder="#hex" />
-							<span class="pf-color-slug"><?php echo esc_html( $slug ); ?></span>
-							<button type="button" class="button-link pf-remove-color">&times;</button>
-						</div>
+				<select name="<?php echo esc_attr( $n ); ?>[color_meta_key]" class="pf-color-meta-select" title="<?php esc_attr_e( 'Поле ACF/term meta термина, где хранится его цвет.', 'pf-filter' ); ?>">
+					<option value=""><?php esc_html_e( '— нет —', 'pf-filter' ); ?></option>
+					<?php foreach ( $acf_fields as $af ) : ?>
+						<option value="<?php echo esc_attr( $af['name'] ); ?>" <?php selected( $color_meta_key, $af['name'] ); ?>><?php echo esc_html( $af['label'] . ' (' . $af['name'] . ')' ); ?></option>
 					<?php endforeach; ?>
-				</div>
-				<button type="button" class="button pf-add-color"><?php esc_html_e( '+ Цвет', 'pf-filter' ); ?></button>
-				<?php if ( ! empty( $colors ) && false === $colors_available ) : ?>
+				</select>
+				<?php if ( $color_meta_key && false === $colors_available ) : ?>
 					<p style="color:#b32d2e;font-size:11px;margin:4px 0 0;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден [pf-filter-swatch] — цвета показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет pf-filter-swatch в шаблоне', 'pf-filter' ); ?></p>
 				<?php endif; ?>
 			</td>
@@ -488,6 +483,26 @@ class PF_Admin {
 		foreach ( $fields as $f ) {
 			$map[ $f['field'] ] = $this->attributes->get_compatible_templates( $f['field'] );
 		}
+
+		return $map;
+	}
+
+	/**
+	 * Карта field => поля ACF термина этой таксономии, для JS страницы
+	 * настроек — выпадашка «поле с цветом» у группы сужается под выбранное
+	 * поле. Только для реальных таксономий (pa_*, product_cat) — у
+	 * кастомных/локальных атрибутов термов не существует.
+	 *
+	 * @return array
+	 */
+	private function get_acf_fields_map() {
+		$map = array();
+		foreach ( $this->attributes->get_all_attribute_taxonomies() as $f ) {
+			if ( 0 === strpos( $f['field'], 'pa_' ) ) {
+				$map[ $f['field'] ] = $this->attributes->get_acf_term_fields( $f['field'] );
+			}
+		}
+		$map['product_cat'] = $this->attributes->get_acf_term_fields( 'product_cat' );
 
 		return $map;
 	}

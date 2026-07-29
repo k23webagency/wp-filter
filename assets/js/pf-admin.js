@@ -1,7 +1,7 @@
 /**
  * PF Filter — JS страницы настроек (Настройки → PF Filter).
- * Табы, drag-and-drop порядка строк, добавление/удаление строк групп,
- * опций сортировки и строк цветов.
+ * Табы, drag-and-drop порядка строк, добавление/удаление строк групп и
+ * опций сортировки, выбор ACF/term-meta поля с цветом термина.
  */
 ( function () {
 	'use strict';
@@ -21,7 +21,7 @@
 		initAddGroup( root );
 		initAddSort( root );
 		initRemoveRow( root );
-		initColorRows( root );
+		initAcfColorFieldFilter( root );
 	}
 
 	// ---- Табы -----------------------------------------------------------
@@ -251,7 +251,6 @@
 
 				body.appendChild( newRow );
 				initTemplateDataAttr( root );
-				initColorRows( root );
 
 				// Список шаблонов новой строки сразу сузить до совместимых с её
 				// полем по умолчанию (тот же делегированный обработчик change).
@@ -308,44 +307,60 @@
 		} );
 	}
 
-	// ---- Строки цветов внутри группы --------------------------------------
+	// ---- Выбор ACF/term-meta поля с цветом термина ------------------------
 
-	function initColorRows( root ) {
-		root.querySelectorAll( '.pf-add-color' ).forEach( function ( btn ) {
-			if ( btn.dataset.pfBound ) {
+	/**
+	 * Выпадашка «поле с цветом» (.pf-color-meta-select) в колонке «Цвета» —
+	 * список опций сужается под выбранное в этой же строке поле группы
+	 * (только реальные таксономии имеют термины и, соответственно, поля ACF
+	 * термина — pfAdminConfig.acfFieldsByField приходит с сервера, см.
+	 * PF_Admin::get_acf_fields_map()).
+	 */
+	function initAcfColorFieldFilter( root ) {
+		var map = ( window.pfAdminConfig && window.pfAdminConfig.acfFieldsByField ) || null;
+
+		function applyFieldOptions( fieldSelect ) {
+			if ( ! map ) {
 				return;
 			}
-			btn.dataset.pfBound = '1';
-			btn.addEventListener( 'click', function () {
-				var cell = btn.closest( 'td' );
-				var row = btn.closest( '.pf-group-row' );
-				var container = cell.querySelector( '.pf-color-rows' );
-				var slug = window.prompt( 'Slug значения (напр. red):' );
-				if ( ! slug ) {
-					return;
-				}
-				var index = row.getAttribute( 'data-index' );
-				var table = row.closest( 'table' );
-				var prefix = table.getAttribute( 'data-name-prefix' ) || 'pf_filter_settings[groups]';
+			var row = fieldSelect.closest( 'tr' );
+			var metaSelect = row ? row.querySelector( '.pf-color-meta-select' ) : null;
+			if ( ! metaSelect ) {
+				return;
+			}
 
-				var wrap = document.createElement( 'div' );
-				wrap.className = 'pf-color-row';
-				wrap.innerHTML =
-					'<input type="text" name="' + prefix + '[' + index + '][colors][' + slug + ']" value="" placeholder="#hex" />' +
-					'<span class="pf-color-slug">' + slug + '</span>' +
-					'<button type="button" class="button-link pf-remove-color">&times;</button>';
-				container.appendChild( wrap );
+			var currentValue = metaSelect.value;
+			var fields = map[ fieldSelect.value ] || [];
+
+			metaSelect.innerHTML = '';
+			var emptyOpt = document.createElement( 'option' );
+			emptyOpt.value = '';
+			emptyOpt.textContent = metaSelect.dataset.emptyLabel || '— нет —';
+			metaSelect.appendChild( emptyOpt );
+
+			fields.forEach( function ( f ) {
+				var opt = document.createElement( 'option' );
+				opt.value = f.name;
+				opt.textContent = f.label + ' (' + f.name + ')';
+				metaSelect.appendChild( opt );
 			} );
+
+			var stillValid = fields.some( function ( f ) { return f.name === currentValue; } );
+			metaSelect.value = stillValid ? currentValue : '';
+		}
+
+		root.querySelectorAll( '.pf-color-meta-select' ).forEach( function ( metaSelect ) {
+			// Запоминаем подпись "нет" из уже отрисованного сервером первого
+			// option — используется при перестроении списка после смены поля.
+			var emptyOpt = metaSelect.querySelector( 'option[value=""]' );
+			if ( emptyOpt ) {
+				metaSelect.dataset.emptyLabel = emptyOpt.textContent;
+			}
 		} );
 
-		root.addEventListener( 'click', function ( e ) {
-			var btn = e.target.closest( '.pf-remove-color' );
-			if ( ! btn ) {
-				return;
-			}
-			var wrap = btn.closest( '.pf-color-row' );
-			if ( wrap ) {
-				wrap.remove();
+		root.addEventListener( 'change', function ( e ) {
+			if ( e.target.classList && e.target.classList.contains( 'pf-field-select' ) ) {
+				applyFieldOptions( e.target );
 			}
 		} );
 	}

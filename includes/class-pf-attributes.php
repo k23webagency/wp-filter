@@ -209,7 +209,7 @@ class PF_Attributes {
 			? $this->get_term_counts_for_products( $taxonomy, $category_product_ids )
 			: null;
 
-		$colors = isset( $config['colors'] ) && is_array( $config['colors'] ) ? $config['colors'] : array();
+		$color_meta_key = isset( $config['color_meta_key'] ) ? trim( (string) $config['color_meta_key'] ) : '';
 
 		$values = array();
 		foreach ( $terms as $term ) {
@@ -220,7 +220,7 @@ class PF_Attributes {
 			$values[] = array(
 				'value' => $term->slug,
 				'label' => $term->name,
-				'color' => isset( $colors[ $term->slug ] ) ? $colors[ $term->slug ] : null,
+				'color' => $this->resolve_term_color( $term, $color_meta_key ),
 				'count' => $count,
 			);
 		}
@@ -239,6 +239,27 @@ class PF_Attributes {
 			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'values'   => $values,
 		);
+	}
+
+	/**
+	 * Цвет значения таксономии из term meta по заданному ключу (ACF или любой
+	 * другой плагин, хранящий значение поля термина как обычный term meta под
+	 * именем поля — так делают простые типы полей ACF вроде Color
+	 * Picker/Text). Без прямой зависимости от функций ACF — читается через
+	 * стандартный get_term_meta().
+	 *
+	 * @param WP_Term $term           Термин таксономии.
+	 * @param string  $color_meta_key Имя term meta / ACF-поля (может быть пустым — тогда цвета нет).
+	 * @return string|null
+	 */
+	private function resolve_term_color( $term, $color_meta_key ) {
+		if ( '' === $color_meta_key ) {
+			return null;
+		}
+
+		$value = get_term_meta( $term->term_id, $color_meta_key, true );
+		$value = is_string( $value ) ? sanitize_text_field( $value ) : '';
+		return '' !== $value ? $value : null;
 	}
 
 	/**
@@ -699,6 +720,41 @@ class PF_Attributes {
 			);
 		}
 		return $out;
+	}
+
+	/**
+	 * Поля ACF, привязанные (через правила локации) к термину указанной
+	 * таксономии — чтобы в админке можно было ВЫБРАТЬ поле с цветом термина
+	 * (например, ACF-поле "cvet" у pa_color), а не вписывать его имя руками.
+	 * Список не ограничивается типом поля (Color Picker) — на практике поле
+	 * может быть обычным Text с hex-строкой, как в этом случае, — поэтому
+	 * возвращаются вообще все поля, привязанные к таксономии, выбор
+	 * "какое из них — цвет" остаётся за админом.
+	 *
+	 * @param string $taxonomy Слаг таксономии (pa_* или product_cat).
+	 * @return array [{name, label}, ...] — пусто, если ACF не активен или полей нет.
+	 */
+	public function get_acf_term_fields( $taxonomy ) {
+		if ( ! function_exists( 'acf_get_field_groups' ) || ! function_exists( 'acf_get_fields' ) ) {
+			return array();
+		}
+
+		$groups = acf_get_field_groups( array( 'taxonomy' => $taxonomy ) );
+		$fields = array();
+
+		foreach ( $groups as $group ) {
+			foreach ( (array) acf_get_fields( $group ) as $field ) {
+				if ( empty( $field['name'] ) ) {
+					continue;
+				}
+				$fields[] = array(
+					'name'  => $field['name'],
+					'label' => $field['label'] ?? $field['name'],
+				);
+			}
+		}
+
+		return $fields;
 	}
 
 	/**
