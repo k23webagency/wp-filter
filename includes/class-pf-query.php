@@ -53,11 +53,17 @@ class PF_Query {
 	 * @return WP_Query
 	 */
 	public function build( array $filters, $logic, $orderby, $order, $paged, $per_page ) {
-		$args = array(
+		// -1 — конвенция WordPress "без ограничения" (используется, например,
+		// count_price_bounds() в PF_Renderer, чтобы получить ВСЕ подходящие
+		// товары для подсчёта реального min/max цены). absint(-1) отбрасывает
+		// знак и даёт 1 — без явного исключения запрос тихо ограничивался
+		// одним товаром, и границы цены схлопывались в цену этого товара.
+		$per_page = (int) $per_page;
+		$args     = array(
 			'post_type'           => 'product',
 			'post_status'         => 'publish',
 			'paged'               => max( 1, absint( $paged ) ),
-			'posts_per_page'      => max( 1, absint( $per_page ) ),
+			'posts_per_page'      => -1 === $per_page ? -1 : max( 1, absint( $per_page ) ),
 			'ignore_sticky_posts' => true,
 		);
 
