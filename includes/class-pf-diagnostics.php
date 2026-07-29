@@ -100,51 +100,15 @@ class PF_Diagnostics {
 		$debug_log_enabled = defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG;
 		$checks[] = $this->make_check(
 			'debug_log',
-			__( 'WP_DEBUG_LOG включён', 'pf-filter' ),
+			__( 'WP_DEBUG_LOG', 'pf-filter' ),
 			$debug_log_enabled,
 			'info',
-			$debug_log_enabled ? '' : __( 'Логирование ошибок отключено — debug.log вести не будет.', 'pf-filter' )
+			$debug_log_enabled
+				? __( 'Включён — ошибки пишутся в debug.log.', 'pf-filter' )
+				: __( 'Отключён — debug.log вести не будет.', 'pf-filter' )
 		);
-
-		$checks[] = $this->check_card_template_override();
 
 		return $checks;
-	}
-
-	/**
-	 * Плагин рендерит карточки товара через wc_get_template_part('content','product') —
-	 * ту же функцию, что вызывает тема при обычной загрузке страницы. Но если
-	 * тема сама эту функцию не использует (например, рисует карточку вручную
-	 * прямо в своём шаблоне архива, как в Webflow-сборках), а woocommerce/content-product.php
-	 * в теме не переопределён — при AJAX-обновлении подставится карточка ПО
-	 * УМОЛЧАНИЮ из WooCommerce (с кнопкой «В корзину» и бейджем «Распродажа»),
-	 * которая не будет совпадать с реальным оформлением темы.
-	 *
-	 * @return array
-	 */
-	private function check_card_template_override() {
-		if ( ! function_exists( 'wc_locate_template' ) ) {
-			return $this->make_check(
-				'content_product_override',
-				__( 'Переопределение шаблона карточки (content-product.php)', 'pf-filter' ),
-				false,
-				'warning',
-				__( 'WooCommerce не активен — проверить нельзя.', 'pf-filter' )
-			);
-		}
-
-		$template_path   = wc_locate_template( 'content-product.php' );
-		$is_theme_override = $template_path && false !== strpos( wp_normalize_path( $template_path ), wp_normalize_path( get_stylesheet_directory() ) );
-
-		return $this->make_check(
-			'content_product_override',
-			__( 'Переопределение шаблона карточки (content-product.php)', 'pf-filter' ),
-			$is_theme_override,
-			'warning',
-			$is_theme_override
-				? $template_path
-				: __( 'Тема не переопределяет woocommerce/content-product.php. Если тема рендерит карточку на странице каталога вручную (не через wc_get_template_part), AJAX-обновления от плагина будут показывать карточку по умолчанию из WooCommerce — с кнопкой «В корзину» и бейджем «Распродажа», без стилей темы. Решение: добавить в тему файл woocommerce/content-product.php с той же разметкой, что и в её собственном цикле товаров.', 'pf-filter' )
-		);
 	}
 
 	/**
@@ -222,6 +186,7 @@ class PF_Diagnostics {
 		$checks          = array_merge( $checks, $this->check_group_templates( $xpath, $found_templates ) );
 		$checks          = array_merge( $checks, $this->check_smart_hints( $xpath ) );
 		$checks          = array_merge( $checks, $this->check_tree_depth( $xpath, $found_templates ) );
+		$checks          = array_merge( $checks, $this->check_pagination_markup( $xpath ) );
 
 		return array(
 			'checks'          => $checks,
@@ -556,6 +521,118 @@ class PF_Diagnostics {
 	}
 
 	/**
+	 * Проверить, для какой стратегии пагинации на ЭТОЙ конкретной странице
+	 * реально есть нужная разметка. Активная стратегия определяется
+	 * ИСКЛЮЧИТЕЛЬНО настройкой админки (pagination_strategy) — в разметке
+	 * могут одновременно лежать готовые элементы сразу под несколько
+	 * стратегий, поэтому по их наличию нельзя судить, какая из них должна
+	 * быть активна. Если для активной стратегии нужных элементов нет —
+	 * предупреждение (пагинация не будет работать); для остальных стратегий —
+	 * информационная строка, доступны ли они на этой странице в принципе.
+	 *
+	 * @param DOMXPath $xpath XPath документа.
+	 * @return array
+	 */
+	private function check_pagination_markup( DOMXPath $xpath ) {
+		$available = self::detect_pagination_availability( $xpath );
+
+		$labels = array(
+			'pages'     => __( 'Страницы', 'pf-filter' ),
+			'load-more' => __( 'Кнопка «Загрузить ещё»', 'pf-filter' ),
+			'both'      => __( 'Кнопка + страницы вместе', 'pf-filter' ),
+			'infinite'  => __( 'Автозагрузка по скроллу', 'pf-filter' ),
+		);
+
+		$active_strategy = PF_Config::get( 'pagination_strategy', 'pages' );
+
+		$checks = array();
+
+		$is_active_available = ! empty( $available[ $active_strategy ] );
+		$checks[] = $this->result(
+			$is_active_available ? 'ok' : 'warning',
+			__( 'Активная стратегия пагинации (настройка админки)', 'pf-filter' ),
+			$is_active_available
+				? sprintf(
+					/* translators: %s: название стратегии */
+					__( '«%s» — нужная разметка на странице найдена.', 'pf-filter' ),
+					$labels[ $active_strategy ]
+				)
+				: sprintf(
+					/* translators: %s: название стратегии */
+					__( '«%s» выбрана в админке, но на странице нет нужной для неё разметки — пагинация работать не будет.', 'pf-filter' ),
+					$labels[ $active_strategy ]
+				)
+		);
+
+		foreach ( $available as $strategy => $ok ) {
+			if ( $strategy === $active_strategy ) {
+				continue;
+			}
+			$checks[] = $this->result(
+				$ok ? 'ok' : 'info',
+				sprintf( __( 'Стратегия «%s»', 'pf-filter' ), $labels[ $strategy ] ),
+				$ok
+					? __( 'разметка на странице есть — доступна, если выбрать её как активную.', 'pf-filter' )
+					: __( 'разметка не найдена — недоступна на этой странице.', 'pf-filter' )
+			);
+		}
+
+		return $checks;
+	}
+
+	/**
+	 * По какой разметке на странице для каких стратегий пагинации есть все
+	 * необходимые элементы. Вынесено в статический метод — переиспользуется
+	 * и диагностикой (check_pagination_markup), и страницей настроек
+	 * (PF_Admin, через get_pagination_availability) для того, чтобы не
+	 * предлагать в списке стратегию, для которой в вёрстке нет разметки.
+	 *
+	 * @param DOMXPath $xpath XPath документа.
+	 * @return array {pages, load-more, infinite, both} => bool.
+	 */
+	public static function detect_pagination_availability( DOMXPath $xpath ) {
+		$available = array(
+			'pages'     => $xpath->query( '//*[@pf-pagination-pages]' )->length > 0 && $xpath->query( '//*[@pf-page-item]' )->length > 0,
+			'load-more' => $xpath->query( '//*[@pf-load-more]' )->length > 0,
+			'infinite'  => $xpath->query( '//*[@pf-infinite-trigger]' )->length > 0,
+		);
+		$available['both'] = $available['pages'] && $available['load-more'];
+
+		return $available;
+	}
+
+	/**
+	 * То же самое, что detect_pagination_availability(), но по URL — сама
+	 * загружает и парсит страницу. Используется страницей настроек, у
+	 * которой (в отличие от analyze_markup()) нет уже готового DOMXPath.
+	 *
+	 * @param string $url URL страницы для сканирования.
+	 * @return array|null {pages, load-more, infinite, both} => bool, либо null если страницу не удалось загрузить.
+	 */
+	public function get_pagination_availability( $url ) {
+		if ( empty( $url ) ) {
+			return null;
+		}
+
+		$response = wp_remote_get( $url, array( 'timeout' => 8 ) );
+		if ( is_wp_error( $response ) ) {
+			return null;
+		}
+
+		$html = wp_remote_retrieve_body( $response );
+		if ( empty( $html ) ) {
+			return null;
+		}
+
+		libxml_use_internal_errors( true );
+		$dom = new DOMDocument();
+		$dom->loadHTML( '<?xml encoding="utf-8" ?>' . $html );
+		libxml_clear_errors();
+
+		return self::detect_pagination_availability( new DOMXPath( $dom ) );
+	}
+
+	/**
 	 * 2.4 — сравнить реальную глубину дерева категорий с глубиной поддерживаемой шаблоном.
 	 *
 	 * @param DOMXPath $xpath           XPath документа.
@@ -629,21 +706,14 @@ class PF_Diagnostics {
 	 * @return array
 	 */
 	private function auto_hooks_info( DOMXPath $xpath ) {
-		$text_inputs   = $xpath->query( '//*[@pf-template]//input[@type="text"]' )->length;
-		$dropdowns     = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " w-dropdown-toggle ")]' )->length;
-		$dropdownLists = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " w-dropdown-list ")]' )->length;
-		$rows          = $xpath->query( '//*[@pf-filter-row]' )->length;
+		$text_inputs = $xpath->query( '//*[@pf-template]//input[@type="text"]' )->length;
+		$rows        = $xpath->query( '//*[@pf-filter-row]' )->length;
 
 		return array(
 			$this->result(
 				'info',
 				'input[type=text]',
 				sprintf( __( 'поиск по значениям группы — найдено внутри шаблонов: %d', 'pf-filter' ), $text_inputs )
-			),
-			$this->result(
-				'info',
-				'w-dropdown-toggle / w-dropdown-list',
-				sprintf( __( 'управление дропдаунами (Webflow) — найдено: %1$d / %2$d', 'pf-filter' ), $dropdowns, $dropdownLists )
 			),
 			$this->result(
 				'info',

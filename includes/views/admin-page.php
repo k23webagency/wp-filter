@@ -61,27 +61,72 @@ defined( 'ABSPATH' ) || exit;
 					</td>
 				</tr>
 				<tr>
+					<th><?php esc_html_e( 'Отражать фильтры в URL', 'pf-filter' ); ?></th>
+					<td>
+						<label><input type="checkbox" name="pf_filter_settings[sync_url]" value="1" <?php checked( ! empty( $settings['sync_url'] ) ); ?> /> <?php esc_html_e( 'включено', 'pf-filter' ); ?></label>
+						<p class="description"><?php esc_html_e( 'Если включено — применённые фильтры записываются в URL страницы (можно поделиться ссылкой, работает кнопка "назад" браузера). Если выключено — URL всегда остаётся чистым, состояние фильтров между перезагрузками страницы не сохраняется.', 'pf-filter' ); ?></p>
+					</td>
+				</tr>
+				<tr>
 					<th><label for="pf-tree-depth"><?php esc_html_e( 'Глубина дерева категорий', 'pf-filter' ); ?></label></th>
 					<td>
 						<input type="number" min="1" id="pf-tree-depth" name="pf_filter_settings[tree_depth]" value="<?php echo esc_attr( $configured_depth ); ?>" />
 						<p class="description"><?php esc_html_e( 'Реальная глубина на сайте: ', 'pf-filter' ); ?><?php echo esc_html( $real_depth ); ?></p>
 					</td>
 				</tr>
+				<?php
+				$pagination_labels = array(
+					'pages'     => __( 'Страницы', 'pf-filter' ),
+					'load-more' => __( 'Кнопка «Загрузить ещё»', 'pf-filter' ),
+					'both'      => __( 'Кнопка + страницы вместе', 'pf-filter' ),
+					'infinite'  => __( 'Автозагрузка по скроллу', 'pf-filter' ),
+				);
+				$configured_strategy = $settings['pagination_strategy'];
+				$effective_strategy  = $configured_strategy;
+				if ( is_array( $available_pagination ) && empty( $available_pagination[ $configured_strategy ] ) ) {
+					$fallback = array_search( true, $available_pagination, true );
+					if ( false !== $fallback ) {
+						$effective_strategy = $fallback;
+					}
+				}
+				?>
 				<tr>
-					<th><label for="pf-scan-url"><?php esc_html_e( 'URL для сканирования шаблонов', 'pf-filter' ); ?></label></th>
+					<th><?php esc_html_e( 'Стратегия пагинации', 'pf-filter' ); ?></th>
 					<td>
-						<input type="url" id="pf-scan-url" class="regular-text" name="pf_filter_settings[scan_url]" value="<?php echo esc_attr( $settings['scan_url'] ); ?>" placeholder="https://site.ru/catalog/" />
-						<p class="description"><?php esc_html_e( 'Страница с разметкой pf-template. Если не задано — используется стандартный список из 7 шаблонов.', 'pf-filter' ); ?></p>
-					</td>
-				</tr>
-				<tr>
-					<th><?php esc_html_e( 'Стратегия пагинации по умолчанию', 'pf-filter' ); ?></th>
-					<td>
-						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="pages" <?php checked( $settings['pagination_strategy'], 'pages' ); ?> /> <?php esc_html_e( 'Страницы', 'pf-filter' ); ?></label><br />
-						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="load-more" <?php checked( $settings['pagination_strategy'], 'load-more' ); ?> /> <?php esc_html_e( 'Кнопка «Загрузить ещё»', 'pf-filter' ); ?></label><br />
-						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="both" <?php checked( $settings['pagination_strategy'], 'both' ); ?> /> <?php esc_html_e( 'Кнопка + страницы вместе', 'pf-filter' ); ?></label><br />
-						<label><input type="radio" name="pf_filter_settings[pagination_strategy]" value="infinite" <?php checked( $settings['pagination_strategy'], 'infinite' ); ?> /> <?php esc_html_e( 'Автозагрузка по скроллу', 'pf-filter' ); ?></label>
-						<p class="description"><?php esc_html_e( 'Используется, если атрибут pf-pagination не указан в разметке явно (явное значение в разметке всегда в приоритете).', 'pf-filter' ); ?></p>
+						<?php foreach ( $pagination_labels as $value => $label ) : ?>
+							<?php $is_unavailable = is_array( $available_pagination ) && empty( $available_pagination[ $value ] ); ?>
+							<label<?php echo $is_unavailable ? ' style="opacity:.5"' : ''; ?>>
+								<input type="radio" name="pf_filter_settings[pagination_strategy]" value="<?php echo esc_attr( $value ); ?>" <?php checked( $effective_strategy, $value ); ?> <?php disabled( $is_unavailable ); ?> />
+								<?php echo esc_html( $label ); ?>
+								<?php if ( $is_unavailable ) : ?>
+									<?php esc_html_e( '(нет нужных элементов в вёрстке)', 'pf-filter' ); ?>
+								<?php endif; ?>
+							</label><br />
+						<?php endforeach; ?>
+						<?php if ( null === $available_pagination ) : ?>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: URL страницы магазина */
+									esc_html__( 'Не удалось загрузить страницу магазина (%s) для проверки разметки — показаны все стратегии без ограничений.', 'pf-filter' ),
+									esc_html( $diagnostics_default_url )
+								);
+								?>
+							</p>
+						<?php elseif ( $effective_strategy !== $configured_strategy ) : ?>
+							<p class="description" style="color:#b32d2e">
+								<?php
+								printf(
+									/* translators: 1: сохранённая стратегия, 2: стратегия по факту разметки */
+									esc_html__( 'Сохранённая стратегия «%1$s» недоступна на странице магазина — по умолчанию выбрана доступная «%2$s». Сохраните настройки, чтобы применить.', 'pf-filter' ),
+									esc_html( $pagination_labels[ $configured_strategy ] ?? $configured_strategy ),
+									esc_html( $pagination_labels[ $effective_strategy ] )
+								);
+								?>
+							</p>
+						<?php else : ?>
+							<p class="description"><?php esc_html_e( 'Единый режим для всего сайта — какие элементы принадлежат другим стратегиям, плагин скрывает сам, даже если они есть в вёрстке.', 'pf-filter' ); ?></p>
+						<?php endif; ?>
 					</td>
 				</tr>
 				<tr>

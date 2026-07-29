@@ -153,7 +153,7 @@ class PF_Admin {
 		$clean['search_threshold']   = isset( $input['search_threshold'] ) ? absint( $input['search_threshold'] ) : 7;
 		$clean['show_counts']        = ! empty( $input['show_counts'] );
 		$clean['tree_depth']         = isset( $input['tree_depth'] ) ? max( 1, absint( $input['tree_depth'] ) ) : 4;
-		$clean['scan_url']           = isset( $input['scan_url'] ) ? esc_url_raw( $input['scan_url'] ) : '';
+		$clean['sync_url']           = ! empty( $input['sync_url'] );
 		$clean['pagination_strategy'] = in_array( $input['pagination_strategy'] ?? '', PF_Config::PAGINATION_STRATEGIES, true )
 			? $input['pagination_strategy']
 			: 'pages';
@@ -279,8 +279,14 @@ class PF_Admin {
 		);
 		$real_depth          = $this->attributes->get_real_category_depth();
 		$configured_depth    = (int) $settings['tree_depth'];
-		$available_templates = $this->get_available_templates( $settings['scan_url'] );
+		// Страница магазина используется как образец разметки для двух вспомогательных
+		// проверок ниже — списка доступных pf-template и доступности стратегий
+		// пагинации. Раньше для этого нужно было вручную вписывать URL в отдельное
+		// поле настроек; теперь берём тот же URL, что уже используется как дефолт
+		// для ручной диагностики разметки.
 		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
+		$available_templates    = $this->get_available_templates( $diagnostics_default_url );
+		$available_pagination   = $this->diagnostics->get_pagination_availability( $diagnostics_default_url );
 
 		require PF_FILTER_PATH . 'includes/views/admin-page.php';
 	}

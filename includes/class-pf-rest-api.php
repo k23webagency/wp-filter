@@ -122,6 +122,7 @@ class PF_REST_API {
 				'logic'               => $settings['logic'],
 				'search_threshold'    => (int) $settings['search_threshold'],
 				'show_counts'         => (bool) $settings['show_counts'],
+				'sync_url'            => (bool) $settings['sync_url'],
 				'pagination_strategy' => $settings['pagination_strategy'],
 				'posts_per_page'      => (int) $settings['posts_per_page'],
 			),

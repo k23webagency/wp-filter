@@ -99,7 +99,6 @@
 		this.loadingEl = null;
 		this.emptyEl = null;
 		this.sortEl = null;
-		this.paginationEl = null;
 		this.paginationMode = null;
 
 		this.config = null;
@@ -108,6 +107,7 @@
 		this.searchThreshold = 7;
 		this.logic = 'and';
 		this.perPage = 12;
+		this.syncUrl = true;
 
 		this.state = {
 			filters: {},
@@ -122,6 +122,7 @@
 		this.infiniteObserver = null;
 		this._forceReplace = false; // true когда список нужно заменить целиком (фильтр/сортировка/сброс), даже в режиме load-more/infinite.
 		this._suppressAutoFilter = false; // true во время пачечного восстановления/сброса контролов — подавляет автозапуск runFilter() по change.
+		this._silentUpdate = false; // true для фонового запроса за цифрами на первой загрузке без фильтров в URL — см. runFilter().
 
 		this.runFilterDebounced = debounce( this.runFilter.bind( this ), 0 );
 		this.rangeDebounced = debounce( this.runFilter.bind( this ), 400 );
@@ -203,12 +204,13 @@
 		if ( this.emptyEl ) {
 			this.emptyEl.classList.add( 'is-hidden' );
 		}
-		this.paginationEl = document.querySelector( '[pf-pagination]' );
-		// Явное значение в разметке всегда в приоритете; если атрибута нет — берём
-		// стратегию по умолчанию из настроек админки (устанавливается ниже, после
-		// загрузки /config).
-		this._explicitPaginationMode = this.paginationEl ? this.paginationEl.getAttribute( 'pf-pagination' ) : null;
-		this.paginationMode = this._explicitPaginationMode;
+		// Активная стратегия пагинации — исключительно настройка админки
+		// (pagination_strategy), устанавливается ниже, после загрузки /config.
+		// В разметке страницы могут одновременно лежать готовые элементы сразу
+		// под несколько стратегий (страницы + "загрузить ещё" + бесконечная
+		// прокрутка) — по их наличию нельзя однозначно судить, какая должна
+		// быть активна, поэтому разметка на выбор стратегии не влияет.
+		this.paginationMode = null;
 
 		var explicitLogic = this.formEl.getAttribute( 'pf-logic' );
 		this.logic = ( 'and' === explicitLogic || 'or' === explicitLogic ) ? explicitLogic : 'and';
@@ -223,7 +225,8 @@
 				if ( ! self.formEl.getAttribute( 'pf-logic' ) ) {
 					self.logic = ( config.settings && config.settings.logic ) || 'and';
 				}
-				self.paginationMode = self._explicitPaginationMode || ( config.settings && config.settings.pagination_strategy ) || null;
+				self.paginationMode = ( config.settings && config.settings.pagination_strategy ) || null;
+				self.syncUrl = ! config.settings || false !== config.settings.sync_url;
 
 				if ( self.outputEl && self.templatesEl ) {
 					self.buildGroups( config.groups || [] );
@@ -233,7 +236,14 @@
 				self.initPagination();
 				self.initActiveFilters();
 
-				self.restoreFromUrl();
+				var restoredFromUrl = self.restoreFromUrl();
+				if ( ! restoredFromUrl ) {
+					// Первая загрузка страницы без фильтров в URL — [pf-list] не трогаем
+					// (уже отрендерен обычным циклом WordPress), но [pf-count], счётчики
+					// групп и пагинация должны сразу показывать реальные цифры, а не
+					// ждать первого изменения фильтра пользователем.
+					self.runFilter( { silent: true } );
+				}
 			} )
 			.catch( function ( err ) {
 				console.error( 'PF Filter: не удалось загрузить /config.', err );
@@ -778,13 +788,19 @@
 			this.state.paged = 1;
 		}
 		this._forceReplace = !! opts.forceReplace;
+		// silent — фоновый запрос только за реальными цифрами (pf-count, счётчики
+		// групп, пагинация) без визуальных побочных эффектов: не показывает
+		// pf-loading, не трогает [pf-list]/[pf-empty] и не переписывает URL.
+		// Используется один раз на первой загрузке страницы без фильтров в URL —
+		// [pf-list] там уже отрендерен обычным циклом WordPress, трогать не нужно.
+		this._silentUpdate = !! opts.silent;
 
 		if ( this.abortController ) {
 			this.abortController.abort();
 		}
 		this.abortController = new AbortController();
 
-		if ( this.loadingEl ) {
+		if ( this.loadingEl && ! this._silentUpdate ) {
 			this.loadingEl.classList.remove( 'is-hidden' );
 		}
 
@@ -831,6 +847,9 @@
 	};
 
 	PFForm.prototype.handleResponse = function ( data ) {
+		var silent = this._silentUpdate;
+		this._silentUpdate = false;
+
 		if ( this.loadingEl ) {
 			this.loadingEl.classList.add( 'is-hidden' );
 		}
@@ -839,24 +858,28 @@
 		this.totalCount = data.count || 0;
 		this.state.paged = data.current_page || this.state.paged;
 
-		if ( 0 === data.count ) {
-			if ( this.emptyEl ) {
-				this.emptyEl.classList.remove( 'is-hidden' );
-			}
-			if ( this.listEl ) {
-				this.listEl.innerHTML = '';
-			}
-		} else {
-			if ( this.emptyEl ) {
-				this.emptyEl.classList.add( 'is-hidden' );
-			}
+		// silent: [pf-list] на первой загрузке уже отрендерен обычным циклом
+		// WordPress — трогать его не нужно, запрос был только за цифрами.
+		if ( ! silent ) {
+			if ( 0 === data.count ) {
+				if ( this.emptyEl ) {
+					this.emptyEl.classList.remove( 'is-hidden' );
+				}
+				if ( this.listEl ) {
+					this.listEl.innerHTML = '';
+				}
+			} else {
+				if ( this.emptyEl ) {
+					this.emptyEl.classList.add( 'is-hidden' );
+				}
 
-			if ( this.listEl ) {
-				var appendModes = [ 'load-more', 'both', 'infinite' ];
-				if ( appendModes.includes( this.paginationMode ) && ! this._forceReplace ) {
-					this.listEl.insertAdjacentHTML( 'beforeend', data.html );
-				} else {
-					this.listEl.innerHTML = data.html;
+				if ( this.listEl ) {
+					var appendModes = [ 'load-more', 'both', 'infinite' ];
+					if ( appendModes.includes( this.paginationMode ) && ! this._forceReplace ) {
+						this.listEl.insertAdjacentHTML( 'beforeend', data.html );
+					} else {
+						this.listEl.innerHTML = data.html;
+					}
 				}
 			}
 		}
@@ -865,7 +888,9 @@
 		this.updateGroupCounts( data.counts || {} );
 		this.updatePaginationUI();
 		this.updateActiveFilters();
-		this.updateUrl();
+		if ( ! silent ) {
+			this.updateUrl();
+		}
 	};
 
 	PFForm.prototype.updateCounters = function ( data ) {
@@ -995,8 +1020,22 @@
 	// -----------------------------------------------------------------
 
 	PFForm.prototype.initPagination = function () {
-		// this.paginationEl не обязателен — режим может быть взят из настроек
-		// админки, даже если атрибут pf-pagination нигде в разметке не указан.
+		// Ссылки на элементы пагинации кэшируются один раз здесь, а не через
+		// document.querySelector('[pf-page-item]') при каждом рендере в
+		// updatePaginationUI(). Причина: сгенерированные клоны номеров страниц
+		// (cloneNode от этого же шаблона) тоже несут атрибут pf-page-item и после
+		// первого рендера идут в DOM раньше оригинала — повторный querySelector
+		// нашёл бы уже сгенерированный клон вместо настоящего шаблона, что ведёт
+		// к его ошибочному удалению и потере номеров страниц после первого клика.
+		this._pagesContainer  = document.querySelector( '[pf-pagination-pages]' );
+		this._pageItemTpl     = document.querySelector( '[pf-page-item]' );
+		this._prevBtn         = document.querySelector( '[pf-page-prev]' );
+		this._nextBtn         = document.querySelector( '[pf-page-next]' );
+		this._loadMoreBtn     = document.querySelector( '[pf-load-more]' );
+		this._infiniteTrigger = document.querySelector( '[pf-infinite-trigger]' );
+
+		// this.paginationMode берётся исключительно из настроек админки
+		// (pagination_strategy) — см. init().
 		if ( ! this.paginationMode ) {
 			return;
 		}
@@ -1004,9 +1043,8 @@
 		var self = this;
 
 		if ( 'load-more' === this.paginationMode || 'both' === this.paginationMode ) {
-			var loadMoreBtn = document.querySelector( '[pf-load-more]' );
-			if ( loadMoreBtn ) {
-				loadMoreBtn.addEventListener( 'click', function () {
+			if ( this._loadMoreBtn ) {
+				this._loadMoreBtn.addEventListener( 'click', function () {
 					self.state.paged += 1;
 					self.runFilter( { forceReplace: false } );
 				} );
@@ -1014,12 +1052,10 @@
 		}
 
 		if ( 'pages' === this.paginationMode || 'both' === this.paginationMode ) {
-			var prevBtn = document.querySelector( '[pf-page-prev]' );
-			var nextBtn = document.querySelector( '[pf-page-next]' );
 			// pf-page-prev/next обычно <a href="#"> — без preventDefault клик
 			// прыгал бы в начало страницы вместо запуска AJAX-фильтрации.
-			if ( prevBtn ) {
-				prevBtn.addEventListener( 'click', function ( e ) {
+			if ( this._prevBtn ) {
+				this._prevBtn.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
 					if ( self.state.paged > 1 ) {
 						self.state.paged -= 1;
@@ -1027,8 +1063,8 @@
 					}
 				} );
 			}
-			if ( nextBtn ) {
-				nextBtn.addEventListener( 'click', function ( e ) {
+			if ( this._nextBtn ) {
+				this._nextBtn.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
 					if ( self.state.paged < self.totalPages ) {
 						self.state.paged += 1;
@@ -1039,8 +1075,7 @@
 		}
 
 		if ( 'infinite' === this.paginationMode ) {
-			var trigger = document.querySelector( '[pf-infinite-trigger]' );
-			if ( trigger && 'IntersectionObserver' in window ) {
+			if ( this._infiniteTrigger && 'IntersectionObserver' in window ) {
 				this.infiniteObserver = new IntersectionObserver( function ( entries ) {
 					entries.forEach( function ( entry ) {
 						if ( entry.isIntersecting && self.state.paged < self.totalPages ) {
@@ -1049,8 +1084,8 @@
 						}
 					} );
 				} );
-				this.infiniteObserver.observe( trigger );
-			} else if ( ! trigger ) {
+				this.infiniteObserver.observe( this._infiniteTrigger );
+			} else if ( ! this._infiniteTrigger ) {
 				console.warn( 'PF Filter: [pf-infinite-trigger] не найден, автоподгрузка недоступна.' );
 			}
 		}
@@ -1061,79 +1096,92 @@
 			return;
 		}
 
-		if ( 'pages' === this.paginationMode || 'both' === this.paginationMode ) {
-			var pagesContainer = document.querySelector( '[pf-pagination-pages]' );
-			var itemTpl = document.querySelector( '[pf-page-item]' );
-			if ( pagesContainer && itemTpl ) {
-				// Кроме самого шаблона и наших предыдущих клонов, в разметке может
-				// остаться статичный дизайн-превью (например, Webflow-пример «активной
-				// второй страницы») — его тоже нужно убрать, иначе он будет висеть рядом
-				// с реальной пагинацией.
-				qsa( pagesContainer, '[pf-page-item]' ).forEach( function ( el ) {
-					if ( el !== itemTpl && ! el.hasAttribute( 'data-pf-generated' ) ) {
-						el.remove();
-					}
-				} );
-				qsa( pagesContainer, '[data-pf-generated]' ).forEach( function ( el ) {
+		// Элементы, не принадлежащие активному режиму, всегда полностью скрыты
+		// (pf-hidden), даже если в разметке присутствуют шаблоны сразу для
+		// нескольких стратегий пагинации (страницы + "загрузить ещё" + бесконечная
+		// прокрутка) — активна должна быть ровно одна.
+		var showPages     = 'pages' === this.paginationMode || 'both' === this.paginationMode;
+		var showLoadMore  = 'load-more' === this.paginationMode || 'both' === this.paginationMode;
+		var showInfinite  = 'infinite' === this.paginationMode;
+
+		if ( this._pagesContainer ) {
+			this._pagesContainer.classList.toggle( 'pf-hidden', ! showPages );
+		}
+
+		if ( showPages && this._pagesContainer && this._pageItemTpl ) {
+			var pagesContainer = this._pagesContainer;
+			var itemTpl        = this._pageItemTpl;
+
+			// Кроме самого шаблона и наших предыдущих клонов, в разметке может
+			// остаться статичный дизайн-превью (например, Webflow-пример «активной
+			// второй страницы») — его тоже нужно убрать, иначе он будет висеть рядом
+			// с реальной пагинацией.
+			qsa( pagesContainer, '[pf-page-item]' ).forEach( function ( el ) {
+				if ( el !== itemTpl && ! el.hasAttribute( 'data-pf-generated' ) ) {
 					el.remove();
-				} );
-				for ( var i = 1; i <= this.totalPages; i++ ) {
-					var clone = itemTpl.cloneNode( true );
-					clone.setAttribute( 'data-pf-generated', '1' );
-					clone.textContent = i;
-					clone.classList.toggle( 'is-active', i === this.state.paged );
-					clone.classList.remove( 'pf-hidden' );
-
-					( function ( pageNum ) {
-						clone.addEventListener( 'click', function ( e ) {
-							e.preventDefault();
-							this.state.paged = pageNum;
-							this.runFilter( { forceReplace: true } );
-						}.bind( this ) );
-					}.bind( this ) )( i );
-
-					// Вставляем на место шаблона (перед itemTpl), а не в конец
-					// контейнера — иначе номера страниц оказываются ПОСЛЕ
-					// pf-page-next, если в разметке стрелки лежат внутри того же
-					// контейнера, что и pf-page-item (частый случай).
-					itemTpl.insertAdjacentElement( 'beforebegin', clone );
 				}
-				itemTpl.classList.add( 'pf-hidden' );
+			} );
+			qsa( pagesContainer, '[data-pf-generated]' ).forEach( function ( el ) {
+				el.remove();
+			} );
+			for ( var i = 1; i <= this.totalPages; i++ ) {
+				var clone = itemTpl.cloneNode( true );
+				clone.setAttribute( 'data-pf-generated', '1' );
+				clone.textContent = i;
+				clone.classList.toggle( 'is-active', i === this.state.paged );
+				clone.classList.remove( 'pf-hidden' );
+
+				( function ( pageNum ) {
+					clone.addEventListener( 'click', function ( e ) {
+						e.preventDefault();
+						this.state.paged = pageNum;
+						this.runFilter( { forceReplace: true } );
+					}.bind( this ) );
+				}.bind( this ) )( i );
+
+				// Вставляем на место шаблона (перед itemTpl), а не в конец
+				// контейнера — иначе номера страниц оказываются ПОСЛЕ
+				// pf-page-next, если в разметке стрелки лежат внутри того же
+				// контейнера, что и pf-page-item (частый случай).
+				itemTpl.insertAdjacentElement( 'beforebegin', clone );
 			}
+			itemTpl.classList.add( 'pf-hidden' );
 		}
 
-		// Стрелки показываются только когда реально есть куда листать —
+		// Стрелки — часть режима "pages"/"both". В остальных режимах скрыты всегда;
+		// внутри режима показываются только когда реально есть куда листать —
 		// не просто "неактивны", а полностью скрыты (pf-hidden).
-		var prevBtn = document.querySelector( '[pf-page-prev]' );
-		if ( prevBtn ) {
-			var isFirst = this.state.paged <= 1;
-			prevBtn.classList.toggle( 'is-disabled', isFirst );
-			prevBtn.classList.toggle( 'pf-hidden', isFirst );
+		if ( this._prevBtn ) {
+			var isFirst = ! showPages || this.state.paged <= 1;
+			this._prevBtn.classList.toggle( 'is-disabled', isFirst );
+			this._prevBtn.classList.toggle( 'pf-hidden', isFirst );
 			if ( isFirst ) {
-				prevBtn.setAttribute( 'disabled', 'disabled' );
+				this._prevBtn.setAttribute( 'disabled', 'disabled' );
 			} else {
-				prevBtn.removeAttribute( 'disabled' );
+				this._prevBtn.removeAttribute( 'disabled' );
 			}
 		}
 
-		var nextBtn = document.querySelector( '[pf-page-next]' );
-		if ( nextBtn ) {
-			var isLast = this.state.paged >= this.totalPages;
-			nextBtn.classList.toggle( 'is-disabled', isLast );
-			nextBtn.classList.toggle( 'pf-hidden', isLast );
+		if ( this._nextBtn ) {
+			var isLast = ! showPages || this.state.paged >= this.totalPages;
+			this._nextBtn.classList.toggle( 'is-disabled', isLast );
+			this._nextBtn.classList.toggle( 'pf-hidden', isLast );
 			if ( isLast ) {
-				nextBtn.setAttribute( 'disabled', 'disabled' );
+				this._nextBtn.setAttribute( 'disabled', 'disabled' );
 			} else {
-				nextBtn.removeAttribute( 'disabled' );
+				this._nextBtn.removeAttribute( 'disabled' );
 			}
 		}
 
-		var loadMoreBtn = document.querySelector( '[pf-load-more]' );
-		if ( loadMoreBtn ) {
-			loadMoreBtn.classList.toggle( 'pf-hidden', this.state.paged >= this.totalPages );
+		if ( this._loadMoreBtn ) {
+			this._loadMoreBtn.classList.toggle( 'pf-hidden', ! showLoadMore || this.state.paged >= this.totalPages );
 		}
 
-		if ( 'infinite' === this.paginationMode && this.infiniteObserver && this.state.paged >= this.totalPages ) {
+		if ( this._infiniteTrigger ) {
+			this._infiniteTrigger.classList.toggle( 'pf-hidden', ! showInfinite );
+		}
+
+		if ( showInfinite && this.infiniteObserver && this.state.paged >= this.totalPages ) {
 			this.infiniteObserver.disconnect();
 		}
 	};
@@ -1345,6 +1393,10 @@
 	// -----------------------------------------------------------------
 
 	PFForm.prototype.updateUrl = function () {
+		if ( ! this.syncUrl ) {
+			return;
+		}
+
 		var params = new URLSearchParams();
 		var filters = this.collectFilters();
 
@@ -1375,10 +1427,15 @@
 		window.history.pushState( null, '', newUrl );
 	};
 
+	/** @return {boolean} true, если в URL были параметры фильтра и по ним запущен runFilter(). */
 	PFForm.prototype.restoreFromUrl = function () {
+		if ( ! this.syncUrl ) {
+			return false;
+		}
+
 		var params = new URLSearchParams( window.location.search );
 		if ( ! Array.from( params.keys() ).length ) {
-			return;
+			return false;
 		}
 
 		var self = this;
@@ -1430,6 +1487,7 @@
 		if ( hasRelevantParams ) {
 			this.runFilter( { forceReplace: true } );
 		}
+		return hasRelevantParams;
 	};
 
 	PFForm.prototype.restorePriceFromUrl = function ( key, rawValue ) {

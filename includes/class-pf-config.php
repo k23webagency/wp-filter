@@ -44,7 +44,7 @@ class PF_Config {
 			'search_threshold'   => 7,
 			'show_counts'        => true,
 			'tree_depth'         => 4,
-			'scan_url'           => '',
+			'sync_url'           => true,
 			'pagination_strategy' => 'pages',
 			'posts_per_page'     => 12,
 			'groups'             => array(),
