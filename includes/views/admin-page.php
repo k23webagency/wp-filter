@@ -154,6 +154,7 @@ defined( 'ABSPATH' ) || exit;
 						<th><?php esc_html_e( 'Range: шаг / ед.', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Дерево: глубина', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></th>
+						<th><?php esc_html_e( 'Сортировка значений', 'pf-filter' ); ?></th>
 						<th></th>
 					</tr>
 				</thead>

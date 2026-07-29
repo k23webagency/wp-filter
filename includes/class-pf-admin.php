@@ -184,12 +184,13 @@ class PF_Admin {
 			}
 
 			$row = array(
-				'field'    => sanitize_text_field( $group['field'] ),
-				'label'    => sanitize_text_field( $group['label'] ?? '' ),
-				'template' => sanitize_key( $group['template'] ?? 'checkbox' ),
-				'logic'    => in_array( $group['logic'] ?? 'or', array( 'and', 'or' ), true ) ? $group['logic'] : 'or',
-				'enabled'  => ! empty( $group['enabled'] ),
-				'search'   => ! empty( $group['search'] ),
+				'field'      => sanitize_text_field( $group['field'] ),
+				'label'      => sanitize_text_field( $group['label'] ?? '' ),
+				'template'   => sanitize_key( $group['template'] ?? 'checkbox' ),
+				'logic'      => in_array( $group['logic'] ?? 'or', array( 'and', 'or' ), true ) ? $group['logic'] : 'or',
+				'enabled'    => ! empty( $group['enabled'] ),
+				'search'     => ! empty( $group['search'] ),
+				'value_sort' => in_array( $group['value_sort'] ?? '', PF_Attributes::VALUE_SORT_OPTIONS, true ) ? $group['value_sort'] : 'name_asc',
 			);
 
 			if ( isset( $group['step'] ) && '' !== $group['step'] ) {
@@ -256,6 +257,28 @@ class PF_Admin {
 	const DEFAULT_TEMPLATES = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio', 'range', 'category-tree' );
 
 	/**
+	 * Русская подпись шаблона для выпадашки "Шаблон" в таблице групп — реальное
+	 * значение (используется как pf-template в разметке темы и хранится в
+	 * настройках) не меняется, подписывается только текст option.
+	 *
+	 * @param string $slug Значение pf-template (checkbox/radio/tags/...).
+	 * @return string
+	 */
+	private function template_label( $slug ) {
+		$labels = array(
+			'checkbox'          => __( 'Чекбоксы', 'pf-filter' ),
+			'radio'             => __( 'Радиокнопки', 'pf-filter' ),
+			'tags'              => __( 'Теги/чипы', 'pf-filter' ),
+			'dropdown-checkbox' => __( 'Дропдаун (чекбоксы)', 'pf-filter' ),
+			'dropdown-radio'    => __( 'Дропдаун (радиокнопки)', 'pf-filter' ),
+			'range'             => __( 'Диапазон (слайдер)', 'pf-filter' ),
+			'category-tree'     => __( 'Дерево категорий', 'pf-filter' ),
+		);
+
+		return $labels[ $slug ] ?? $slug;
+	}
+
+	/**
 	 * Отрендерить страницу настроек.
 	 */
 	public function render_page() {
@@ -274,6 +297,10 @@ class PF_Admin {
 				array(
 					'field' => 'product_cat',
 					'label' => __( 'Категории', 'pf-filter' ),
+				),
+				array(
+					'field' => 'product_tag',
+					'label' => __( 'Метки', 'pf-filter' ),
 				),
 			)
 		);
@@ -315,6 +342,7 @@ class PF_Admin {
 		$unit     = $group['unit'] ?? '';
 		$tree_d   = $group['tree_depth'] ?? '';
 		$colors   = $group['colors'] ?? array();
+		$value_sort = $group['value_sort'] ?? 'name_asc';
 		?>
 		<tr class="pf-group-row" draggable="true" data-index="<?php echo esc_attr( $index ); ?>">
 			<td class="pf-drag-handle" title="<?php esc_attr_e( 'Перетащить для изменения порядка', 'pf-filter' ); ?>">☰</td>
@@ -334,7 +362,7 @@ class PF_Admin {
 			<td>
 				<select name="<?php echo esc_attr( $n ); ?>[template]" class="pf-template-select">
 					<?php foreach ( $available_templates as $tpl ) : ?>
-						<option value="<?php echo esc_attr( $tpl ); ?>" <?php selected( $template, $tpl ); ?>><?php echo esc_html( $tpl ); ?></option>
+						<option value="<?php echo esc_attr( $tpl ); ?>" <?php selected( $template, $tpl ); ?>><?php echo esc_html( $this->template_label( $tpl ) ); ?></option>
 					<?php endforeach; ?>
 				</select>
 			</td>
@@ -368,6 +396,14 @@ class PF_Admin {
 					<?php endforeach; ?>
 				</div>
 				<button type="button" class="button pf-add-color"><?php esc_html_e( '+ Цвет', 'pf-filter' ); ?></button>
+			</td>
+			<td class="pf-extra-value-sort">
+				<select name="<?php echo esc_attr( $n ); ?>[value_sort]">
+					<option value="name_asc" <?php selected( $value_sort, 'name_asc' ); ?>><?php esc_html_e( 'По алфавиту (А→Я)', 'pf-filter' ); ?></option>
+					<option value="name_desc" <?php selected( $value_sort, 'name_desc' ); ?>><?php esc_html_e( 'По алфавиту (Я→А)', 'pf-filter' ); ?></option>
+					<option value="count_desc" <?php selected( $value_sort, 'count_desc' ); ?>><?php esc_html_e( 'По кол-ву (сначала больше)', 'pf-filter' ); ?></option>
+					<option value="count_asc" <?php selected( $value_sort, 'count_asc' ); ?>><?php esc_html_e( 'По кол-ву (сначала меньше)', 'pf-filter' ); ?></option>
+				</select>
 			</td>
 			<td>
 				<button type="button" class="button-link-delete pf-remove-row"><?php esc_html_e( 'Удалить', 'pf-filter' ); ?></button>
@@ -422,6 +458,10 @@ class PF_Admin {
 				array(
 					'field' => 'product_cat',
 					'label' => __( 'Категории', 'pf-filter' ),
+				),
+				array(
+					'field' => 'product_tag',
+					'label' => __( 'Метки', 'pf-filter' ),
 				),
 			)
 		);

@@ -13,6 +13,16 @@ defined( 'ABSPATH' ) || exit;
 class PF_Attributes {
 
 	/**
+	 * Допустимые режимы сортировки значений внутри группы (настройка группы
+	 * value_sort). Применяется единообразно к любому типу группы со списком
+	 * значений (таксономия/кастомный атрибут/плоские категории/дерево
+	 * категорий) — не имеет смысла для price (там нет списка значений).
+	 *
+	 * @var string[]
+	 */
+	const VALUE_SORT_OPTIONS = array( 'name_asc', 'name_desc', 'count_desc', 'count_asc' );
+
+	/**
 	 * Кэш результата scan_custom_attributes() за запрос.
 	 *
 	 * @var array|null
@@ -103,6 +113,14 @@ class PF_Attributes {
 			'tree_depth' => (int) PF_Config::get( 'tree_depth', 4 ),
 		);
 
+		$configs[] = array(
+			'field'    => 'product_tag',
+			'label'    => 'Метки',
+			'template' => 'checkbox',
+			'logic'    => 'or',
+			'enabled'  => true,
+		);
+
 		return $configs;
 	}
 
@@ -137,7 +155,7 @@ class PF_Attributes {
 			return $this->build_taxonomy_group( $config, $category_product_ids );
 		}
 
-		if ( 0 === strpos( $field, 'pa_' ) ) {
+		if ( 'product_tag' === $field || 0 === strpos( $field, 'pa_' ) ) {
 			return $this->build_taxonomy_group( $config, $category_product_ids );
 		}
 
@@ -210,6 +228,8 @@ class PF_Attributes {
 		if ( empty( $values ) ) {
 			return null;
 		}
+
+		$values = $this->sort_values( $values, $config['value_sort'] ?? 'name_asc' );
 
 		return array(
 			'field'    => $taxonomy,
@@ -431,6 +451,8 @@ class PF_Attributes {
 			return null;
 		}
 
+		$values = $this->sort_values( $values, $config['value_sort'] ?? 'name_asc' );
+
 		return array(
 			'field'    => $this->get_custom_attribute_field( $raw_name ),
 			'label'    => isset( $config['label'] ) ? $config['label'] : $raw_name,
@@ -522,6 +544,8 @@ class PF_Attributes {
 	 */
 	private function build_category_tree_group( array $config ) {
 		$depth = isset( $config['tree_depth'] ) ? (int) $config['tree_depth'] : (int) PF_Config::get( 'tree_depth', 4 );
+		$tree  = $this->get_category_tree( 0, $depth, 1 );
+		$tree  = $this->sort_values( $tree, $config['value_sort'] ?? 'name_asc' );
 
 		return array(
 			'field'      => 'product_cat',
@@ -530,8 +554,50 @@ class PF_Attributes {
 			'logic'      => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'     => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'tree_depth' => $depth,
-			'values'     => $this->get_category_tree( 0, $depth, 1 ),
+			'values'     => $tree,
 		);
+	}
+
+	/**
+	 * Отсортировать список значений группы согласно настройке value_sort.
+	 * Работает единообразно для любого типа группы со списком значений —
+	 * обычная таксономия, кастомный атрибут, плоские категории или дерево
+	 * категорий (для дерева сортировка применяется на каждом уровне отдельно,
+	 * рекурсивно по children, без изменения самой структуры дерева).
+	 *
+	 * @param array  $values Список значений (или узлов дерева).
+	 * @param string $mode   Один из self::VALUE_SORT_OPTIONS; любое другое значение — без изменений.
+	 * @return array
+	 */
+	private function sort_values( array $values, $mode ) {
+		if ( ! in_array( $mode, self::VALUE_SORT_OPTIONS, true ) ) {
+			return $values;
+		}
+
+		usort(
+			$values,
+			function ( $a, $b ) use ( $mode ) {
+				switch ( $mode ) {
+					case 'name_desc':
+						return strnatcasecmp( $b['label'], $a['label'] );
+					case 'count_desc':
+						return $b['count'] <=> $a['count'];
+					case 'count_asc':
+						return $a['count'] <=> $b['count'];
+					default: // name_asc.
+						return strnatcasecmp( $a['label'], $b['label'] );
+				}
+			}
+		);
+
+		foreach ( $values as &$value ) {
+			if ( ! empty( $value['children'] ) ) {
+				$value['children'] = $this->sort_values( $value['children'], $mode );
+			}
+		}
+		unset( $value );
+
+		return $values;
 	}
 
 	/**

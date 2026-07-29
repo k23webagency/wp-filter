@@ -52,19 +52,23 @@
 	}
 
 	/**
-	 * Программно установить input.checked и разослать событие 'change'.
+	 * Программно установить input.checked и разослать события 'click' и 'change'.
 	 *
-	 * Многие конструкторы (в т.ч. Webflow) рисуют кастомный чекбокс отдельным
-	 * элементом рядом со скрытым нативным input и обновляют его ТОЛЬКО по
-	 * событию change/click на этом input. Простое присвоение input.checked
-	 * такое событие не порождает — визуальный чекбокс останется в старом
-	 * состоянии, хотя реальное значение уже изменилось.
+	 * Многие конструкторы (в т.ч. Webflow) рисуют кастомный чекбокс/радио
+	 * отдельным элементом рядом со скрытым нативным input и обновляют его
+	 * ТОЛЬКО по событию change/click на этом input — какое из двух именно,
+	 * зависит от конкретного виджета (замечено на практике: часть Webflow
+	 * radio-виджетов синхронизирует визуал по click, а не по change).
+	 * Простое присвоение input.checked само по себе ни одно из них не
+	 * порождает — визуальный элемент останется в старом состоянии, хотя
+	 * реальное значение уже изменилось. Поэтому рассылаются оба события.
 	 */
 	function setChecked( input, value ) {
 		if ( ! input || input.checked === value ) {
 			return;
 		}
 		input.checked = value;
+		input.dispatchEvent( new Event( 'click', { bubbles: true } ) );
 		input.dispatchEvent( new Event( 'change', { bubbles: true } ) );
 	}
 
@@ -177,6 +181,16 @@
 			// но не найденного pf-target; warn для неоднозначного случая без него).
 			return;
 		}
+
+		// [pf-form] — реальный <form>, но никогда не должен отправляться нативно
+		// (это чисто клиентский UI фильтра, а не форма с реальным действием).
+		// Без этой защиты Enter в поле поиска группы или клик по элементу без
+		// явного preventDefault (например <button> без type="button" в вёрстке
+		// темы) вызывает настоящий submit — на Webflow-сайтах это показывает
+		// служебную ошибку самого Webflow вроде "Формы не настроены".
+		this.formEl.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+		} );
 
 		this.outputEl = qs( this.formEl, '[pf-output]' );
 		if ( ! this.outputEl ) {
@@ -378,7 +392,12 @@
 					self.runFilter( { resetPage: true, forceReplace: true } );
 				} );
 			} else if ( isTags ) {
-				rowClone.addEventListener( 'click', function () {
+				// preventDefault обязателен: если верстальщик сделал строку через
+				// <button> (тип по умолчанию submit) внутри <form pf-form>, клик без
+				// него реально отправляет форму — Webflow в ответ показывает свой
+				// служебный "Ошибка отправки / Формы не настроены".
+				rowClone.addEventListener( 'click', function ( e ) {
+					e.preventDefault();
 					rowClone.classList.toggle( 'is-active' );
 					self.runFilter( { resetPage: true, forceReplace: true } );
 				} );
@@ -901,6 +920,22 @@
 
 	PFForm.prototype.updateGroupCounts = function ( counts ) {
 		var self = this;
+
+		// Сервер пересчитывает релевантность группы под текущие фильтры (в т.ч.
+		// авто-релевантность по категории) на каждый /products-запрос — если у
+		// поля группы нет ни одного подходящего значения, его просто нет среди
+		// ключей counts. Раньше это использовалось только для обновления цифр у
+		// уже показанных строк, а сам факт отсутствия поля никак не влиял на
+		// видимость группы целиком — из-за этого нерелевантные группы продолжали
+		// висеть в форме, хотя реально ни один товар из текущей выборки под них
+		// не попадал.
+		Object.keys( this.groups ).forEach( function ( field ) {
+			if ( 'price' === field ) {
+				return; // цена всегда видна, релевантность по счётчикам к ней не применяется.
+			}
+			self.groups[ field ].el.classList.toggle( 'pf-hidden', ! ( field in counts ) );
+		} );
+
 		Object.keys( counts ).forEach( function ( field ) {
 			var group = self.groups[ field ];
 			if ( ! group ) {
@@ -967,7 +1002,8 @@
 			clone.setAttribute( 'data-value', option.value );
 			clone.classList.toggle( 'is-active', 0 === index );
 
-			clone.addEventListener( 'click', function () {
+			clone.addEventListener( 'click', function ( e ) {
+				e.preventDefault();
 				self.activateSortOption( option );
 				self.runFilter( { resetPage: true, forceReplace: true } );
 			} );
@@ -1044,7 +1080,8 @@
 
 		if ( 'load-more' === this.paginationMode || 'both' === this.paginationMode ) {
 			if ( this._loadMoreBtn ) {
-				this._loadMoreBtn.addEventListener( 'click', function () {
+				this._loadMoreBtn.addEventListener( 'click', function ( e ) {
+					e.preventDefault();
 					self.state.paged += 1;
 					self.runFilter( { forceReplace: false } );
 				} );
@@ -1103,12 +1140,16 @@
 		var showPages     = 'pages' === this.paginationMode || 'both' === this.paginationMode;
 		var showLoadMore  = 'load-more' === this.paginationMode || 'both' === this.paginationMode;
 		var showInfinite  = 'infinite' === this.paginationMode;
+		// Постраничная пагинация не имеет смысла, когда результат целиком
+		// умещается на одной странице — тогда единственная кнопка "1" и стрелки
+		// прячутся целиком, а не просто выглядят неактивными.
+		var hasMultiplePages = this.totalPages > 1;
 
 		if ( this._pagesContainer ) {
-			this._pagesContainer.classList.toggle( 'pf-hidden', ! showPages );
+			this._pagesContainer.classList.toggle( 'pf-hidden', ! showPages || ! hasMultiplePages );
 		}
 
-		if ( showPages && this._pagesContainer && this._pageItemTpl ) {
+		if ( showPages && hasMultiplePages && this._pagesContainer && this._pageItemTpl ) {
 			var pagesContainer = this._pagesContainer;
 			var itemTpl        = this._pageItemTpl;
 
@@ -1205,7 +1246,8 @@
 		// хоть один реально активный фильтр (см. updateActiveFilters()).
 		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
 			btn.classList.add( 'pf-hidden' );
-			btn.addEventListener( 'click', function () {
+			btn.addEventListener( 'click', function ( e ) {
+				e.preventDefault();
 				self.resetAllFilters();
 			} );
 		} );
@@ -1329,7 +1371,10 @@
 
 		var removeBtn = qs( clone, '[pf-chip-remove]' );
 		if ( removeBtn ) {
-			removeBtn.addEventListener( 'click', onRemove );
+			removeBtn.addEventListener( 'click', function ( e ) {
+				e.preventDefault();
+				onRemove();
+			} );
 		}
 
 		container.appendChild( clone );
@@ -1423,8 +1468,31 @@
 		}
 
 		var query = params.toString();
-		var newUrl = window.location.pathname + ( query ? '?' + query : '' );
+		// Номер страницы плагин всегда пишет только в query-строку (?paged=N) —
+		// если текущий URL был открыт в каноничном для WordPress pretty-permalink
+		// виде /page/N/ (см. getPagedFromPath), этот сегмент пути нужно убрать,
+		// иначе получится дублирующее /page/3/?paged=2.
+		var basePath = window.location.pathname.replace( /\/page\/\d+\/?$/, '/' );
+		var newUrl = basePath + ( query ? '?' + query : '' );
 		window.history.pushState( null, '', newUrl );
+	};
+
+	/**
+	 * Номер страницы из пути вида /page/N/ (каноничный формат WordPress
+	 * pretty-permalink пагинации, используется например ссылками паджинации
+	 * самого WooCommerce/темы) — в отличие от ?paged=N, которую пишет сама
+	 * форма (см. updateUrl), URLSearchParams(location.search) его не видит,
+	 * т.к. он не в query-строке, а в самом пути.
+	 *
+	 * @return {number|null}
+	 */
+	PFForm.prototype.getPagedFromPath = function () {
+		var match = window.location.pathname.match( /\/page\/(\d+)\/?$/ );
+		if ( ! match ) {
+			return null;
+		}
+		var paged = parseInt( match[ 1 ], 10 );
+		return paged > 0 ? paged : null;
 	};
 
 	/** @return {boolean} true, если в URL были параметры фильтра и по ним запущен runFilter(). */
@@ -1434,12 +1502,18 @@
 		}
 
 		var params = new URLSearchParams( window.location.search );
-		if ( ! Array.from( params.keys() ).length ) {
+		var pathPaged = this.getPagedFromPath();
+		if ( ! Array.from( params.keys() ).length && ! pathPaged ) {
 			return false;
 		}
 
 		var self = this;
 		var hasRelevantParams = false;
+
+		if ( pathPaged ) {
+			hasRelevantParams = true;
+			this.state.paged = pathPaged;
+		}
 
 		// Восстанавливаем состояние контролов пачкой — не даём change-событиям
 		// от каждого отдельного чекбокса запускать свой runFilter().

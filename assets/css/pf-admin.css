@@ -31,18 +31,28 @@
 	box-shadow: inset 0 2px 0 #2271b1;
 }
 
+/*
+ * visibility, не display: none — у <td> с display:none ячейка полностью
+ * выпадает из раскладки СТРОКИ, а разные строки скрывают разный набор из
+ * этих трёх ячеек (у каждой видна только одна, применимая к её шаблону).
+ * Из-за этого оставшиеся видимые ячейки в разных строках съезжали на разное
+ * число столбцов влево и оказывались под чужими заголовками таблицы.
+ * visibility:hidden сохраняет ячейку как зарезервированный столбец —
+ * выравнивание со строкой заголовков не ломается, а содержимое всё равно
+ * не видно, когда неприменимо к текущему шаблону строки.
+ */
 .pf-filter-admin .pf-extra-range,
 .pf-filter-admin .pf-extra-tree,
 .pf-filter-admin .pf-extra-colors {
-	display: none;
+	visibility: hidden;
 }
 
 .pf-filter-admin tr[data-template="range"] .pf-extra-range {
-	display: table-cell;
+	visibility: visible;
 }
 
 .pf-filter-admin tr[data-template="category-tree"] .pf-extra-tree {
-	display: table-cell;
+	visibility: visible;
 }
 
 .pf-filter-admin tr[data-template="checkbox"] .pf-extra-colors,
@@ -50,7 +60,17 @@
 .pf-filter-admin tr[data-template="tags"] .pf-extra-colors,
 .pf-filter-admin tr[data-template="dropdown-checkbox"] .pf-extra-colors,
 .pf-filter-admin tr[data-template="dropdown-radio"] .pf-extra-colors {
-	display: table-cell;
+	visibility: visible;
+}
+
+/* Сортировка значений применима ко всем шаблонам со списком значений —
+   у range (диапазон/слайдер) списка значений нет, там скрываем. */
+.pf-filter-admin .pf-extra-value-sort {
+	visibility: visible;
+}
+
+.pf-filter-admin tr[data-template="range"] .pf-extra-value-sort {
+	visibility: hidden;
 }
 
 .pf-filter-admin .pf-color-row {

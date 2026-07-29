@@ -71,8 +71,8 @@ class PF_Query {
 				continue;
 			}
 
-			if ( 'product_cat' === $field ) {
-				$tax_clauses[] = $this->build_tax_clause( 'product_cat', $value );
+			if ( 'product_cat' === $field || 'product_tag' === $field ) {
+				$tax_clauses[] = $this->build_tax_clause( $field, $value );
 				continue;
 			}
 
