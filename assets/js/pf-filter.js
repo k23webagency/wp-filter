@@ -706,6 +706,14 @@
 		// остальные активные фильтры так же, как счётчики других групп).
 		// Если бы drag/клавиши/числовые поля продолжали клэмпиться по старым
 		// min/max, перетаскивание после такого обновления работало бы неверно.
+		//
+		// slider.dataset.userAdjusted ставится в drag/клавишах/числовом поле
+		// ниже — только реальным действием пользователя. collectFilters()
+		// отправляет price как активный фильтр ТОЛЬКО если этот флаг стоит.
+		// Без этого различия автоматическая подстройка границ под ДРУГИЕ
+		// активные фильтры (updatePriceBounds) "приклеивалась" бы к текущему
+		// выбору как будто пользователь сам его сделал — и после снятия ТОЙ
+		// фильтра цена продолжала бы слаться суженной, хотя её никто не трогал.
 
 		function roundToStep( value, rangeMin, rangeMax, rangeStep ) {
 			var rounded = Math.round( ( value - rangeMin ) / rangeStep ) * rangeStep + rangeMin;
@@ -724,6 +732,7 @@
 			var currentMin = parseFloat( slider.dataset.currentMin );
 			var currentMax = parseFloat( slider.dataset.currentMax );
 
+			slider.dataset.userAdjusted = '1';
 			if ( 'min' === type ) {
 				value = clamp( value, rangeMin, currentMax );
 				slider.dataset.currentMin = value;
@@ -776,6 +785,7 @@
 				var delta = 'ArrowLeft' === e.key ? -rangeStep : rangeStep;
 				var currentMin = parseFloat( slider.dataset.currentMin );
 				var currentMax = parseFloat( slider.dataset.currentMax );
+				slider.dataset.userAdjusted = '1';
 				if ( 'min' === type ) {
 					var newMin = clamp( currentMin + delta, rangeMin, currentMax );
 					slider.dataset.currentMin = newMin;
@@ -807,6 +817,7 @@
 				if ( isNaN( value ) ) {
 					return;
 				}
+				slider.dataset.userAdjusted = '1';
 				if ( 'min' === type ) {
 					value = clamp( value, rangeMin, currentMax );
 					slider.dataset.currentMin = value;
@@ -1006,7 +1017,14 @@
 
 			if ( 'range' === template ) {
 				var slider = qs( group.el, '[pf-filter-range-slider]' );
-				if ( slider ) {
+				// userAdjusted ставится ТОЛЬКО реальным действием пользователя
+				// (drag/клавиши/числовое поле) — см. buildRangeGroup(). Без этой
+				// проверки граница, автоматически подстроенная под ДРУГИЕ активные
+				// фильтры (updatePriceBounds — например, цена сузилась, пока был
+				// выбран конкретный цвет), после снятия того фильтра продолжала бы
+				// отправляться как будто пользователь сам выбрал такой узкий диапазон
+				// цены, хотя он её вообще не трогал.
+				if ( slider && slider.dataset.userAdjusted ) {
 					filters[ field ] = {
 						min: parseFloat( slider.dataset.currentMin ),
 						max: parseFloat( slider.dataset.currentMax ),
@@ -1566,6 +1584,11 @@
 				var rangeMax = parseFloat( slider.dataset.max );
 				slider.dataset.currentMin = slider.dataset.min;
 				slider.dataset.currentMax = slider.dataset.max;
+				// Сброс — это тоже способ "перестать быть тронутым пользователем":
+				// иначе после ручного выбора и последующего сброса цена продолжала
+				// бы слаться как активный фильтр (полный диапазон, но formально
+				// "userAdjusted"), пока сервер не подтвердит это следующим ответом.
+				delete slider.dataset.userAdjusted;
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
 				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
