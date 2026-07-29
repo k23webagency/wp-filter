@@ -103,10 +103,19 @@
 		}
 	}
 
-	/** Позиция значения в процентах по границам [min, max]. */
-	function percentForRange( value, min, max ) {
+	/**
+	 * Позиция значения в процентах по границам [min, max].
+	 *
+	 * @param {boolean} isMax Какой из двух ползунков позиционируется — нужно
+	 *   только на случай схлопнувшегося диапазона (min === max: очень узкий
+	 *   диапазон цены или вообще один товар). Без этого оба ползунка легли бы
+	 *   в одну точку — не различить, не за что зацепиться мышью/пальцем.
+	 *   Вместо этого разносим их по разным краям трека (min — 0%, max — 100%):
+	 *   оба остаются на виду и доступны для взаимодействия.
+	 */
+	function percentForRange( value, min, max, isMax ) {
 		if ( max === min ) {
-			return 0;
+			return isMax ? 100 : 0;
 		}
 		return clamp( ( value - min ) / ( max - min ) * 100, 0, 100 );
 	}
@@ -117,12 +126,14 @@
 	 * компенсации transform ползунок на 100% вылезает вправо за пределы трека
 	 * на свою собственную ширину (симметрично на 0% — влево). translateX(-50%)
 	 * центрирует ползунок ровно на вычисленном проценте.
+	 *
+	 * @param {boolean} isMax См. percentForRange() — какой это ползунок, min или max.
 	 */
-	function positionRangeHandle( handle, value, min, max ) {
+	function positionRangeHandle( handle, value, min, max, isMax ) {
 		if ( ! handle ) {
 			return;
 		}
-		handle.style.left = percentForRange( value, min, max ) + '%';
+		handle.style.left = percentForRange( value, min, max, isMax ) + '%';
 		handle.style.transform = 'translateX(-50%)';
 	}
 
@@ -159,9 +170,7 @@
 		this.totalCount = 0;
 		this.abortController = null;
 		this.infiniteObserver = null;
-		this._forceReplace = false; // true когда список нужно заменить целиком (фильтр/сортировка/сброс), даже в режиме load-more/infinite.
 		this._suppressAutoFilter = false; // true во время пачечного восстановления/сброса контролов — подавляет автозапуск runFilter() по change.
-		this._silentUpdate = false; // true для фонового запроса за цифрами на первой загрузке без фильтров в URL — см. runFilter().
 
 		this.runFilterDebounced = debounce( this.runFilter.bind( this ), 0 );
 		this.rangeDebounced = debounce( this.runFilter.bind( this ), 400 );
@@ -384,10 +393,14 @@
 	 * [pf-active-reset] (сбрасывает вообще все фильтры сразу), эта — только
 	 * значения своей группы. Работает одинаково для любого типа шаблона —
 	 * checkbox/radio/tags/range/dropdown-checkbox/dropdown-radio/category-tree.
+	 * Скрыта по умолчанию (как и [pf-active-reset]/[pf-active-chip]) — до
+	 * первого ответа сервера показываться нечему, видимость обновляется в
+	 * updateActiveFilters() по факту реально активного фильтра этой группы.
 	 */
 	PFForm.prototype.initGroupRemove = function ( groupClone, field ) {
 		var self = this;
 		qsa( groupClone, '[pf-filter-remove]' ).forEach( function ( btn ) {
+			btn.classList.add( 'pf-hidden' );
 			btn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
 				self.resetGroupFilter( field );
@@ -683,8 +696,8 @@
 		setRangeDisplayValue( minValueEl, min );
 		setRangeDisplayValue( maxValueEl, max );
 
-		positionRangeHandle( minHandle, min, min, max );
-		positionRangeHandle( maxHandle, max, min, max );
+		positionRangeHandle( minHandle, min, min, max, false );
+		positionRangeHandle( maxHandle, max, min, max, true );
 
 		// min/max/step ниже читаются из slider.dataset заново при каждом
 		// взаимодействии, а не захватываются в замыкание один раз — границы
@@ -714,12 +727,12 @@
 			if ( 'min' === type ) {
 				value = clamp( value, rangeMin, currentMax );
 				slider.dataset.currentMin = value;
-				positionRangeHandle( minHandle, value, rangeMin, rangeMax );
+				positionRangeHandle( minHandle, value, rangeMin, rangeMax, false );
 				setRangeDisplayValue( minValueEl, value );
 			} else {
 				value = clamp( value, currentMin, rangeMax );
 				slider.dataset.currentMax = value;
-				positionRangeHandle( maxHandle, value, rangeMin, rangeMax );
+				positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
 				setRangeDisplayValue( maxValueEl, value );
 			}
 		}
@@ -766,12 +779,12 @@
 				if ( 'min' === type ) {
 					var newMin = clamp( currentMin + delta, rangeMin, currentMax );
 					slider.dataset.currentMin = newMin;
-					positionRangeHandle( minHandle, newMin, rangeMin, rangeMax );
+					positionRangeHandle( minHandle, newMin, rangeMin, rangeMax, false );
 					setRangeDisplayValue( minValueEl, newMin );
 				} else {
 					var newMax = clamp( currentMax + delta, currentMin, rangeMax );
 					slider.dataset.currentMax = newMax;
-					positionRangeHandle( maxHandle, newMax, rangeMin, rangeMax );
+					positionRangeHandle( maxHandle, newMax, rangeMin, rangeMax, true );
 					setRangeDisplayValue( maxValueEl, newMax );
 				}
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
@@ -797,11 +810,11 @@
 				if ( 'min' === type ) {
 					value = clamp( value, rangeMin, currentMax );
 					slider.dataset.currentMin = value;
-					positionRangeHandle( minHandle, value, rangeMin, rangeMax );
+					positionRangeHandle( minHandle, value, rangeMin, rangeMax, false );
 				} else {
 					value = clamp( value, currentMin, rangeMax );
 					slider.dataset.currentMax = value;
-					positionRangeHandle( maxHandle, value, rangeMin, rangeMax );
+					positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
 				}
 				el.value = value;
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
@@ -873,8 +886,8 @@
 			maxBoundEl.textContent = newMax;
 		}
 
-		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), newCurMin, newMin, newMax );
-		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), newCurMax, newMin, newMax );
+		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), newCurMin, newMin, newMax, false );
+		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), newCurMax, newMin, newMax, true );
 		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), newCurMin );
 		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), newCurMax );
 	};
@@ -1035,20 +1048,26 @@
 		if ( opts.resetPage ) {
 			this.state.paged = 1;
 		}
-		this._forceReplace = !! opts.forceReplace;
-		// silent — фоновый запрос только за реальными цифрами (pf-count, счётчики
-		// групп, пагинация) без визуальных побочных эффектов: не показывает
-		// pf-loading, не трогает [pf-list]/[pf-empty] и не переписывает URL.
-		// Используется один раз на первой загрузке страницы без фильтров в URL —
-		// [pf-list] там уже отрендерен обычным циклом WordPress, трогать не нужно.
-		this._silentUpdate = !! opts.silent;
+		// forceReplace/silent захватываются ЛОКАЛЬНО для этого конкретного
+		// запроса (а не пишутся в this.*) и передаются в handleResponse()
+		// явно, вместе с ответом. Раньше это были общие поля на инстансе,
+		// выставляемые в момент ВЫЗОВА runFilter(), но читавшиеся в
+		// handleResponse() в момент ОТВЕТА — асинхронно, позже. Если между
+		// вызовом и ответом успевал выполниться ДРУГОЙ runFilter() (например,
+		// отложенный rangeDebounced — отдельная функция со своим таймером,
+		// прямой вызов runFilter() её не отменяет), ответ первого запроса читал
+		// уже перезаписанные чужие флаги — например, список товаров не
+		// заменялся, потому что forceReplace успел стать false от чужого
+		// вызова. this._forceReplace вдобавок никогда не сбрасывался обратно.
+		var forceReplace = !! opts.forceReplace;
+		var silent = !! opts.silent;
 
 		if ( this.abortController ) {
 			this.abortController.abort();
 		}
 		this.abortController = new AbortController();
 
-		if ( this.loadingEl && ! this._silentUpdate ) {
+		if ( this.loadingEl && ! silent ) {
 			this.loadingEl.classList.remove( 'is-hidden' );
 		}
 
@@ -1081,7 +1100,7 @@
 				return res.json();
 			} )
 			.then( function ( data ) {
-				self.handleResponse( data );
+				self.handleResponse( data, { forceReplace: forceReplace, silent: silent } );
 			} )
 			.catch( function ( err ) {
 				if ( 'AbortError' === err.name ) {
@@ -1094,9 +1113,10 @@
 			} );
 	};
 
-	PFForm.prototype.handleResponse = function ( data ) {
-		var silent = this._silentUpdate;
-		this._silentUpdate = false;
+	PFForm.prototype.handleResponse = function ( data, opts ) {
+		opts = opts || {};
+		var silent = !! opts.silent;
+		var forceReplace = !! opts.forceReplace;
 
 		if ( this.loadingEl ) {
 			this.loadingEl.classList.add( 'is-hidden' );
@@ -1123,7 +1143,7 @@
 
 				if ( this.listEl ) {
 					var appendModes = [ 'load-more', 'both', 'infinite' ];
-					if ( appendModes.includes( this.paginationMode ) && ! this._forceReplace ) {
+					if ( appendModes.includes( this.paginationMode ) && ! forceReplace ) {
 						this.listEl.insertAdjacentHTML( 'beforeend', data.html );
 					} else {
 						this.listEl.innerHTML = data.html;
@@ -1488,24 +1508,39 @@
 	};
 
 	/**
-	 * Есть ли хотя бы один реально активный фильтр. Для price — «активен»
-	 * только если диапазон отличается от полного (min/max шаблона), иначе он
+	 * Активен ли фильтр конкретно этого поля. Для price — «активен» только
+	 * если диапазон отличается от полного (min/max шаблона), иначе он
 	 * технически присутствует в collectFilters(), но фильтром не является.
+	 *
+	 * @param {string} field   Поле группы.
+	 * @param {Object} filters Результат collectFilters().
+	 * @return {boolean}
+	 */
+	PFForm.prototype.isFieldActive = function ( field, filters ) {
+		if ( 'price' === field ) {
+			var priceFilter = filters.price;
+			if ( ! priceFilter ) {
+				return false;
+			}
+			var group = this.groups.price;
+			var slider = group ? qs( group.el, '[pf-filter-range-slider]' ) : null;
+			var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
+			var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
+			return ! ( priceFilter.min === fullMin && priceFilter.max === fullMax );
+		}
+		return ( filters[ field ] || [] ).length > 0;
+	};
+
+	/**
+	 * Есть ли хотя бы один реально активный фильтр (среди всех групп).
 	 *
 	 * @param {Object} filters Результат collectFilters().
 	 * @return {boolean}
 	 */
 	PFForm.prototype.hasActiveFilters = function ( filters ) {
 		var self = this;
-		return Object.keys( filters ).some( function ( field ) {
-			if ( 'price' === field ) {
-				var group = self.groups.price;
-				var slider = group ? qs( group.el, '[pf-filter-range-slider]' ) : null;
-				var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
-				var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
-				return ! ( filters.price.min === fullMin && filters.price.max === fullMax );
-			}
-			return ( filters[ field ] || [] ).length > 0;
+		return Object.keys( this.groups ).some( function ( field ) {
+			return self.isFieldActive( field, filters );
 		} );
 	};
 
@@ -1531,8 +1566,8 @@
 				var rangeMax = parseFloat( slider.dataset.max );
 				slider.dataset.currentMin = slider.dataset.min;
 				slider.dataset.currentMax = slider.dataset.max;
-				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax );
-				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax );
+				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
+				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
 				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
 				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max );
 			}
@@ -1559,6 +1594,17 @@
 
 		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
 			btn.classList.toggle( 'pf-hidden', ! self.hasActiveFilters( filters ) );
+		} );
+
+		// [pf-filter-remove] — кнопка сброса ОДНОЙ группы, живёт внутри её
+		// pf-template — показывается, только когда у этой конкретной группы
+		// реально есть активный фильтр.
+		Object.keys( this.groups ).forEach( function ( field ) {
+			var group = self.groups[ field ];
+			var active = self.isFieldActive( field, filters );
+			qsa( group.el, '[pf-filter-remove]' ).forEach( function ( btn ) {
+				btn.classList.toggle( 'pf-hidden', ! active );
+			} );
 		} );
 
 		qsa( document, '[pf-active-filters]' ).forEach( function ( container ) {
