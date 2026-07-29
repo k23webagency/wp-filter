@@ -566,7 +566,11 @@
 		var swatchEl = qs( rowClone, '[pf-filter-swatch]' );
 		if ( swatchEl ) {
 			if ( value.color ) {
-				swatchEl.style.setProperty( '--swatch-color', value.color );
+				// background-color ставится напрямую инлайн-стилем — он всегда
+				// сильнее любого правила CSS темы (в т.ч. цвета, зашитого прямо в
+				// дизайн-шаблон группы в [pf-templates]), никакого дополнительного
+				// CSS от темы для этого не требуется.
+				swatchEl.style.backgroundColor = value.color;
 				swatchEl.classList.remove( 'pf-hidden' );
 			} else {
 				swatchEl.classList.add( 'pf-hidden' );
