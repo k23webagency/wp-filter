@@ -257,6 +257,7 @@
 				if ( self.outputEl && self.templatesEl ) {
 					self.buildGroups( config.groups || [] );
 					self.reinitWebflow();
+					self.dispatchBuiltEvent();
 				}
 
 				self.initSort( config.sort_options || [] );
@@ -363,26 +364,56 @@
 	 * ответа /config — поэтому построенные узлы (включая клоны дерева
 	 * категорий, где, в отличие от групп верхнего уровня, нельзя один раз
 	 * "переместить" оригинал: узлов на одном уровне обычно несколько) Webflow
-	 * при своей исходной инициализации просто не видел. Публичный API Webflow
-	 * умеет пересканировать DOM заново — на сайтах без Webflow window.Webflow
-	 * не существует, вызов — no-op.
+	 * при своей исходной инициализации просто не видел.
+	 *
+	 * Намеренно НЕ вызывается общий Webflow.destroy()+Webflow.ready(): это
+	 * перезапускает ВСЕ модули Webflow разом, включая "forms" — а он управляет
+	 * той же <form>, что и pf-form, и его переинициализация ломала другую
+	 * функциональность плагина (например, обработчик поиска внутри группы
+	 * фильтра переставал получать события). Вместо этого дропдауны
+	 * переинициализируются точечно через их собственный модуль — у него
+	 * .ready() безопасно вызывать повторно: перед новой привязкой обработчиков
+	 * он сам снимает старые (.off() перед .on()), дублей не будет.
+	 *
+	 * На сайтах без Webflow window.Webflow не существует — вызов no-op.
 	 */
 	PFForm.prototype.reinitWebflow = function () {
-		if ( ! window.Webflow ) {
+		if ( ! window.Webflow || ! window.Webflow.require ) {
 			return;
 		}
 		try {
-			window.Webflow.destroy();
-			window.Webflow.ready();
-			if ( window.Webflow.require ) {
-				var ix2 = window.Webflow.require( 'ix2' );
-				if ( ix2 && ix2.init ) {
-					ix2.init();
-				}
+			var dropdown = window.Webflow.require( 'dropdown' );
+			if ( dropdown && dropdown.ready ) {
+				dropdown.ready();
+			}
+			var ix2 = window.Webflow.require( 'ix2' );
+			if ( ix2 && ix2.init ) {
+				ix2.init();
 			}
 		} catch ( err ) {
 			console.warn( 'PF Filter: не удалось переинициализировать Webflow.', err );
 		}
+	};
+
+	/**
+	 * Событие "группы фильтра построены" — универсальный хук для ЛЮБОЙ
+	 * сторонней интерактивности темы, не только Webflow. reinitWebflow() выше
+	 * решает конкретно Webflow-случай; плагин не может знать заранее, чем
+	 * именно верстальщик реализует, например, раскрытие дропдаунов дерева
+	 * категорий — своим кастомным кодом, другой библиотекой, чем угодно.
+	 * Всплывает до document, слушать можно и там, и на самой форме.
+	 *
+	 * @example
+	 * document.addEventListener('pf-filter:groups-built', function (e) {
+	 *   // e.detail.form — форма [pf-form], e.detail.output — [pf-output]
+	 *   // здесь безопасно навешивать/переинициализировать свою интерактивность
+	 * });
+	 */
+	PFForm.prototype.dispatchBuiltEvent = function () {
+		this.formEl.dispatchEvent( new CustomEvent( 'pf-filter:groups-built', {
+			bubbles: true,
+			detail: { form: this.formEl, output: this.outputEl },
+		} ) );
 	};
 
 	/** checkbox / radio / tags / dropdown-checkbox / dropdown-radio — общий алгоритм строк. */
@@ -507,8 +538,18 @@
 			searchInput.classList.remove( 'pf-hidden' );
 		}
 
-		searchInput.addEventListener( 'input', function () {
-			var query = searchInput.value.trim().toLowerCase();
+		// Событие вешается делегированно на groupClone, а не напрямую на
+		// searchInput: сторонний JS темы (например, переинициализация Webflow —
+		// см. reinitWebflow()) тоже управляет полями этой же <form> и может
+		// заново инициализировать/подменить обработчики конкретно этого input,
+		// из-за чего прямой addEventListener на searchInput можно потерять.
+		// groupClone плагин больше не трогает после построения — делегирование
+		// на нём не зависит от того, что сторонний код сделает с самим полем.
+		groupClone.addEventListener( 'input', function ( e ) {
+			if ( ! e.target || 'text' !== e.target.type ) {
+				return;
+			}
+			var query = e.target.value.trim().toLowerCase();
 			var rows  = qsa( groupClone, '[data-pf-value]' );
 
 			if ( ! query ) {
