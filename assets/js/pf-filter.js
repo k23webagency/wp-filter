@@ -103,6 +103,29 @@
 		}
 	}
 
+	/** Позиция значения в процентах по границам [min, max]. */
+	function percentForRange( value, min, max ) {
+		if ( max === min ) {
+			return 0;
+		}
+		return clamp( ( value - min ) / ( max - min ) * 100, 0, 100 );
+	}
+
+	/**
+	 * Спозиционировать ползунок диапазона по значению относительно [min, max].
+	 * left:X% позиционирует ЛЕВЫЙ КРАЙ ползунка, а не его центр — без
+	 * компенсации transform ползунок на 100% вылезает вправо за пределы трека
+	 * на свою собственную ширину (симметрично на 0% — влево). translateX(-50%)
+	 * центрирует ползунок ровно на вычисленном проценте.
+	 */
+	function positionRangeHandle( handle, value, min, max ) {
+		if ( ! handle ) {
+			return;
+		}
+		handle.style.left = percentForRange( value, min, max ) + '%';
+		handle.style.transform = 'translateX(-50%)';
+	}
+
 	// ---------------------------------------------------------------------
 	// PFForm — один экземпляр на каждую найденную [pf-form]
 	// ---------------------------------------------------------------------
@@ -350,7 +373,25 @@
 			if ( clone ) {
 				self.outputEl.appendChild( clone );
 				self.groups[ groupConfig.field ] = { config: groupConfig, el: clone };
+				self.initGroupRemove( clone, groupConfig.field );
 			}
+		} );
+	};
+
+	/**
+	 * [pf-filter-remove] — необязательная кнопка сброса фильтра КОНКРЕТНО
+	 * этой группы, может быть где угодно внутри pf-template. В отличие от
+	 * [pf-active-reset] (сбрасывает вообще все фильтры сразу), эта — только
+	 * значения своей группы. Работает одинаково для любого типа шаблона —
+	 * checkbox/radio/tags/range/dropdown-checkbox/dropdown-radio/category-tree.
+	 */
+	PFForm.prototype.initGroupRemove = function ( groupClone, field ) {
+		var self = this;
+		qsa( groupClone, '[pf-filter-remove]' ).forEach( function ( btn ) {
+			btn.addEventListener( 'click', function ( e ) {
+				e.preventDefault();
+				self.resetGroupFilter( field );
+			} );
 		} );
 	};
 
@@ -642,50 +683,43 @@
 		setRangeDisplayValue( minValueEl, min );
 		setRangeDisplayValue( maxValueEl, max );
 
-		function percentFor( value ) {
-			if ( max === min ) {
-				return 0;
-			}
-			return clamp( ( value - min ) / ( max - min ) * 100, 0, 100 );
-		}
+		positionRangeHandle( minHandle, min, min, max );
+		positionRangeHandle( maxHandle, max, min, max );
 
-		function positionHandle( handle, value ) {
-			if ( handle ) {
-				// left:X% позиционирует ЛЕВЫЙ КРАЙ ползунка, а не его центр — без
-				// компенсации transform ползунок на 100% вылезает вправо за пределы
-				// трека на свою собственную ширину (симметрично на 0% — влево).
-				// translateX(-50%) центрирует ползунок ровно на вычисленном проценте.
-				handle.style.left = percentFor( value ) + '%';
-				handle.style.transform = 'translateX(-50%)';
-			}
-		}
+		// min/max/step ниже читаются из slider.dataset заново при каждом
+		// взаимодействии, а не захватываются в замыкание один раз — границы
+		// диапазона могут поменяться после первой сборки: см.
+		// PFForm.prototype.updatePriceBounds (цена подстраивается под
+		// остальные активные фильтры так же, как счётчики других групп).
+		// Если бы drag/клавиши/числовые поля продолжали клэмпиться по старым
+		// min/max, перетаскивание после такого обновления работало бы неверно.
 
-		positionHandle( minHandle, min );
-		positionHandle( maxHandle, max );
-
-		function roundToStep( value ) {
-			var rounded = Math.round( ( value - min ) / step ) * step + min;
-			return clamp( rounded, min, max );
+		function roundToStep( value, rangeMin, rangeMax, rangeStep ) {
+			var rounded = Math.round( ( value - rangeMin ) / rangeStep ) * rangeStep + rangeMin;
+			return clamp( rounded, rangeMin, rangeMax );
 		}
 
 		function updateFromDrag( type, clientX ) {
+			var rangeMin = parseFloat( slider.dataset.min );
+			var rangeMax = parseFloat( slider.dataset.max );
+			var rangeStep = parseFloat( slider.dataset.step ) || 1;
 			var rect = slider.getBoundingClientRect();
 			var percent = rect.width > 0 ? clamp( ( clientX - rect.left ) / rect.width, 0, 1 ) : 0;
-			var raw = min + percent * ( max - min );
-			var value = roundToStep( raw );
+			var raw = rangeMin + percent * ( rangeMax - rangeMin );
+			var value = roundToStep( raw, rangeMin, rangeMax, rangeStep );
 
 			var currentMin = parseFloat( slider.dataset.currentMin );
 			var currentMax = parseFloat( slider.dataset.currentMax );
 
 			if ( 'min' === type ) {
-				value = clamp( value, min, currentMax );
+				value = clamp( value, rangeMin, currentMax );
 				slider.dataset.currentMin = value;
-				positionHandle( minHandle, value );
+				positionRangeHandle( minHandle, value, rangeMin, rangeMax );
 				setRangeDisplayValue( minValueEl, value );
 			} else {
-				value = clamp( value, currentMin, max );
+				value = clamp( value, currentMin, rangeMax );
 				slider.dataset.currentMax = value;
-				positionHandle( maxHandle, value );
+				positionRangeHandle( maxHandle, value, rangeMin, rangeMax );
 				setRangeDisplayValue( maxValueEl, value );
 			}
 		}
@@ -723,18 +757,21 @@
 					return;
 				}
 				e.preventDefault();
-				var delta = 'ArrowLeft' === e.key ? -step : step;
+				var rangeMin = parseFloat( slider.dataset.min );
+				var rangeMax = parseFloat( slider.dataset.max );
+				var rangeStep = parseFloat( slider.dataset.step ) || 1;
+				var delta = 'ArrowLeft' === e.key ? -rangeStep : rangeStep;
 				var currentMin = parseFloat( slider.dataset.currentMin );
 				var currentMax = parseFloat( slider.dataset.currentMax );
 				if ( 'min' === type ) {
-					var newMin = clamp( currentMin + delta, min, currentMax );
+					var newMin = clamp( currentMin + delta, rangeMin, currentMax );
 					slider.dataset.currentMin = newMin;
-					positionHandle( minHandle, newMin );
+					positionRangeHandle( minHandle, newMin, rangeMin, rangeMax );
 					setRangeDisplayValue( minValueEl, newMin );
 				} else {
-					var newMax = clamp( currentMax + delta, currentMin, max );
+					var newMax = clamp( currentMax + delta, currentMin, rangeMax );
 					slider.dataset.currentMax = newMax;
-					positionHandle( maxHandle, newMax );
+					positionRangeHandle( maxHandle, newMax, rangeMin, rangeMax );
 					setRangeDisplayValue( maxValueEl, newMax );
 				}
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
@@ -749,6 +786,8 @@
 				return;
 			}
 			el.addEventListener( 'change', function () {
+				var rangeMin = parseFloat( slider.dataset.min );
+				var rangeMax = parseFloat( slider.dataset.max );
 				var currentMin = parseFloat( slider.dataset.currentMin );
 				var currentMax = parseFloat( slider.dataset.currentMax );
 				var value = parseFloat( el.value );
@@ -756,13 +795,13 @@
 					return;
 				}
 				if ( 'min' === type ) {
-					value = clamp( value, min, currentMax );
+					value = clamp( value, rangeMin, currentMax );
 					slider.dataset.currentMin = value;
-					positionHandle( minHandle, value );
+					positionRangeHandle( minHandle, value, rangeMin, rangeMax );
 				} else {
-					value = clamp( value, currentMin, max );
+					value = clamp( value, currentMin, rangeMax );
 					slider.dataset.currentMax = value;
-					positionHandle( maxHandle, value );
+					positionRangeHandle( maxHandle, value, rangeMin, rangeMax );
 				}
 				el.value = value;
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
@@ -773,6 +812,71 @@
 		bindNumberInput( maxValueEl, 'max' );
 
 		return clone;
+	};
+
+	/**
+	 * Подстроить границы (не только текущий выбор, а сам диапазон трека)
+	 * price-группы под остальные активные фильтры — точно так же, как уже
+	 * подстраиваются счётчики у остальных групп (data.counts на каждый
+	 * /products-ответ). Сервер уже считает min/max среди товаров, подходящих
+	 * под остальные фильтры (см. PF_Renderer::count_price_bounds) — раньше
+	 * клиент эти данные получал, но игнорировал.
+	 *
+	 * Если пользователь ещё не двигал ползунок (стоит на всём диапазоне) —
+	 * текущее выделение "едет" вместе с новыми границами, оставаясь "весь
+	 * диапазон". Если уже выбрал конкретный поддиапазон — граница просто
+	 * обрезается по новым min/max, чтобы не оказаться "снаружи" трека.
+	 *
+	 * @param {{el: Element}} group  Группа из this.groups (see collectFilters).
+	 * @param {{min: number, max: number}} bounds Новые границы из data.counts.price.
+	 */
+	PFForm.prototype.updatePriceBounds = function ( group, bounds ) {
+		if ( ! bounds ) {
+			return;
+		}
+
+		var slider = qs( group.el, '[pf-filter-range-slider]' );
+		if ( ! slider ) {
+			return;
+		}
+
+		var newMin = parseFloat( bounds.min );
+		var newMax = parseFloat( bounds.max );
+		if ( isNaN( newMin ) || isNaN( newMax ) ) {
+			return;
+		}
+
+		var oldMin = parseFloat( slider.dataset.min );
+		var oldMax = parseFloat( slider.dataset.max );
+		var curMin = parseFloat( slider.dataset.currentMin );
+		var curMax = parseFloat( slider.dataset.currentMax );
+		var wasFullRange = curMin === oldMin && curMax === oldMax;
+
+		slider.dataset.min = newMin;
+		slider.dataset.max = newMax;
+
+		var newCurMin = wasFullRange ? newMin : clamp( curMin, newMin, newMax );
+		var newCurMax = wasFullRange ? newMax : clamp( curMax, newMin, newMax );
+		if ( newCurMin > newCurMax ) {
+			newCurMin = newMin;
+			newCurMax = newMax;
+		}
+		slider.dataset.currentMin = newCurMin;
+		slider.dataset.currentMax = newCurMax;
+
+		var minBoundEl = qs( group.el, '[pf-filter-range="min"]' );
+		if ( minBoundEl ) {
+			minBoundEl.textContent = newMin;
+		}
+		var maxBoundEl = qs( group.el, '[pf-filter-range="max"]' );
+		if ( maxBoundEl ) {
+			maxBoundEl.textContent = newMax;
+		}
+
+		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), newCurMin, newMin, newMax );
+		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), newCurMax, newMin, newMax );
+		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), newCurMin );
+		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), newCurMax );
 	};
 
 	/** Дерево категорий — рекурсивный алгоритм buildLevel по нумерованным уровням. */
@@ -1068,7 +1172,12 @@
 			}
 
 			if ( 'price' === field ) {
-				return; // границы цены не пересчитываются повторно на клиенте.
+				// В отличие от остальных групп — не список значений со счётчиком
+				// у каждого, а min/max среди товаров, подходящих под остальные
+				// активные фильтры. Ползунок подстраивается под них так же, как
+				// подстраиваются счётчики остальных групп.
+				self.updatePriceBounds( group, counts.price );
+				return;
 			}
 
 			var fieldCounts = counts[ field ];
@@ -1400,6 +1509,36 @@
 		} );
 	};
 
+	/**
+	 * Сбросить элементы управления ОДНОЙ группы (чекбоксы/радио/теги/range) —
+	 * без запуска runFilter(). Общая часть для resetAllFilters() (сбрасывает
+	 * все группы разом одним итоговым запросом) и resetGroupFilter()
+	 * (сбрасывает ровно одну группу — используется чипом цены в активных
+	 * фильтрах и кнопкой [pf-filter-remove] внутри самой группы).
+	 */
+	PFForm.prototype.resetGroupControls = function ( group ) {
+		qsa( group.el, 'input[type="checkbox"], input[type="radio"]' ).forEach( function ( input ) {
+			setChecked( input, false );
+		} );
+		qsa( group.el, '[data-pf-value].is-active' ).forEach( function ( row ) {
+			row.classList.remove( 'is-active' );
+		} );
+
+		if ( 'range' === group.config.template ) {
+			var slider = qs( group.el, '[pf-filter-range-slider]' );
+			if ( slider ) {
+				var rangeMin = parseFloat( slider.dataset.min );
+				var rangeMax = parseFloat( slider.dataset.max );
+				slider.dataset.currentMin = slider.dataset.min;
+				slider.dataset.currentMax = slider.dataset.max;
+				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax );
+				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax );
+				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
+				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max );
+			}
+		}
+	};
+
 	PFForm.prototype.resetAllFilters = function () {
 		// Пока сбрасываем контролы группа за группой, не даём каждому отдельному
 		// change-событию запускать свой runFilter() — иначе на N чекбоксов будет
@@ -1407,31 +1546,7 @@
 		this._suppressAutoFilter = true;
 
 		Object.keys( this.groups ).forEach( function ( field ) {
-			var group = this.groups[ field ];
-			qsa( group.el, 'input[type="checkbox"], input[type="radio"]' ).forEach( function ( input ) {
-				setChecked( input, false );
-			} );
-			qsa( group.el, '[data-pf-value].is-active' ).forEach( function ( row ) {
-				row.classList.remove( 'is-active' );
-			} );
-
-			if ( 'range' === group.config.template ) {
-				var slider = qs( group.el, '[pf-filter-range-slider]' );
-				if ( slider ) {
-					slider.dataset.currentMin = slider.dataset.min;
-					slider.dataset.currentMax = slider.dataset.max;
-					var minHandle = qs( group.el, '[pf-filter-range-handle="min"]' );
-					var maxHandle = qs( group.el, '[pf-filter-range-handle="max"]' );
-					if ( minHandle ) {
-						minHandle.style.left = '0%';
-					}
-					if ( maxHandle ) {
-						maxHandle.style.left = '100%';
-					}
-					setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
-					setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max );
-				}
-			}
+			this.resetGroupControls( this.groups[ field ] );
 		}, this );
 
 		this._suppressAutoFilter = false;
@@ -1538,23 +1653,12 @@
 		if ( ! group ) {
 			return;
 		}
-		if ( 'range' === group.config.template ) {
-			var slider = qs( group.el, '[pf-filter-range-slider]' );
-			if ( slider ) {
-				slider.dataset.currentMin = slider.dataset.min;
-				slider.dataset.currentMax = slider.dataset.max;
-				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
-				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max );
-				var minHandle = qs( group.el, '[pf-filter-range-handle="min"]' );
-				var maxHandle = qs( group.el, '[pf-filter-range-handle="max"]' );
-				if ( minHandle ) {
-					minHandle.style.left = '0%';
-				}
-				if ( maxHandle ) {
-					maxHandle.style.left = '100%';
-				}
-			}
-		}
+		// Подавляем автозапуск runFilter() по каждому отдельному снятому
+		// чекбоксу/радио этой группы — иначе на группу с N значениями будет N
+		// лишних запросов вместо одного итогового (см. resetAllFilters()).
+		this._suppressAutoFilter = true;
+		this.resetGroupControls( group );
+		this._suppressAutoFilter = false;
 		this.runFilter( { resetPage: true, forceReplace: true } );
 	};
 

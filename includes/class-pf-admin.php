@@ -313,7 +313,13 @@ class PF_Admin {
 		// для ручной диагностики разметки.
 		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
 		$available_templates    = $this->get_available_templates( $diagnostics_default_url );
-		$available_pagination   = $this->diagnostics->get_pagination_availability( $diagnostics_default_url );
+		// Один скан образца разметки на всю страницу настроек — переиспользуется
+		// и для доступности стратегий пагинации, и для точечных предупреждений
+		// "для этой настройки в вёрстке нет нужного элемента" (см. ниже
+		// PF_Diagnostics::has_attribute()/has_text_input() в самом виде).
+		$scan_dom              = $this->diagnostics->fetch_dom( $diagnostics_default_url );
+		$scan_xpath            = $scan_dom ? new DOMXPath( $scan_dom ) : null;
+		$available_pagination  = $scan_xpath ? PF_Diagnostics::detect_pagination_availability( $scan_xpath ) : null;
 
 		require PF_FILTER_PATH . 'includes/views/admin-page.php';
 	}
@@ -325,10 +331,12 @@ class PF_Admin {
 	 * @param string $name_prefix         Префикс имени поля, напр. "pf_filter_settings[groups]".
 	 * @param string $index               Индекс строки (число либо "__INDEX__" для JS-шаблона).
 	 * @param array  $group               Данные группы (field/label/template/logic/enabled/...).
-	 * @param array  $available_fields    Список доступных полей [ [field,label], ... ].
-	 * @param array  $available_templates Список доступных значений pf-template.
+	 * @param array         $available_fields    Список доступных полей [ [field,label], ... ].
+	 * @param array         $available_templates Список доступных значений pf-template.
+	 * @param DOMXPath|null $scan_xpath          XPath образца разметки (см. PF_Admin::render_page()) для точечных
+	 *                                           предупреждений "нет нужного элемента"; null — сканирование недоступно.
 	 */
-	public function render_group_row( $name_prefix, $index, array $group, array $available_fields, array $available_templates ) {
+	public function render_group_row( $name_prefix, $index, array $group, array $available_fields, array $available_templates, $scan_xpath = null ) {
 		$n = $name_prefix . '[' . $index . ']';
 		$field    = $group['field'] ?? '';
 		$label    = $group['label'] ?? '';
@@ -343,6 +351,10 @@ class PF_Admin {
 		$tree_d   = $group['tree_depth'] ?? '';
 		$colors   = $group['colors'] ?? array();
 		$value_sort = $group['value_sort'] ?? 'name_asc';
+		// null — сканирование недоступно (тогда ничего не предупреждаем, как и
+		// в остальных местах, завязанных на скан образца разметки).
+		$search_available = $scan_xpath ? PF_Diagnostics::has_text_input( $scan_xpath, $template ) : null;
+		$colors_available = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter-swatch', $template ) : null;
 		?>
 		<tr class="pf-group-row" draggable="true" data-index="<?php echo esc_attr( $index ); ?>">
 			<td class="pf-drag-handle" title="<?php esc_attr_e( 'Перетащить для изменения порядка', 'pf-filter' ); ?>">☰</td>
@@ -377,6 +389,9 @@ class PF_Admin {
 					<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[search]" value="1" <?php checked( $search ); ?> />
 					<?php esc_html_e( 'Поиск', 'pf-filter' ); ?>
 				</label>
+				<?php if ( $search && false === $search_available ) : ?>
+					<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден input[type=text] — поле поиска показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет поля в шаблоне', 'pf-filter' ); ?></span>
+				<?php endif; ?>
 			</td>
 			<td class="pf-extra-range">
 				<input type="number" step="any" name="<?php echo esc_attr( $n ); ?>[step]" value="<?php echo esc_attr( $step ); ?>" placeholder="<?php esc_attr_e( 'Шаг', 'pf-filter' ); ?>" style="width:70px" />
@@ -396,6 +411,9 @@ class PF_Admin {
 					<?php endforeach; ?>
 				</div>
 				<button type="button" class="button pf-add-color"><?php esc_html_e( '+ Цвет', 'pf-filter' ); ?></button>
+				<?php if ( ! empty( $colors ) && false === $colors_available ) : ?>
+					<p style="color:#b32d2e;font-size:11px;margin:4px 0 0;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден [pf-filter-swatch] — цвета показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет pf-filter-swatch в шаблоне', 'pf-filter' ); ?></p>
+				<?php endif; ?>
 			</td>
 			<td class="pf-extra-value-sort">
 				<select name="<?php echo esc_attr( $n ); ?>[value_sort]">

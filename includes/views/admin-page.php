@@ -58,6 +58,9 @@ defined( 'ABSPATH' ) || exit;
 					<th><?php esc_html_e( 'Показывать счётчик товаров', 'pf-filter' ); ?></th>
 					<td>
 						<label><input type="checkbox" name="pf_filter_settings[show_counts]" value="1" <?php checked( ! empty( $settings['show_counts'] ) ); ?> /> <?php esc_html_e( 'включено', 'pf-filter' ); ?></label>
+						<?php if ( ! empty( $settings['show_counts'] ) && $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter-count' ) ) : ?>
+							<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден ни один [pf-filter-count] — счётчики показывать негде.', 'pf-filter' ); ?></p>
+						<?php endif; ?>
 					</td>
 				</tr>
 				<tr>
@@ -174,13 +177,14 @@ defined( 'ABSPATH' ) || exit;
 									'enabled'  => true,
 								),
 								$available_fields,
-								$available_templates
+								$available_templates,
+								$scan_xpath
 							);
 							++$index;
 						}
 					} else {
 						foreach ( $settings['groups'] as $index => $group ) {
-							$this->render_group_row( 'pf_filter_settings[groups]', $index, $group, $available_fields, $available_templates );
+							$this->render_group_row( 'pf_filter_settings[groups]', $index, $group, $available_fields, $available_templates, $scan_xpath );
 						}
 					}
 					?>
@@ -203,7 +207,8 @@ defined( 'ABSPATH' ) || exit;
 						'enabled'  => true,
 					),
 					$available_fields,
-					$available_templates
+					$available_templates,
+					$scan_xpath
 				);
 				?>
 				</tbody></table>
@@ -211,6 +216,9 @@ defined( 'ABSPATH' ) || exit;
 		</div>
 
 		<div class="pf-tab-panel" id="pf-tab-sort" data-tab="sort" style="display:none">
+			<?php if ( $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-sort' ) ) : ?>
+				<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден [pf-sort] — блок сортировки в разметке отсутствует, эти настройки ни на что не повлияют.', 'pf-filter' ); ?></p>
+			<?php endif; ?>
 			<table class="widefat pf-sort-table">
 				<thead>
 					<tr>

@@ -610,6 +610,19 @@ class PF_Diagnostics {
 	 * @return array|null {pages, load-more, infinite, both} => bool, либо null если страницу не удалось загрузить.
 	 */
 	public function get_pagination_availability( $url ) {
+		$dom = $this->fetch_dom( $url );
+		return $dom ? self::detect_pagination_availability( new DOMXPath( $dom ) ) : null;
+	}
+
+	/**
+	 * Загрузить и распарсить страницу по URL в DOMDocument. Общий шаг для
+	 * всех проверок "чего не хватает в вёрстке для настройки X" — страница
+	 * скачивается и парсится один раз, а не заново на каждую проверку.
+	 *
+	 * @param string $url URL страницы для сканирования.
+	 * @return DOMDocument|null null, если URL пуст или страницу не удалось загрузить.
+	 */
+	public function fetch_dom( $url ) {
 		if ( empty( $url ) ) {
 			return null;
 		}
@@ -629,7 +642,39 @@ class PF_Diagnostics {
 		$dom->loadHTML( '<?xml encoding="utf-8" ?>' . $html );
 		libxml_clear_errors();
 
-		return self::detect_pagination_availability( new DOMXPath( $dom ) );
+		return $dom;
+	}
+
+	/**
+	 * Есть ли на странице элемент с данным pf-* атрибутом — опционально
+	 * только внутри конкретного [pf-template="..."]. Общая проверка "хватает
+	 * ли вёрстки для настройки X" — используется страницей настроек, чтобы
+	 * предупреждать о настройках, для которых в реальной вёрстке нет нужных
+	 * элементов.
+	 *
+	 * @param DOMXPath    $xpath     XPath уже распарсенной страницы (см. fetch_dom).
+	 * @param string      $attribute Имя pf-* атрибута без квадратных скобок (например 'pf-filter-count').
+	 * @param string|null $template  Если задано — искать только внутри [pf-template="$template"].
+	 * @return bool
+	 */
+	public static function has_attribute( DOMXPath $xpath, $attribute, $template = null ) {
+		$query = $template
+			? '//*[@pf-template="' . $template . '"]//*[@' . $attribute . ']'
+			: '//*[@' . $attribute . ']';
+		return $xpath->query( $query )->length > 0;
+	}
+
+	/**
+	 * Есть ли внутри конкретного [pf-template="..."] текстовое поле — так
+	 * устроен поиск внутри группы (обычный input[type=text] без своего pf-*
+	 * атрибута, поэтому has_attribute() тут не подходит).
+	 *
+	 * @param DOMXPath $xpath    XPath уже распарсенной страницы (см. fetch_dom).
+	 * @param string   $template Значение pf-template (например 'checkbox').
+	 * @return bool
+	 */
+	public static function has_text_input( DOMXPath $xpath, $template ) {
+		return $xpath->query( '//*[@pf-template="' . $template . '"]//input[@type="text"]' )->length > 0;
 	}
 
 	/**
