@@ -77,14 +77,16 @@ class PF_Attributes {
 	private function build_default_group_configs() {
 		$configs = array();
 
-		foreach ( wc_get_attribute_taxonomies() as $taxonomy ) {
-			$configs[] = array(
-				'field'    => 'pa_' . $taxonomy->attribute_name,
-				'label'    => $taxonomy->attribute_label,
-				'template' => 'checkbox',
-				'logic'    => 'or',
-				'enabled'  => true,
-			);
+		if ( function_exists( 'wc_get_attribute_taxonomies' ) ) {
+			foreach ( wc_get_attribute_taxonomies() as $taxonomy ) {
+				$configs[] = array(
+					'field'    => 'pa_' . $taxonomy->attribute_name,
+					'label'    => $taxonomy->attribute_label,
+					'template' => 'checkbox',
+					'logic'    => 'or',
+					'enabled'  => true,
+				);
+			}
 		}
 
 		foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
@@ -707,11 +709,13 @@ class PF_Attributes {
 	 */
 	public function get_all_attribute_taxonomies() {
 		$out = array();
-		foreach ( wc_get_attribute_taxonomies() as $taxonomy ) {
-			$out[] = array(
-				'field' => 'pa_' . $taxonomy->attribute_name,
-				'label' => $taxonomy->attribute_label,
-			);
+		if ( function_exists( 'wc_get_attribute_taxonomies' ) ) {
+			foreach ( wc_get_attribute_taxonomies() as $taxonomy ) {
+				$out[] = array(
+					'field' => 'pa_' . $taxonomy->attribute_name,
+					'label' => $taxonomy->attribute_label,
+				);
+			}
 		}
 		foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
 			$out[] = array(

@@ -2,11 +2,10 @@
 /**
  * Plugin Name:       PF Filter
  * Plugin URI:        https://example.com/pf-filter
- * Description:       Движок фильтрации каталога WooCommerce, работающий через HTML-атрибуты pf-* в разметке темы. Не диктует внешний вид карточек и сетки.
- * Version:           1.5.10
+ * Description:       Движок AJAX-фильтрации каталога (товары WooCommerce, любой другой тип записи или блог), работающий через HTML-атрибуты pf-* в разметке темы. Не диктует внешний вид карточек и сетки.
+ * Version:           1.6.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
- * WC requires at least: 7.0
  * Author:            PF Filter
  * Text Domain:       pf-filter
  *
@@ -16,7 +15,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Константы плагина.
-define( 'PF_FILTER_VERSION', '1.5.10' );
+define( 'PF_FILTER_VERSION', '1.6.0' );
 define( 'PF_FILTER_FILE', __FILE__ );
 define( 'PF_FILTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'PF_FILTER_URL', plugin_dir_url( __FILE__ ) );
@@ -62,28 +61,14 @@ $pf_filter_update_checker->setBranch( 'main' );
 $pf_filter_update_checker->getVcsApi()->enableReleaseAssets();
 
 /**
- * Проверка что WooCommerce активен, инициализация плагина.
+ * Инициализация плагина. WooCommerce не обязателен — плагин умеет
+ * фильтровать любой тип записи; там, где код специфичен для WooCommerce,
+ * он сам проверяет function_exists()/class_exists() и деградирует.
  */
 function pf_filter_init() {
-	if ( ! class_exists( 'WooCommerce' ) ) {
-		add_action( 'admin_notices', 'pf_filter_woocommerce_missing_notice' );
-		return;
-	}
-
 	PF_Plugin::instance();
 }
 add_action( 'plugins_loaded', 'pf_filter_init' );
-
-/**
- * Уведомление в админке если WooCommerce не активен.
- */
-function pf_filter_woocommerce_missing_notice() {
-	?>
-	<div class="notice notice-error">
-		<p><?php esc_html_e( 'PF Filter требует активный и установленный плагин WooCommerce.', 'pf-filter' ); ?></p>
-	</div>
-	<?php
-}
 
 /**
  * Активация плагина — регистрация настроек по умолчанию.

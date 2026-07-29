@@ -102,6 +102,20 @@ class PF_Config {
 	}
 
 	/**
+	 * Тип записи, который фильтрует плагин. Пока не отдельная настройка в
+	 * админке (появится на этапе мультипрофильности) — читается тем же
+	 * способом, что и остальные настройки, чтобы код уже сейчас не
+	 * хардкодил 'product' напрямую. По умолчанию — 'product', если активен
+	 * WooCommerce, иначе 'post'.
+	 *
+	 * @return string
+	 */
+	public static function get_post_type() {
+		$default = class_exists( 'WooCommerce' ) ? 'product' : 'post';
+		return (string) self::get( 'post_type', $default );
+	}
+
+	/**
 	 * Сохранить настройки (полная перезапись со слиянием умолчаний).
 	 *
 	 * @param array $data Новые данные настроек.

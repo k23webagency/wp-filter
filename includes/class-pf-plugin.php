@@ -62,11 +62,12 @@ final class PF_Plugin {
 	}
 
 	/**
-	 * Ограничивает posts_per_page ГЛАВНОГО запроса страницы каталога (магазин,
-	 * категория/тег/атрибут товара) тем же значением из настроек плагина, что
-	 * использует AJAX-эндпоинт /pf/v1/products. Без этого первая (не через
-	 * AJAX) загрузка каталога показывала все товары сразу — тема/WooCommerce
-	 * сами ничего не ограничивают, плагин ограничивал только свой REST-запрос.
+	 * Ограничивает posts_per_page ГЛАВНОГО запроса страницы каталога (архив
+	 * настроенного типа записи, его таксономии, либо блог) тем же значением
+	 * из настроек плагина, что использует AJAX-эндпоинт /pf/v1/products. Без
+	 * этого первая (не через AJAX) загрузка каталога показывала все записи
+	 * сразу — тема сама ничего не ограничивает, плагин ограничивал только
+	 * свой REST-запрос.
 	 *
 	 * Кроме визуального расхождения с AJAX-страницами это ломает саму
 	 * пагинацию на уровне WordPress: если главный запрос не постраничный,
@@ -81,10 +82,25 @@ final class PF_Plugin {
 			return;
 		}
 
-		$product_taxonomies = function_exists( 'wc_get_object_taxonomies' ) ? wc_get_object_taxonomies( 'product' ) : array();
-		$is_product_archive = $query->is_post_type_archive( 'product' ) || ( $product_taxonomies && $query->is_tax( $product_taxonomies ) );
+		$post_type = PF_Config::get_post_type();
 
-		if ( ! $is_product_archive ) {
+		$is_target_archive = $query->is_post_type_archive( $post_type );
+
+		if ( ! $is_target_archive ) {
+			$taxonomies = ( 'product' === $post_type && function_exists( 'wc_get_object_taxonomies' ) )
+				? wc_get_object_taxonomies( 'product' )
+				: get_object_taxonomies( $post_type );
+
+			$is_target_archive = ! empty( $taxonomies ) && $query->is_tax( $taxonomies );
+		}
+
+		if ( ! $is_target_archive && 'post' === $post_type ) {
+			// У типа записи 'post' нет отдельного «архива» в смысле
+			// is_post_type_archive() — его каталог это блог (главная лента).
+			$is_target_archive = $query->is_home();
+		}
+
+		if ( ! $is_target_archive ) {
 			return;
 		}
 

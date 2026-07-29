@@ -53,12 +53,20 @@ class PF_Diagnostics {
 			sprintf( '%s (требуется 6.0+)', $wp_version )
 		);
 
-		$checks[] = $this->make_check(
+		// WooCommerce больше не обязателен — плагин умеет фильтровать любой тип
+		// записи (см. ROADMAP.md, этап 1). Его отсутствие — ошибка только если
+		// плагин настроен именно на product; иначе это ожидаемая конфигурация.
+		$post_type_needs_wc = 'product' === PF_Config::get_post_type();
+		$checks[]           = $this->make_check(
 			'woocommerce_active',
 			__( 'WooCommerce активен', 'pf-filter' ),
 			class_exists( 'WooCommerce' ),
-			'error',
-			class_exists( 'WooCommerce' ) ? ( defined( 'WC_VERSION' ) ? 'v' . WC_VERSION : '' ) : __( 'WooCommerce не найден или не активирован.', 'pf-filter' )
+			$post_type_needs_wc ? 'error' : 'warning',
+			class_exists( 'WooCommerce' )
+				? ( defined( 'WC_VERSION' ) ? 'v' . WC_VERSION : '' )
+				: ( $post_type_needs_wc
+					? __( 'WooCommerce не найден или не активирован, а тип записи в настройках — product.', 'pf-filter' )
+					: __( 'WooCommerce не активен — плагин настроен на другой тип записи, это ожидаемо.', 'pf-filter' ) )
 		);
 
 		$rest_ok      = false;

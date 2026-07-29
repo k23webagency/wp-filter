@@ -88,34 +88,68 @@ class PF_Renderer {
 	}
 
 	/**
-	 * Стандартный рендер через WooCommerce loop — используется если
-	 * извлечь шаблон страницы не удалось (или он не заработал).
-	 * Тема может переопределить эту карточку через свой
-	 * woocommerce/content-product.php.
+	 * Стандартный рендер — используется если извлечь шаблон страницы не
+	 * удалось (или он не заработал). Для товаров WooCommerce — через
+	 * стандартный WooCommerce loop (тема может переопределить карточку через
+	 * свой woocommerce/content-product.php). Для любого другого типа записи
+	 * WooCommerce не участвует вообще — карточка ищется по обычной
+	 * WordPress-конвенции content-{post_type}.php/content.php, либо, если
+	 * тема и такого не предоставляет, рендерится минимальный бейзлайн, чтобы
+	 * AJAX-ответ не оставался пустым.
 	 *
-	 * @param WP_Query $query Выполненный запрос товаров.
+	 * @param WP_Query $query Выполненный запрос.
 	 * @return string
 	 */
 	private function render_default( WP_Query $query ) {
 		ob_start();
 
-		if ( function_exists( 'wc_set_loop_prop' ) ) {
+		$post_type            = (string) $query->get( 'post_type' );
+		$use_woocommerce_loop = class_exists( 'WooCommerce' ) && function_exists( 'wc_get_template_part' ) && 'product' === $post_type;
+
+		if ( $use_woocommerce_loop && function_exists( 'wc_set_loop_prop' ) ) {
 			wc_set_loop_prop( 'total', $query->found_posts );
 			wc_set_loop_prop( 'total_pages', $query->max_num_pages );
 			wc_set_loop_prop( 'current_page', max( 1, (int) $query->get( 'paged' ) ) );
 			wc_set_loop_prop( 'is_shortcode', false );
 		}
 
-		if ( $query->have_posts() ) {
-			while ( $query->have_posts() ) {
-				$query->the_post();
+		while ( $query->have_posts() ) {
+			$query->the_post();
+
+			if ( $use_woocommerce_loop ) {
 				wc_get_template_part( 'content', 'product' );
+				continue;
 			}
+
+			$this->render_default_card( get_post_type() );
 		}
 
 		wp_reset_postdata();
 
 		return ob_get_clean();
+	}
+
+	/**
+	 * Карточка записи не-WooCommerce типа: сначала — обычная WordPress-
+	 * конвенция шаблона темы (content-{post_type}.php, затем content.php),
+	 * если ни того ни другого в теме нет — минимальный бейзлайн (заголовок
+	 * со ссылкой + эксцерпт).
+	 *
+	 * @param string $post_type Тип текущей (setup_postdata) записи.
+	 */
+	private function render_default_card( $post_type ) {
+		$located = locate_template( array( "content-{$post_type}.php", 'content.php' ) );
+
+		if ( $located ) {
+			get_template_part( 'content', $post_type );
+			return;
+		}
+		?>
+		<div class="pf-card">
+			<a href="<?php the_permalink(); ?>"><?php the_title(); ?></a>
+			<div class="pf-card-excerpt"><?php the_excerpt(); ?></div>
+		</div>
+		<?php
 	}
 
 	/**
