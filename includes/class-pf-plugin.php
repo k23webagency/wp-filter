@@ -58,6 +58,37 @@ final class PF_Plugin {
 		}
 
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
+		add_action( 'pre_get_posts', array( $this, 'limit_main_query_posts_per_page' ) );
+	}
+
+	/**
+	 * Ограничивает posts_per_page ГЛАВНОГО запроса страницы каталога (магазин,
+	 * категория/тег/атрибут товара) тем же значением из настроек плагина, что
+	 * использует AJAX-эндпоинт /pf/v1/products. Без этого первая (не через
+	 * AJAX) загрузка каталога показывала все товары сразу — тема/WooCommerce
+	 * сами ничего не ограничивают, плагин ограничивал только свой REST-запрос.
+	 *
+	 * Кроме визуального расхождения с AJAX-страницами это ломает саму
+	 * пагинацию на уровне WordPress: если главный запрос не постраничный,
+	 * max_num_pages = 1, и WordPress считает любой ?paged=2+ несуществующей
+	 * страницей и отдаёт 404 — в том числе при обычной перезагрузке уже
+	 * открытой пользователем страницы.
+	 *
+	 * @param WP_Query $query Запрос (хук общий, поэтому фильтруем сами).
+	 */
+	public function limit_main_query_posts_per_page( $query ) {
+		if ( is_admin() || ! $query->is_main_query() ) {
+			return;
+		}
+
+		$product_taxonomies = function_exists( 'wc_get_object_taxonomies' ) ? wc_get_object_taxonomies( 'product' ) : array();
+		$is_product_archive = $query->is_post_type_archive( 'product' ) || ( $product_taxonomies && $query->is_tax( $product_taxonomies ) );
+
+		if ( ! $is_product_archive ) {
+			return;
+		}
+
+		$query->set( 'posts_per_page', (int) PF_Config::get( 'posts_per_page', 12 ) );
 	}
 
 	/**
