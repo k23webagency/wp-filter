@@ -856,6 +856,20 @@
 	 * диапазон". Если уже выбрал конкретный поддиапазон — граница просто
 	 * обрезается по новым min/max, чтобы не оказаться "снаружи" трека.
 	 *
+	 * "Тронут ли пользователем" определяется ИСКЛЮЧИТЕЛЬНО по
+	 * data-user-adjusted, а не сравнением текущих currentMin/currentMax со
+	 * старыми min/max трека — то есть сравнением значений. Раньше было
+	 * именно так, и это ломалось, когда границы схлопывались в одну точку
+	 * (min===max — например, единственный товар после другого фильтра):
+	 * тогда ЛЮБОЕ текущее выделение (тронутое пользователем или нет —
+	 * технически на схлопнутом треке других значений и не может быть)
+	 * совпадало со старыми границами, и следующее обновление ошибочно
+	 * считало диапазон нетронутым — сбрасывало его на новые границы, даже
+	 * если пользователь его реально выбирал. Внешне это выглядело как
+	 * самопроизвольный сброс/залипание range-фильтра при снятии/добавлении
+	 * ДРУГОГО фильтра, и путало isFieldActive()/чипы, использующие те же
+	 * data-min/data-max как "полный диапазон" для сравнения.
+	 *
 	 * @param {{el: Element}} group  Группа из this.groups (see collectFilters).
 	 * @param {{min: number, max: number}} bounds Новые границы из data.counts[field].
 	 */
@@ -875,11 +889,9 @@
 			return;
 		}
 
-		var oldMin = parseFloat( slider.dataset.min );
-		var oldMax = parseFloat( slider.dataset.max );
 		var curMin = parseFloat( slider.dataset.currentMin );
 		var curMax = parseFloat( slider.dataset.currentMax );
-		var wasFullRange = curMin === oldMin && curMax === oldMax;
+		var wasFullRange = ! slider.dataset.userAdjusted;
 
 		slider.dataset.min = newMin;
 		slider.dataset.max = newMax;
