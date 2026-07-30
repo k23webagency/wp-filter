@@ -238,8 +238,12 @@ class PF_REST_API {
 		foreach ( $filters as $field => $value ) {
 			$field = sanitize_text_field( (string) $field );
 
-			if ( 'price' === $field && is_array( $value ) ) {
-				$clean['price'] = array(
+			// Числовой диапазон (шаблон range — цена и любое другое такое поле,
+			// см. PF_Attributes::resolve_range_meta_key()) отличается по форме
+			// значения ({min,max}), а не по имени поля — раньше здесь был
+			// спецкейс под буквальное имя 'price'.
+			if ( is_array( $value ) && ( array_key_exists( 'min', $value ) || array_key_exists( 'max', $value ) ) ) {
+				$clean[ $field ] = array(
 					'min' => isset( $value['min'] ) ? floatval( $value['min'] ) : null,
 					'max' => isset( $value['max'] ) ? floatval( $value['max'] ) : null,
 				);

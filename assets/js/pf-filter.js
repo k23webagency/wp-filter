@@ -706,18 +706,19 @@
 		// min/max/step ниже читаются из slider.dataset заново при каждом
 		// взаимодействии, а не захватываются в замыкание один раз — границы
 		// диапазона могут поменяться после первой сборки: см.
-		// PFForm.prototype.updatePriceBounds (цена подстраивается под
+		// PFForm.prototype.updateRangeBounds (диапазон подстраивается под
 		// остальные активные фильтры так же, как счётчики других групп).
 		// Если бы drag/клавиши/числовые поля продолжали клэмпиться по старым
 		// min/max, перетаскивание после такого обновления работало бы неверно.
 		//
 		// slider.dataset.userAdjusted ставится в drag/клавишах/числовом поле
 		// ниже — только реальным действием пользователя. collectFilters()
-		// отправляет price как активный фильтр ТОЛЬКО если этот флаг стоит.
-		// Без этого различия автоматическая подстройка границ под ДРУГИЕ
-		// активные фильтры (updatePriceBounds) "приклеивалась" бы к текущему
-		// выбору как будто пользователь сам его сделал — и после снятия ТОЙ
-		// фильтра цена продолжала бы слаться суженной, хотя её никто не трогал.
+		// отправляет эту группу как активный фильтр ТОЛЬКО если этот флаг
+		// стоит. Без этого различия автоматическая подстройка границ под
+		// ДРУГИЕ активные фильтры (updateRangeBounds) "приклеивалась" бы к
+		// текущему выбору как будто пользователь сам его сделал — и после
+		// снятия ТОЙ фильтра диапазон продолжал бы слаться суженным, хотя
+		// его никто не трогал.
 
 		function roundToStep( value, rangeMin, rangeMax, rangeStep ) {
 			var rounded = Math.round( ( value - rangeMin ) / rangeStep ) * rangeStep + rangeMin;
@@ -844,11 +845,11 @@
 
 	/**
 	 * Подстроить границы (не только текущий выбор, а сам диапазон трека)
-	 * price-группы под остальные активные фильтры — точно так же, как уже
-	 * подстраиваются счётчики у остальных групп (data.counts на каждый
-	 * /products-ответ). Сервер уже считает min/max среди товаров, подходящих
-	 * под остальные фильтры (см. PF_Renderer::count_price_bounds) — раньше
-	 * клиент эти данные получал, но игнорировал.
+	 * range-группы (цена и любое другое такое поле) под остальные активные
+	 * фильтры — точно так же, как уже подстраиваются счётчики у остальных
+	 * групп (data.counts на каждый /products-ответ). Сервер уже считает
+	 * min/max среди записей, подходящих под остальные фильтры (см.
+	 * PF_Renderer::count_meta_range_bounds).
 	 *
 	 * Если пользователь ещё не двигал ползунок (стоит на всём диапазоне) —
 	 * текущее выделение "едет" вместе с новыми границами, оставаясь "весь
@@ -856,9 +857,9 @@
 	 * обрезается по новым min/max, чтобы не оказаться "снаружи" трека.
 	 *
 	 * @param {{el: Element}} group  Группа из this.groups (see collectFilters).
-	 * @param {{min: number, max: number}} bounds Новые границы из data.counts.price.
+	 * @param {{min: number, max: number}} bounds Новые границы из data.counts[field].
 	 */
-	PFForm.prototype.updatePriceBounds = function ( group, bounds ) {
+	PFForm.prototype.updateRangeBounds = function ( group, bounds ) {
 		if ( ! bounds ) {
 			return;
 		}
@@ -1201,8 +1202,8 @@
 		// висеть в форме, хотя реально ни один товар из текущей выборки под них
 		// не попадал.
 		Object.keys( this.groups ).forEach( function ( field ) {
-			if ( 'price' === field ) {
-				return; // цена всегда видна, релевантность по счётчикам к ней не применяется.
+			if ( 'range' === self.groups[ field ].config.template ) {
+				return; // range-группа (цена и т.п.) всегда видна, релевантность по счётчикам к ней не применяется.
 			}
 			self.groups[ field ].el.classList.toggle( 'pf-hidden', ! ( field in counts ) );
 		} );
@@ -1213,12 +1214,12 @@
 				return;
 			}
 
-			if ( 'price' === field ) {
+			if ( 'range' === group.config.template ) {
 				// В отличие от остальных групп — не список значений со счётчиком
-				// у каждого, а min/max среди товаров, подходящих под остальные
+				// у каждого, а min/max среди записей, подходящих под остальные
 				// активные фильтры. Ползунок подстраивается под них так же, как
 				// подстраиваются счётчики остальных групп.
-				self.updatePriceBounds( group, counts.price );
+				self.updateRangeBounds( group, counts[ field ] );
 				return;
 			}
 
@@ -1530,25 +1531,26 @@
 	};
 
 	/**
-	 * Активен ли фильтр конкретно этого поля. Для price — «активен» только
-	 * если диапазон отличается от полного (min/max шаблона), иначе он
-	 * технически присутствует в collectFilters(), но фильтром не является.
+	 * Активен ли фильтр конкретно этого поля. Для range-группы (цена и любое
+	 * другое такое поле) — «активен» только если диапазон отличается от
+	 * полного (min/max шаблона), иначе он технически присутствует в
+	 * collectFilters(), но фильтром не является.
 	 *
 	 * @param {string} field   Поле группы.
 	 * @param {Object} filters Результат collectFilters().
 	 * @return {boolean}
 	 */
 	PFForm.prototype.isFieldActive = function ( field, filters ) {
-		if ( 'price' === field ) {
-			var priceFilter = filters.price;
-			if ( ! priceFilter ) {
+		var group = this.groups[ field ];
+		if ( group && 'range' === group.config.template ) {
+			var rangeFilter = filters[ field ];
+			if ( ! rangeFilter ) {
 				return false;
 			}
-			var group = this.groups.price;
-			var slider = group ? qs( group.el, '[pf-filter-range-slider]' ) : null;
+			var slider = qs( group.el, '[pf-filter-range-slider]' );
 			var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
 			var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
-			return ! ( priceFilter.min === fullMin && priceFilter.max === fullMax );
+			return ! ( rangeFilter.min === fullMin && rangeFilter.max === fullMax );
 		}
 		return ( filters[ field ] || [] ).length > 0;
 	};
@@ -1648,15 +1650,15 @@
 				var group = self.groups[ field ];
 				var groupLabel = group ? group.config.label : field;
 
-				if ( 'price' === field ) {
-					var priceFilter = filters.price;
-					var slider = group ? qs( group.el, '[pf-filter-range-slider]' ) : null;
+				if ( group && 'range' === group.config.template ) {
+					var rangeFilter = filters[ field ];
+					var slider = qs( group.el, '[pf-filter-range-slider]' );
 					var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
 					var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
-					if ( priceFilter.min === fullMin && priceFilter.max === fullMax ) {
+					if ( rangeFilter.min === fullMin && rangeFilter.max === fullMax ) {
 						return;
 					}
-					self.appendChip( container, chipTpl, groupLabel + ': ' + priceFilter.min + '–' + priceFilter.max, function () {
+					self.appendChip( container, chipTpl, groupLabel + ': ' + rangeFilter.min + '–' + rangeFilter.max, function () {
 						self.resetGroupFilter( field );
 					} );
 					return;
@@ -1744,16 +1746,19 @@
 			return;
 		}
 
+		var self = this;
 		var params = new URLSearchParams();
 		var filters = this.collectFilters();
 
 		Object.keys( filters ).forEach( function ( field ) {
-			if ( 'price' === field ) {
-				if ( null !== filters.price.min && ! isNaN( filters.price.min ) ) {
-					params.set( 'price_min', filters.price.min );
+			var group = self.groups[ field ];
+			if ( group && 'range' === group.config.template ) {
+				var rangeFilter = filters[ field ];
+				if ( null !== rangeFilter.min && ! isNaN( rangeFilter.min ) ) {
+					params.set( field + '_min', rangeFilter.min );
 				}
-				if ( null !== filters.price.max && ! isNaN( filters.price.max ) ) {
-					params.set( 'price_max', filters.price.max );
+				if ( null !== rangeFilter.max && ! isNaN( rangeFilter.max ) ) {
+					params.set( field + '_max', rangeFilter.max );
 				}
 				return;
 			}
@@ -1832,10 +1837,14 @@
 				self.state.paged = parseInt( rawValue, 10 ) || 1;
 				return;
 			}
-			if ( 'price_min' === key || 'price_max' === key ) {
-				hasRelevantParams = true;
-				self.restorePriceFromUrl( key, rawValue );
-				return;
+			var rangeMatch = key.match( /^(.+)_(min|max)$/ );
+			if ( rangeMatch ) {
+				var rangeGroup = self.groups[ rangeMatch[ 1 ] ];
+				if ( rangeGroup && 'range' === rangeGroup.config.template ) {
+					hasRelevantParams = true;
+					self.restoreRangeFromUrl( rangeGroup, rangeMatch[ 2 ], rawValue );
+					return;
+				}
 			}
 
 			var group = self.groups[ key ];
@@ -1866,11 +1875,15 @@
 		return hasRelevantParams;
 	};
 
-	PFForm.prototype.restorePriceFromUrl = function ( key, rawValue ) {
-		var group = this.groups.price;
-		if ( ! group ) {
-			return;
-		}
+	/**
+	 * Восстановить одну границу (min или max) range-группы из URL-параметра
+	 * вида <field>_min/<field>_max (см. updateUrl()).
+	 *
+	 * @param {{el: Element}} group  Группа из this.groups.
+	 * @param {string} minOrMax      'min' | 'max'.
+	 * @param {string} rawValue      Значение параметра из URL.
+	 */
+	PFForm.prototype.restoreRangeFromUrl = function ( group, minOrMax, rawValue ) {
 		var slider = qs( group.el, '[pf-filter-range-slider]' );
 		if ( ! slider ) {
 			return;
@@ -1879,7 +1892,13 @@
 		if ( isNaN( value ) ) {
 			return;
 		}
-		if ( 'price_min' === key ) {
+		// Помечаем диапазон "тронутым пользователем" — без этого collectFilters()
+		// не включил бы восстановленное значение в исходящий запрос (см.
+		// buildRangeGroup()), и после перезагрузки страницы с диапазоном в URL
+		// ползунок визуально стоял бы в нужном месте, но реальная фильтрация
+		// продолжала бы игнорировать эту границу.
+		slider.dataset.userAdjusted = '1';
+		if ( 'min' === minOrMax ) {
 			slider.dataset.currentMin = value;
 			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), value );
 		} else {

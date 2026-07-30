@@ -162,13 +162,18 @@ defined( 'ABSPATH' ) || exit;
 					if ( empty( $settings['groups'] ) ) {
 						$index = 0;
 						foreach ( $available_fields as $f ) {
+							// Первый вариант из get_compatible_templates() — уже правильный
+							// дефолт для типа этого поля (дерево для иерархической
+							// таксономии, чекбоксы для плоской/custom_, диапазон для
+							// числового meta/ACF-поля, включая 'price').
+							$compatible = $this->attributes->get_compatible_templates( $f['field'] );
 							$this->render_group_row(
 								'pf_filter_settings[groups]',
 								$index,
 								array(
 									'field'    => $f['field'],
 									'label'    => $f['label'],
-									'template' => 'price' === $f['field'] ? 'range' : ( is_taxonomy_hierarchical( $f['field'] ) ? 'category-tree' : 'checkbox' ),
+									'template' => $compatible[0] ?? 'checkbox',
 									'logic'    => 'or',
 									'enabled'  => true,
 								),

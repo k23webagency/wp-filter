@@ -69,10 +69,11 @@ class PF_Attributes {
 
 	/**
 	 * Если в настройках ещё нет ни одной сконфигурированной группы — построить
-	 * набор по умолчанию из всех публичных таксономий настроенного типа
-	 * записи (см. PF_Config::get_post_type()) плюс кастомные/локальные
-	 * атрибуты товаров (WooCommerce-специфика, см. scan_custom_attributes())
-	 * и цену.
+	 * набор по умолчанию из всех подходящих таксономий настроенного типа
+	 * записи (см. PF_Config::get_post_type()), числовых ACF-полей записи
+	 * (кандидатов на range-группу, см. get_acf_post_fields()) плюс —
+	 * только для товаров — кастомные/локальные атрибуты и цену
+	 * (WooCommerce-специфика, см. scan_custom_attributes()).
 	 *
 	 * @return array
 	 */
@@ -117,6 +118,15 @@ class PF_Attributes {
 			);
 		}
 
+		foreach ( $this->get_acf_post_fields( $post_type ) as $af ) {
+			$configs[] = array(
+				'field'    => $af['name'],
+				'label'    => $af['label'],
+				'template' => 'range',
+				'enabled'  => true,
+			);
+		}
+
 		return $configs;
 	}
 
@@ -150,10 +160,6 @@ class PF_Attributes {
 			return null;
 		}
 
-		if ( 'price' === $field ) {
-			return $this->build_price_group( $config, $category_product_ids );
-		}
-
 		// Любая реальная таксономия обрабатывается одинаково, независимо от
 		// её имени (раньше здесь были спецкейсы под product_cat/product_tag/pa_*).
 		// category-tree — только когда шаблон явно выбран таким (или не задан
@@ -176,7 +182,10 @@ class PF_Attributes {
 			return $this->build_custom_attribute_group( $raw_name, $config, $category_product_ids );
 		}
 
-		return null;
+		// Всё остальное — числовое meta/ACF-поле записи (диапазон): 'price'
+		// (обратная совместимость с группами, сохранёнными до 1.8.0 — meta-ключ
+		// _price) либо произвольное ACF-поле, обнаруженное get_acf_post_fields().
+		return $this->build_range_group( $config, $category_product_ids );
 	}
 
 	/**
@@ -501,38 +510,74 @@ class PF_Attributes {
 	}
 
 	/**
-	 * Группа фильтра по цене.
+	 * Meta-ключ, из которого берутся значения range-группы. 'price' — синоним
+	 * '_price' для обратной совместимости с группами, сохранёнными до 1.8.0
+	 * (когда цена была единственной захардкоженной range-сущностью); для
+	 * любого другого field — сам field и есть meta-ключ (так же, как field
+	 * таксономической группы — это и есть слаг таксономии).
+	 *
+	 * @param string $field Field-идентификатор range-группы.
+	 * @return string
+	 */
+	public static function resolve_range_meta_key( $field ) {
+		return 'price' === $field ? '_price' : $field;
+	}
+
+	/**
+	 * Группа фильтра — числовой диапазон (шаблон range) по meta-полю записи.
+	 * Раньше это была отдельная захардкоженная сущность «цена»; теперь любая
+	 * range-группа устроена одинаково — см. resolve_range_meta_key().
 	 *
 	 * @param array      $config               Конфигурация группы.
-	 * @param int[]|null $category_product_ids ID товаров текущей категории, или null.
+	 * @param int[]|null $category_product_ids ID записей текущей категории, или null.
 	 * @return array|null
 	 */
-	private function build_price_group( array $config, $category_product_ids = null ) {
+	private function build_range_group( array $config, $category_product_ids = null ) {
+		$field = isset( $config['field'] ) ? $config['field'] : '';
+		if ( '' === $field ) {
+			return null;
+		}
+
 		if ( null !== $category_product_ids && empty( $category_product_ids ) ) {
 			return null;
 		}
 
-		$range = $this->get_price_range( $category_product_ids );
+		$meta_key = self::resolve_range_meta_key( $field );
+		$range    = $this->get_meta_numeric_range( $meta_key, $category_product_ids );
 
 		return array(
-			'field'    => 'price',
-			'label'    => isset( $config['label'] ) ? $config['label'] : 'Цена',
+			'field'    => $field,
+			'label'    => isset( $config['label'] ) ? $config['label'] : ( 'price' === $field ? 'Цена' : $field ),
 			'template' => 'range',
 			'min'      => $range['min'],
 			'max'      => $range['max'],
 			'step'     => isset( $config['step'] ) ? (float) $config['step'] : 500,
-			'unit'     => isset( $config['unit'] ) ? $config['unit'] : '₽',
+			'unit'     => isset( $config['unit'] ) ? $config['unit'] : ( 'price' === $field ? '₽' : '' ),
 		);
 	}
 
 	/**
-	 * Найти min/max цены среди опубликованных товаров (глобально, либо в заданном
-	 * наборе ID — для авто-релевантности по категории).
+	 * Пост-типы, среди записей которых искать значения meta-поля для
+	 * глобального (без ограничения по ID) диапазона. Для WooCommerce-товаров
+	 * дополнительно учитываются вариации (у них своя собственная _price) —
+	 * иначе только сам настроенный тип записи.
 	 *
-	 * @param int[]|null $post_ids Ограничение по ID товаров, или null — без ограничения.
+	 * @return string[]
+	 */
+	private function range_query_post_types() {
+		$post_type = PF_Config::get_post_type();
+		return 'product' === $post_type ? array( 'product', 'product_variation' ) : array( $post_type );
+	}
+
+	/**
+	 * Найти min/max значения числового meta-поля среди опубликованных записей
+	 * (глобально, либо в заданном наборе ID — для авто-релевантности по категории).
+	 *
+	 * @param string     $meta_key Ключ postmeta (см. resolve_range_meta_key()).
+	 * @param int[]|null $post_ids Ограничение по ID записей, или null — без ограничения.
 	 * @return array{min:float,max:float}
 	 */
-	public function get_price_range( $post_ids = null ) {
+	public function get_meta_numeric_range( $meta_key, $post_ids = null ) {
 		global $wpdb;
 
 		if ( null !== $post_ids ) {
@@ -549,20 +594,24 @@ class PF_Attributes {
 				"SELECT MIN( CAST( meta_value AS DECIMAL(10,2) ) ) AS min_price,
 				        MAX( CAST( meta_value AS DECIMAL(10,2) ) ) AS max_price
 				 FROM {$wpdb->postmeta}
-				 WHERE meta_key = '_price' AND meta_value != '' AND post_id IN ( {$ids_placeholder} )",
-				$post_ids
+				 WHERE meta_key = %s AND meta_value != '' AND post_id IN ( {$ids_placeholder} )",
+				array_merge( array( $meta_key ), $post_ids )
 			);
 		} else {
-			$sql = "
-				SELECT MIN( CAST( meta_value AS DECIMAL(10,2) ) ) AS min_price,
-				       MAX( CAST( meta_value AS DECIMAL(10,2) ) ) AS max_price
-				FROM {$wpdb->postmeta} pm
-				INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
-				WHERE pm.meta_key = '_price'
-				  AND pm.meta_value != ''
-				  AND p.post_status = 'publish'
-				  AND p.post_type IN ( 'product', 'product_variation' )
-			"; // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- статичный SQL без пользовательского ввода.
+			$post_types   = $this->range_query_post_types();
+			$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $placeholders из плейсхолдеров, значения через prepare().
+			$sql = $wpdb->prepare(
+				"SELECT MIN( CAST( meta_value AS DECIMAL(10,2) ) ) AS min_price,
+				        MAX( CAST( meta_value AS DECIMAL(10,2) ) ) AS max_price
+				 FROM {$wpdb->postmeta} pm
+				 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				 WHERE pm.meta_key = %s
+				   AND pm.meta_value != ''
+				   AND p.post_status = 'publish'
+				   AND p.post_type IN ( {$placeholders} )",
+				array_merge( array( $meta_key ), $post_types )
+			);
 		}
 
 		$row = $wpdb->get_row( $sql );
@@ -822,29 +871,63 @@ class PF_Attributes {
 	}
 
 	/**
+	 * Поля ACF, привязанные (через правила локации) к самой записи указанного
+	 * типа — кандидаты на «числовое meta-поле» range-группы (аналог
+	 * get_acf_term_fields(), но на уровне записи, не термина). Список не
+	 * ограничивается числовыми типами полей ACF — выбор подходящего поля
+	 * остаётся за админом, как и для color_meta_key.
+	 *
+	 * @param string $post_type Слаг типа записи.
+	 * @return array [{name, label}, ...] — пусто, если ACF не активен или полей нет.
+	 */
+	public function get_acf_post_fields( $post_type ) {
+		if ( ! function_exists( 'acf_get_field_groups' ) || ! function_exists( 'acf_get_fields' ) ) {
+			return array();
+		}
+
+		$groups = acf_get_field_groups( array( 'post_type' => $post_type ) );
+		$fields = array();
+
+		foreach ( $groups as $group ) {
+			foreach ( (array) acf_get_fields( $group ) as $field ) {
+				if ( empty( $field['name'] ) ) {
+					continue;
+				}
+				$fields[] = array(
+					'name'  => $field['name'],
+					'label' => $field['label'] ?? $field['name'],
+				);
+			}
+		}
+
+		return $fields;
+	}
+
+	/**
 	 * Список шаблонов, совместимых с данным полем (для страницы админки —
 	 * не даёт назначить бессмысленную комбинацию, например range для группы
 	 * с нечисловыми значениями).
 	 *
-	 * @param string $field Field-идентификатор (имя таксономии, custom_*, price).
+	 * @param string $field Field-идентификатор (имя таксономии, custom_*, любое другое — числовое meta-поле).
 	 * @return array
 	 */
 	public function get_compatible_templates( $field ) {
-		if ( 'price' === $field ) {
-			return array( 'range' );
-		}
-
 		if ( taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) ) {
 			return array( 'category-tree', 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
 		}
 
-		$flat = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
-
-		if ( $this->field_values_are_numeric( $field ) ) {
-			$flat[] = 'range';
+		if ( taxonomy_exists( $field ) || 0 === strpos( $field, 'custom_' ) ) {
+			$flat = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+			if ( $this->field_values_are_numeric( $field ) ) {
+				$flat[] = 'range';
+			}
+			return $flat;
 		}
 
-		return $flat;
+		// Всё остальное (в т.ч. 'price') — числовое meta/ACF-поле записи: у
+		// него нет списка дискретных значений, единственный осмысленный
+		// шаблон — range.
+		return array( 'range' );
 	}
 
 	/**

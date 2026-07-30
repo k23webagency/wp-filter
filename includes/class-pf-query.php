@@ -54,10 +54,11 @@ class PF_Query {
 	 */
 	public function build( array $filters, $logic, $orderby, $order, $paged, $per_page ) {
 		// -1 — конвенция WordPress "без ограничения" (используется, например,
-		// count_price_bounds() в PF_Renderer, чтобы получить ВСЕ подходящие
-		// товары для подсчёта реального min/max цены). absint(-1) отбрасывает
-		// знак и даёт 1 — без явного исключения запрос тихо ограничивался
-		// одним товаром, и границы цены схлопывались в цену этого товара.
+		// count_meta_range_bounds() в PF_Renderer, чтобы получить ВСЕ подходящие
+		// товары для подсчёта реального min/max числового поля). absint(-1)
+		// отбрасывает знак и даёт 1 — без явного исключения запрос тихо
+		// ограничивался одним товаром, и границы диапазона схлопывались в
+		// значение этого одного товара.
 		$per_page = (int) $per_page;
 		$args     = array(
 			'post_type'           => PF_Config::get_post_type(),
@@ -68,12 +69,19 @@ class PF_Query {
 		);
 
 		$tax_clauses    = array();
-		$price_meta     = null;
+		$meta_clauses   = array();
 		$custom_filters = array();
 
 		foreach ( $filters as $field => $value ) {
-			if ( 'price' === $field ) {
-				$price_meta = $this->build_price_meta_query( $value );
+			// Числовой диапазон (шаблон range — цена, вес и т.п.) отличается по
+			// форме значения ({min,max}), а не по имени поля — раньше здесь был
+			// спецкейс под буквальное имя 'price', теперь диапазоном может быть
+			// любое поле (см. PF_Attributes::resolve_range_meta_key()).
+			if ( is_array( $value ) && ( array_key_exists( 'min', $value ) || array_key_exists( 'max', $value ) ) ) {
+				$clause = $this->build_meta_range_query( PF_Attributes::resolve_range_meta_key( $field ), $value );
+				if ( $clause ) {
+					$meta_clauses[] = $clause;
+				}
 				continue;
 			}
 
@@ -92,7 +100,7 @@ class PF_Query {
 		$logic_upper = ( 'or' === strtolower( (string) $logic ) ) ? 'OR' : 'AND';
 
 		if ( empty( $custom_filters ) ) {
-			$this->apply_tax_and_price( $args, $tax_clauses, $price_meta, $logic_upper );
+			$this->apply_tax_and_meta( $args, $tax_clauses, $meta_clauses, $logic_upper );
 		} elseif ( 'OR' === $logic_upper ) {
 			// OR между группами: результат — объединение ID, подходящих ХОТЯ БЫ
 			// под одно условие (обычный tax_query с relation=OR не умеет "ИЛИ" с
@@ -101,8 +109,8 @@ class PF_Query {
 			foreach ( $tax_clauses as $clause ) {
 				$union = array_merge( $union, $this->get_ids_matching( array( 'tax_query' => array( $clause ) ) ) ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
 			}
-			if ( $price_meta ) {
-				$union = array_merge( $union, $this->get_ids_matching( array( 'meta_query' => array( $price_meta ) ) ) ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+			foreach ( $meta_clauses as $clause ) {
+				$union = array_merge( $union, $this->get_ids_matching( array( 'meta_query' => array( $clause ) ) ) ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 			}
 			foreach ( $custom_filters as $field => $slugs ) {
 				$union = array_merge( $union, $this->match_custom_filter( $field, $slugs ) );
@@ -111,7 +119,7 @@ class PF_Query {
 		} else {
 			// AND между группами: tax_query/meta_query уже отфильтровывают через
 			// обычный SQL, кастомные атрибуты дополнительно пересекаются через post__in.
-			$this->apply_tax_and_price( $args, $tax_clauses, $price_meta, $logic_upper );
+			$this->apply_tax_and_meta( $args, $tax_clauses, $meta_clauses, $logic_upper );
 
 			$post_in = null;
 			foreach ( $custom_filters as $field => $slugs ) {
@@ -129,20 +137,23 @@ class PF_Query {
 	/**
 	 * Применить накопленные tax_query/meta_query к аргументам запроса.
 	 *
-	 * @param array      $args        Аргументы WP_Query (по ссылке).
-	 * @param array      $tax_clauses Ветки tax_query.
-	 * @param array|null $price_meta  Ветка meta_query для цены, или null.
-	 * @param string     $logic_upper 'AND' | 'OR'.
+	 * @param array  $args         Аргументы WP_Query (по ссылке).
+	 * @param array  $tax_clauses  Ветки tax_query.
+	 * @param array  $meta_clauses Ветки meta_query (числовые диапазоны).
+	 * @param string $logic_upper  'AND' | 'OR'.
 	 */
-	private function apply_tax_and_price( array &$args, array $tax_clauses, $price_meta, $logic_upper ) {
+	private function apply_tax_and_meta( array &$args, array $tax_clauses, array $meta_clauses, $logic_upper ) {
 		if ( ! empty( $tax_clauses ) ) {
 			if ( count( $tax_clauses ) > 1 ) {
 				$tax_clauses['relation'] = $logic_upper;
 			}
 			$args['tax_query'] = $tax_clauses; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- фасетная фильтрация, ожидаемо.
 		}
-		if ( $price_meta ) {
-			$args['meta_query'] = array( $price_meta ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- фильтр по цене.
+		if ( ! empty( $meta_clauses ) ) {
+			if ( count( $meta_clauses ) > 1 ) {
+				$meta_clauses['relation'] = $logic_upper;
+			}
+			$args['meta_query'] = $meta_clauses; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- фильтр по числовому диапазону.
 		}
 	}
 
@@ -203,12 +214,13 @@ class PF_Query {
 	}
 
 	/**
-	 * Собрать meta_query для цены.
+	 * Собрать meta_query для числового диапазона.
 	 *
-	 * @param array $value Массив с ключами min/max.
+	 * @param string $meta_key Ключ postmeta (см. PF_Attributes::resolve_range_meta_key()).
+	 * @param array  $value    Массив с ключами min/max.
 	 * @return array|null
 	 */
-	private function build_price_meta_query( $value ) {
+	private function build_meta_range_query( $meta_key, $value ) {
 		if ( ! is_array( $value ) ) {
 			return null;
 		}
@@ -222,7 +234,7 @@ class PF_Query {
 
 		if ( null !== $min && null !== $max ) {
 			return array(
-				'key'     => '_price',
+				'key'     => $meta_key,
 				'value'   => array( $min, $max ),
 				'type'    => 'NUMERIC',
 				'compare' => 'BETWEEN',
@@ -231,7 +243,7 @@ class PF_Query {
 
 		if ( null !== $min ) {
 			return array(
-				'key'     => '_price',
+				'key'     => $meta_key,
 				'value'   => $min,
 				'type'    => 'NUMERIC',
 				'compare' => '>=',
@@ -239,7 +251,7 @@ class PF_Query {
 		}
 
 		return array(
-			'key'     => '_price',
+			'key'     => $meta_key,
 			'value'   => $max,
 			'type'    => 'NUMERIC',
 			'compare' => '<=',

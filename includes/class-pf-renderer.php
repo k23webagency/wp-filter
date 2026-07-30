@@ -156,11 +156,11 @@ class PF_Renderer {
 	 * Подсчёт количества товаров по каждому значению каждой активной группы
 	 * при текущих фильтрах, не учитывая фильтр самой этой группы (facet UX).
 	 *
-	 * @param array    $groups        Группы из /config (с полем field/values).
+	 * @param array    $groups        Группы из /config (с полем field/values, либо field/min/max для range).
 	 * @param array    $filters       Текущие активные фильтры (санированные).
 	 * @param string   $logic         Логика между группами.
 	 * @param PF_Query $query_builder Построитель запроса.
-	 * @return array field => (value => count) либо field => {min,max} для price.
+	 * @return array field => (value => count) либо field => {min,max} для range-групп.
 	 */
 	public function get_counts( array $groups, array $filters, $logic, PF_Query $query_builder ) {
 		$counts = array();
@@ -174,8 +174,11 @@ class PF_Renderer {
 			$filters_without_group = $filters;
 			unset( $filters_without_group[ $field ] );
 
-			if ( 'price' === $field ) {
-				$counts['price'] = $this->count_price_bounds( $filters_without_group, $logic, $query_builder );
+			// Range-группа (числовой диапазон — цена и любое другое такое поле)
+			// отличается по форме своего ответа ({min,max}, без values), а не по
+			// имени поля — раньше здесь был спецкейс под буквальное имя 'price'.
+			if ( array_key_exists( 'min', $group ) && array_key_exists( 'max', $group ) ) {
+				$counts[ $field ] = $this->count_meta_range_bounds( $field, $filters_without_group, $logic, $query_builder );
 				continue;
 			}
 
@@ -211,7 +214,7 @@ class PF_Renderer {
 	 * Посчитать количество товаров для каждого значения таксономии
 	 * при остальных активных фильтрах.
 	 *
-	 * @param string   $field   Таксономия (pa_* или product_cat).
+	 * @param string   $field   Таксономия или custom_* атрибут.
 	 * @param array    $values  Список slug'ов значений.
 	 * @param array    $filters Остальные активные фильтры.
 	 * @param string   $logic   Логика между группами.
@@ -234,14 +237,16 @@ class PF_Renderer {
 	}
 
 	/**
-	 * Посчитать min/max цены среди товаров, соответствующих остальным активным фильтрам.
+	 * Посчитать min/max числового meta-поля среди записей, соответствующих
+	 * остальным активным фильтрам.
 	 *
-	 * @param array    $filters Остальные активные фильтры (без price).
+	 * @param string   $field   Field-идентификатор range-группы (см. PF_Attributes::resolve_range_meta_key()).
+	 * @param array    $filters Остальные активные фильтры (без этой группы).
 	 * @param string   $logic   Логика между группами.
 	 * @param PF_Query $builder Построитель запроса.
 	 * @return array{min:int,max:int}
 	 */
-	private function count_price_bounds( array $filters, $logic, PF_Query $builder ) {
+	private function count_meta_range_bounds( $field, array $filters, $logic, PF_Query $builder ) {
 		global $wpdb;
 
 		$query = $builder->build( $filters, $logic, 'menu_order', 'ASC', 1, -1 );
@@ -256,6 +261,7 @@ class PF_Renderer {
 			);
 		}
 
+		$meta_key        = PF_Attributes::resolve_range_meta_key( $field );
 		$ids_placeholder = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $ids_placeholder построен из плейсхолдеров, значения подставляются через prepare.
@@ -263,8 +269,8 @@ class PF_Renderer {
 			"SELECT MIN( CAST( meta_value AS DECIMAL(10,2) ) ) AS min_price,
 			        MAX( CAST( meta_value AS DECIMAL(10,2) ) ) AS max_price
 			 FROM {$wpdb->postmeta}
-			 WHERE meta_key = '_price' AND post_id IN ( {$ids_placeholder} )",
-			$ids
+			 WHERE meta_key = %s AND post_id IN ( {$ids_placeholder} )",
+			array_merge( array( $meta_key ), $ids )
 		);
 
 		$row = $wpdb->get_row( $sql );

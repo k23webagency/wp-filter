@@ -303,24 +303,38 @@ class PF_Admin {
 
 	/**
 	 * Дополнительные (не-таксономические) поля, которые стоит предложить в
-	 * списке доступных полей группы, сверх get_available_taxonomy_fields().
-	 * Сегодня это только «Цена» — она всё ещё жёстко привязана к _price
-	 * postmeta WooCommerce (см. ROADMAP.md, этап 3), поэтому предлагается
-	 * только когда настроенный тип записи — product, иначе создавала бы
-	 * заведомо нерабочую (всегда 0..0) группу.
+	 * списке доступных полей группы, сверх get_available_taxonomy_fields():
+	 * числовые meta/ACF-поля записи-кандидаты на range-группу.
+	 *
+	 * «Цена» — WooCommerce-специфика (meta-ключ _price жёстко зашит в
+	 * PF_Attributes::resolve_range_meta_key()), предлагается только когда
+	 * настроенный тип записи — product, иначе создавала бы заведомо
+	 * нерабочую (всегда 0..0) группу. Остальные кандидаты — любые ACF-поля,
+	 * зарегистрированные на настроенный тип записи (см. get_acf_post_fields()) —
+	 * выбор, какое из них численное и подходит для диапазона, остаётся за
+	 * админом (тот же принцип, что и у color_meta_key).
 	 *
 	 * @return array
 	 */
 	private function get_extra_fields() {
-		if ( 'product' !== PF_Config::get_post_type() ) {
-			return array();
-		}
-		return array(
-			array(
+		$post_type = PF_Config::get_post_type();
+		$fields    = array();
+
+		if ( 'product' === $post_type ) {
+			$fields[] = array(
 				'field' => 'price',
 				'label' => __( 'Цена', 'pf-filter' ),
-			),
-		);
+			);
+		}
+
+		foreach ( $this->attributes->get_acf_post_fields( $post_type ) as $af ) {
+			$fields[] = array(
+				'field' => $af['name'],
+				'label' => $af['label'],
+			);
+		}
+
+		return $fields;
 	}
 
 	/**
