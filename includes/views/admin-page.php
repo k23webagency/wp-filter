@@ -2,7 +2,8 @@
 /**
  * Разметка страницы настроек PF Filter.
  * Переменные приходят из PF_Admin::render_page(): $settings, $post_types,
- * $available_fields, $configured_depth, $available_templates.
+ * $available_fields, $configured_depth, $available_templates,
+ * $profiles, $active_profile_id.
  *
  * @package PF_Filter
  */
@@ -12,6 +13,63 @@ defined( 'ABSPATH' ) || exit;
 <div class="wrap pf-filter-admin">
 	<h1><?php esc_html_e( 'PF Filter — настройки', 'pf-filter' ); ?></h1>
 
+	<?php if ( isset( $_GET['updated'] ) ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Настройки сохранены.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['created'] ) ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Профиль создан.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['duplicated'] ) ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Профиль продублирован.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['deleted'] ) ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Профиль удалён.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['error'] ) && 'last_profile' === $_GET['error'] ) : ?>
+		<div class="notice notice-error"><p><?php esc_html_e( 'Нельзя удалить последний оставшийся профиль.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['error'] ) ) : ?>
+		<div class="notice notice-error"><p><?php esc_html_e( 'Профиль не найден.', 'pf-filter' ); ?></p></div>
+	<?php endif; ?>
+
+	<div class="pf-profile-bar" style="margin:12px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+		<form method="get" style="display:inline-block;">
+			<input type="hidden" name="page" value="<?php echo esc_attr( PF_Admin::PAGE_SLUG ); ?>" />
+			<label for="pf-profile-switch"><strong><?php esc_html_e( 'Профиль:', 'pf-filter' ); ?></strong></label>
+			<select id="pf-profile-switch" name="profile" onchange="this.form.submit()">
+				<?php foreach ( $profiles as $pid => $p ) : ?>
+					<option value="<?php echo esc_attr( $pid ); ?>" <?php selected( $active_profile_id, $pid ); ?>><?php echo esc_html( $p['name'] ?? $pid ); ?> (<?php echo esc_html( $post_types[ $p['post_type'] ] ?? $p['post_type'] ); ?>)</option>
+				<?php endforeach; ?>
+			</select>
+		</form>
+
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+			<?php wp_nonce_field( 'pf_duplicate_profile' ); ?>
+			<input type="hidden" name="action" value="pf_duplicate_profile" />
+			<input type="hidden" name="profile" value="<?php echo esc_attr( $active_profile_id ); ?>" />
+			<button type="submit" class="button"><?php esc_html_e( 'Дублировать профиль', 'pf-filter' ); ?></button>
+		</form>
+
+		<?php if ( count( $profiles ) > 1 ) : ?>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;" onsubmit="return confirm('<?php echo esc_js( __( 'Удалить профиль без возможности восстановления?', 'pf-filter' ) ); ?>');">
+				<?php wp_nonce_field( 'pf_delete_profile' ); ?>
+				<input type="hidden" name="action" value="pf_delete_profile" />
+				<input type="hidden" name="profile" value="<?php echo esc_attr( $active_profile_id ); ?>" />
+				<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Удалить профиль', 'pf-filter' ); ?></button>
+			</form>
+		<?php endif; ?>
+
+		<details style="display:inline-block;">
+			<summary class="button" style="cursor:pointer;"><?php esc_html_e( '+ Новый профиль', 'pf-filter' ); ?></summary>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+				<?php wp_nonce_field( 'pf_create_profile' ); ?>
+				<input type="hidden" name="action" value="pf_create_profile" />
+				<input type="text" name="name" placeholder="<?php esc_attr_e( 'Имя профиля', 'pf-filter' ); ?>" required />
+				<select name="post_type">
+					<?php foreach ( $post_types as $slug => $pt_label ) : ?>
+						<option value="<?php echo esc_attr( $slug ); ?>"><?php echo esc_html( $pt_label ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<button type="submit" class="button button-primary"><?php esc_html_e( 'Создать', 'pf-filter' ); ?></button>
+			</form>
+		</details>
+	</div>
+
 	<h2 class="nav-tab-wrapper pf-tabs">
 		<a href="#pf-tab-global" class="nav-tab nav-tab-active" data-tab="global"><?php esc_html_e( 'Общие настройки', 'pf-filter' ); ?></a>
 		<a href="#pf-tab-groups" class="nav-tab" data-tab="groups"><?php esc_html_e( 'Группы фильтров', 'pf-filter' ); ?></a>
@@ -19,11 +77,19 @@ defined( 'ABSPATH' ) || exit;
 		<a href="#pf-tab-diagnostics" class="nav-tab" data-tab="diagnostics"><?php esc_html_e( 'Диагностика', 'pf-filter' ); ?></a>
 	</h2>
 
-	<form method="post" action="options.php">
-		<?php settings_fields( 'pf_filter_settings_group' ); ?>
+	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<?php wp_nonce_field( 'pf_save_profile' ); ?>
+		<input type="hidden" name="action" value="pf_save_profile" />
+		<input type="hidden" name="profile" value="<?php echo esc_attr( $active_profile_id ); ?>" />
 
 		<div class="pf-tab-panel" id="pf-tab-global" data-tab="global">
 			<table class="form-table">
+				<tr>
+					<th><label for="pf-profile-name"><?php esc_html_e( 'Название профиля', 'pf-filter' ); ?></label></th>
+					<td>
+						<input type="text" id="pf-profile-name" name="pf_filter_settings[name]" value="<?php echo esc_attr( $settings['name'] ?? '' ); ?>" class="regular-text" />
+					</td>
+				</tr>
 				<tr>
 					<th><label for="pf-post-type"><?php esc_html_e( 'Тип записи', 'pf-filter' ); ?></label></th>
 					<td>

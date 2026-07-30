@@ -786,25 +786,30 @@ class PF_Diagnostics {
 	/**
 	 * Секция 3 — реальные запросы к собственным REST-эндпоинтам.
 	 *
+	 * @param string $profile_id ID профиля, диагностика которого сейчас открыта в
+	 *                           админке — передаётся в запросы явно, иначе REST API
+	 *                           резолвит его сам (первый профиль по умолчанию), что
+	 *                           даст неверные результаты не для первого профиля.
 	 * @return array {config: {...}, products: {...}}
 	 */
-	public function test_rest_api() {
+	public function test_rest_api( $profile_id = '' ) {
 		return array(
-			'config'   => $this->test_config_endpoint(),
-			'products' => $this->test_products_endpoint(),
+			'config'   => $this->test_config_endpoint( $profile_id ),
+			'products' => $this->test_products_endpoint( $profile_id ),
 		);
 	}
 
 	/**
 	 * GET /wp-json/pf/v1/config
 	 *
+	 * @param string $profile_id ID профиля (см. test_rest_api()).
 	 * @return array
 	 */
-	private function test_config_endpoint() {
+	private function test_config_endpoint( $profile_id = '' ) {
 		$start = microtime( true );
 
 		$response = wp_remote_get(
-			rest_url( 'pf/v1/config' ),
+			add_query_arg( 'profile', $profile_id, rest_url( 'pf/v1/config' ) ),
 			array(
 				'headers' => array( 'X-WP-Nonce' => wp_create_nonce( 'wp_rest' ) ),
 				'timeout' => 15,
@@ -853,9 +858,10 @@ class PF_Diagnostics {
 	/**
 	 * POST /wp-json/pf/v1/products с пустыми фильтрами.
 	 *
+	 * @param string $profile_id ID профиля (см. test_rest_api()).
 	 * @return array
 	 */
-	private function test_products_endpoint() {
+	private function test_products_endpoint( $profile_id = '' ) {
 		$start = microtime( true );
 
 		$response = wp_remote_post(
@@ -867,6 +873,7 @@ class PF_Diagnostics {
 				),
 				'body'    => wp_json_encode(
 					array(
+						'profile'        => $profile_id,
 						'filters'        => array(),
 						'logic'          => 'and',
 						'orderby'        => 'menu_order',

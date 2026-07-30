@@ -46,9 +46,18 @@ class PF_Admin {
 	 */
 	public function init() {
 		add_action( 'admin_menu', array( $this, 'register_page' ) );
-		add_action( 'admin_init', array( $this, 'register_setting' ) );
+		// Резолв активного профиля из $_REQUEST['profile'] должен произойти до
+		// любого чтения PF_Config на странице настроек и до обработчиков
+		// admin-post.php ниже — admin_init гарантированно фирится раньше обоих
+		// (admin-post.php тоже полностью бутстрапит wp-admin/admin.php).
+		add_action( 'admin_init', array( $this, 'resolve_active_profile' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_pf_run_diagnostics', array( $this, 'ajax_run_diagnostics' ) );
+
+		add_action( 'admin_post_pf_save_profile', array( $this, 'handle_save_profile' ) );
+		add_action( 'admin_post_pf_create_profile', array( $this, 'handle_create_profile' ) );
+		add_action( 'admin_post_pf_duplicate_profile', array( $this, 'handle_duplicate_profile' ) );
+		add_action( 'admin_post_pf_delete_profile', array( $this, 'handle_delete_profile' ) );
 	}
 
 	/**
@@ -65,17 +74,141 @@ class PF_Admin {
 	}
 
 	/**
-	 * Регистрация настройки через Settings API.
+	 * Резолвит активный профиль на весь остаток текущего admin-запроса из
+	 * ?profile=/$_POST[profile] (страница настроек, admin-post.php обработчики
+	 * ниже), не требуя от каждого из них делать это самостоятельно. Без
+	 * явного запроса — первый профиль по порядку (см. PF_Config::resolve_profile_id()).
+	 *
+	 * admin_init фирится на КАЖДОЙ странице wp-admin, не только на нашей —
+	 * поэтому сперва проверяем, что запрос вообще относится к плагину
+	 * (иначе на каждой странице админки был бы лишний get_option()).
 	 */
-	public function register_setting() {
-		register_setting(
-			'pf_filter_settings_group',
-			PF_Config::OPTION_KEY,
-			array(
-				'type'              => 'array',
-				'sanitize_callback' => array( $this, 'sanitize' ),
-				'default'           => PF_Config::get_defaults(),
-			)
+	public function resolve_active_profile() {
+		$is_our_page   = isset( $_REQUEST['page'] ) && self::PAGE_SLUG === $_REQUEST['page']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- определяем контекст, не мутируем; мутирующие действия ниже проверяют nonce отдельно.
+		$is_our_action = isset( $_REQUEST['action'] ) && 0 === strpos( (string) $_REQUEST['action'], 'pf_' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		if ( ! $is_our_page && ! $is_our_action ) {
+			return;
+		}
+
+		$requested = isset( $_REQUEST['profile'] ) ? sanitize_key( wp_unslash( $_REQUEST['profile'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- само переключение профиля для просмотра read-only, мутирующие действия проверяют nonce отдельно в своих обработчиках.
+		$resolved  = PF_Config::resolve_profile_id( $requested );
+		PF_Config::use_profile( $resolved['id'] );
+	}
+
+	/**
+	 * Сохранить настройки текущего профиля (обработчик формы вкладок
+	 * «Общие настройки»/«Группы фильтров»/«Сортировка», admin-post.php вместо
+	 * Settings API — при мультипрофильности он писал бы поверх ключа
+	 * PF_Config::OPTION_KEY целиком, а не в конкретный слот в списке профилей).
+	 */
+	public function handle_save_profile() {
+		check_admin_referer( 'pf_save_profile' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
+		}
+
+		$id = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
+
+		if ( ! isset( PF_Config::get_profiles()[ $id ] ) ) {
+			wp_die( esc_html__( 'Профиль не найден.', 'pf-filter' ) );
+		}
+
+		$input = isset( $_POST['pf_filter_settings'] ) && is_array( $_POST['pf_filter_settings'] )
+			? wp_unslash( $_POST['pf_filter_settings'] )
+			: array();
+
+		PF_Config::save_profile( $id, $this->sanitize( $input ) );
+
+		wp_safe_redirect( $this->profile_url( $id, array( 'updated' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Создать новый профиль (кнопка «+ Новый профиль»).
+	 */
+	public function handle_create_profile() {
+		check_admin_referer( 'pf_create_profile' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
+		}
+
+		$name = isset( $_POST['name'] ) ? sanitize_text_field( wp_unslash( $_POST['name'] ) ) : '';
+		if ( '' === $name ) {
+			$name = __( 'Новый профиль', 'pf-filter' );
+		}
+
+		$requested_post_type = isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( $_POST['post_type'] ) ) : '';
+		$post_type            = array_key_exists( $requested_post_type, $this->get_public_post_types() )
+			? $requested_post_type
+			: ( class_exists( 'WooCommerce' ) ? 'product' : 'post' );
+
+		$id = PF_Config::create_profile( $name, $post_type );
+
+		wp_safe_redirect( $this->profile_url( $id, array( 'created' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Дублировать текущий профиль целиком (кнопка «Дублировать профиль»).
+	 */
+	public function handle_duplicate_profile() {
+		check_admin_referer( 'pf_duplicate_profile' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
+		}
+
+		$id     = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
+		$new_id = PF_Config::duplicate_profile( $id );
+
+		wp_safe_redirect( $this->profile_url( $new_id ?: $id, $new_id ? array( 'duplicated' => 1 ) : array( 'error' => 'not_found' ) ) );
+		exit;
+	}
+
+	/**
+	 * Удалить текущий профиль (кнопка «Удалить профиль») — отказывает, если
+	 * это последний оставшийся, см. PF_Config::delete_profile().
+	 */
+	public function handle_delete_profile() {
+		check_admin_referer( 'pf_delete_profile' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
+		}
+
+		$id      = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
+		$deleted = PF_Config::delete_profile( $id );
+
+		if ( $deleted ) {
+			$remaining = array_keys( PF_Config::get_profiles() );
+			wp_safe_redirect( $this->profile_url( $remaining[0] ?? '', array( 'deleted' => 1 ) ) );
+		} else {
+			wp_safe_redirect( $this->profile_url( $id, array( 'error' => 'last_profile' ) ) );
+		}
+		exit;
+	}
+
+	/**
+	 * URL страницы настроек, привязанный к профилю, с дополнительными
+	 * query-параметрами (обычно флагом уведомления вида updated=1).
+	 *
+	 * @param string $profile_id ID профиля.
+	 * @param array  $extra_args Дополнительные query-параметры.
+	 * @return string
+	 */
+	private function profile_url( $profile_id, array $extra_args = array() ) {
+		return add_query_arg(
+			array_merge(
+				array(
+					'page'    => self::PAGE_SLUG,
+					'profile' => $profile_id,
+				),
+				$extra_args
+			),
+			admin_url( 'options-general.php' )
 		);
 	}
 
@@ -109,6 +242,10 @@ class PF_Admin {
 				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
 				'nonce'      => wp_create_nonce( 'pf_diagnostics' ),
 				'defaultUrl' => function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' ),
+				// Профиль резолвится один раз на весь admin-запрос (см.
+				// resolve_active_profile()) — та же диагностика должна
+				// проверять именно тот профиль, что сейчас открыт на странице.
+				'profile'    => PF_Config::get_active_profile_id(),
 			)
 		);
 	}
@@ -149,6 +286,9 @@ class PF_Admin {
 		$input = is_array( $input ) ? $input : array();
 		$clean = PF_Config::get_defaults();
 
+		$clean['name']                = isset( $input['name'] ) && '' !== trim( (string) $input['name'] )
+			? sanitize_text_field( $input['name'] )
+			: $clean['name'];
 		$clean['post_type']          = array_key_exists( $input['post_type'] ?? '', $this->get_public_post_types() )
 			? $input['post_type']
 			: $clean['post_type'];
@@ -345,6 +485,10 @@ class PF_Admin {
 			return;
 		}
 
+		// resolve_active_profile() (admin_init, отработавший раньше этого метода)
+		// уже выставил активный профиль из ?profile= — здесь только читаем.
+		$active_profile_id = PF_Config::get_active_profile_id();
+		$profiles           = PF_Config::get_profiles();
 		$settings         = PF_Config::get_settings();
 		$post_types       = $this->get_public_post_types();
 		$available_fields = array_merge( $this->attributes->get_available_taxonomy_fields(), $this->get_extra_fields() );

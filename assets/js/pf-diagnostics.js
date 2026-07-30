@@ -35,6 +35,7 @@
 		body.set( 'action', 'pf_run_diagnostics' );
 		body.set( 'nonce', window.pfDiagnosticsConfig.nonce );
 		body.set( 'url', ctx.urlInput ? ctx.urlInput.value : '' );
+		body.set( 'profile', window.pfDiagnosticsConfig.profile || '' );
 
 		fetch( window.pfDiagnosticsConfig.ajaxUrl, {
 			method: 'POST',

@@ -10,6 +10,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'pf_filter_settings' );
+delete_option( 'pf_filter_profiles' );
 
 // На случай мультисайта — то же для каждого сайта в сети.
 if ( is_multisite() ) {
@@ -17,6 +18,7 @@ if ( is_multisite() ) {
 	foreach ( $site_ids as $site_id ) {
 		switch_to_blog( $site_id );
 		delete_option( 'pf_filter_settings' );
+		delete_option( 'pf_filter_profiles' );
 		restore_current_blog();
 	}
 }

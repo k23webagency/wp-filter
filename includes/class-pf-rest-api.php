@@ -74,6 +74,9 @@ class PF_REST_API {
 					'category' => array(
 						'sanitize_callback' => 'sanitize_text_field',
 					),
+					'profile'  => array(
+						'sanitize_callback' => 'sanitize_text_field',
+					),
 				),
 			)
 		);
@@ -113,12 +116,18 @@ class PF_REST_API {
 
 		$category = sanitize_text_field( (string) $request->get_param( 'category' ) );
 
+		$requested_profile = sanitize_text_field( (string) $request->get_param( 'profile' ) );
+		$resolved_profile  = PF_Config::resolve_profile_id( $requested_profile );
+		PF_Config::use_profile( $resolved_profile['id'] );
+
 		$settings = PF_Config::get_settings();
 
 		$response = array(
-			'groups'       => $this->attributes->get_groups( $category ),
-			'sort_options' => $settings['sort_options'],
-			'settings'     => array(
+			'profile'          => $resolved_profile['id'],
+			'ambiguous_profile' => $resolved_profile['ambiguous'],
+			'groups'           => $this->attributes->get_groups( $category ),
+			'sort_options'     => $settings['sort_options'],
+			'settings'         => array(
 				'logic'               => $settings['logic'],
 				'search_threshold'    => (int) $settings['search_threshold'],
 				'show_counts'         => (bool) $settings['show_counts'],
@@ -144,6 +153,11 @@ class PF_REST_API {
 
 		$body    = $request->get_json_params();
 		$body    = is_array( $body ) ? $body : array();
+
+		$requested_profile = sanitize_text_field( (string) ( $body['profile'] ?? '' ) );
+		$resolved_profile  = PF_Config::resolve_profile_id( $requested_profile );
+		PF_Config::use_profile( $resolved_profile['id'] );
+
 		$filters = $this->sanitize_filters( isset( $body['filters'] ) ? $body['filters'] : array() );
 
 		$logic    = in_array( strtolower( (string) ( $body['logic'] ?? '' ) ), array( 'and', 'or' ), true )

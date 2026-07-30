@@ -152,6 +152,7 @@
 		this.paginationMode = null;
 
 		this.config = null;
+		this.profileId = ''; // pf-profile атрибута формы; уточняется резолвом сервера в fetchConfig() (см. init()).
 		this.groups = {}; // field -> { config, el }
 		this.showCounts = true;
 		this.searchThreshold = 7;
@@ -273,10 +274,26 @@
 		var explicitLogic = this.formEl.getAttribute( 'pf-logic' );
 		this.logic = ( 'and' === explicitLogic || 'or' === explicitLogic ) ? explicitLogic : 'and';
 
+		// pf-profile нигде не обязателен, по аналогии с pf-target (см.
+		// resolveListElement()): без него сервер сам разрешает профиль —
+		// однозначно, если он на сайте ровно один, иначе неоднозначно (тогда
+		// ответ /config несёт ambiguous_profile — предупреждаем ниже).
+		this.profileId = this.formEl.getAttribute( 'pf-profile' ) || '';
+
 		var self = this;
 		this.fetchConfig()
 			.then( function ( config ) {
 				self.config = config;
+				if ( config.profile ) {
+					// Профиль, реально разрешённый сервером — используется дальше во
+					// всех /products-запросах этой формы, чтобы не полагаться на то,
+					// что серверный дефолт (первый профиль по порядку) не изменится
+					// между запросами.
+					self.profileId = config.profile;
+				}
+				if ( config.ambiguous_profile && ! self.formEl.getAttribute( 'pf-profile' ) ) {
+					console.warn( 'PF Filter: атрибут pf-profile не указан, а на сайте несколько профилей фильтра — однозначно выбрать нельзя. Добавьте pf-profile="..." на форму. Использован профиль "' + config.profile + '".' );
+				}
 				self.showCounts = !! ( config.settings && config.settings.show_counts );
 				self.searchThreshold = ( config.settings && config.settings.search_threshold ) || 7;
 				self.perPage = ( config.settings && config.settings.posts_per_page ) || 12;
@@ -310,12 +327,16 @@
 			} );
 	};
 
-	/** GET /wp-json/pf/v1/config, опционально с ?category=. */
+	/** GET /wp-json/pf/v1/config, опционально с ?category=&profile=. */
 	PFForm.prototype.fetchConfig = function ( category ) {
-		var url = window.pfConfig.restUrl + 'config';
+		var params = [];
 		if ( category ) {
-			url += '?category=' + encodeURIComponent( category );
+			params.push( 'category=' + encodeURIComponent( category ) );
 		}
+		if ( this.profileId ) {
+			params.push( 'profile=' + encodeURIComponent( this.profileId ) );
+		}
+		var url = window.pfConfig.restUrl + 'config' + ( params.length ? '?' + params.join( '&' ) : '' );
 		return fetch( url, {
 			headers: { 'X-WP-Nonce': window.pfConfig.nonce },
 		} ).then( function ( res ) {
@@ -1126,6 +1147,7 @@
 		}
 
 		var body = {
+			profile: this.profileId || '',
 			filters: this.collectFilters(),
 			logic: this.logic,
 			orderby: this.state.orderby,

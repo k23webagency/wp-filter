@@ -3,7 +3,7 @@
  * Plugin Name:       PF Filter
  * Plugin URI:        https://example.com/pf-filter
  * Description:       Движок AJAX-фильтрации каталога (товары WooCommerce, любой другой тип записи или блог), работающий через HTML-атрибуты pf-* в разметке темы. Не диктует внешний вид карточек и сетки.
- * Version:           1.9.0
+ * Version:           1.10.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            PF Filter
@@ -15,7 +15,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Константы плагина.
-define( 'PF_FILTER_VERSION', '1.9.0' );
+define( 'PF_FILTER_VERSION', '1.10.0' );
 define( 'PF_FILTER_FILE', __FILE__ );
 define( 'PF_FILTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'PF_FILTER_URL', plugin_dir_url( __FILE__ ) );
@@ -71,11 +71,13 @@ function pf_filter_init() {
 add_action( 'plugins_loaded', 'pf_filter_init' );
 
 /**
- * Активация плагина — регистрация настроек по умолчанию.
+ * Активация плагина — завести профиль по умолчанию, если профилей ещё нет
+ * (ни домультипрофильной опции 'pf_filter_settings' для миграции, ни уже
+ * созданных профилей).
  */
 function pf_filter_activate() {
-	if ( false === get_option( 'pf_filter_settings' ) ) {
-		add_option( 'pf_filter_settings', PF_Config::get_defaults() );
+	if ( false === get_option( PF_Config::PROFILES_OPTION_KEY ) && false === get_option( 'pf_filter_settings' ) ) {
+		add_option( PF_Config::PROFILES_OPTION_KEY, array( 'default' => PF_Config::get_defaults() ) );
 	}
 }
 register_activation_hook( __FILE__, 'pf_filter_activate' );

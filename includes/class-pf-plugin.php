@@ -75,6 +75,14 @@ final class PF_Plugin {
 	 * страницей и отдаёт 404 — в том числе при обычной перезагрузке уже
 	 * открытой пользователем страницы.
 	 *
+	 * При мультипрофильности (Этап 4) страница ещё не размечена явной
+	 * привязкой к профилю (это Этап 5 — несколько блоков фильтра на
+	 * странице) — поэтому здесь перебираются все профили и выбирается
+	 * первый, чей тип записи совпадает с текущим главным запросом. Если
+	 * несколько профилей используют один и тот же тип записи — берётся
+	 * первый по порядку (та же неоднозначность, что и у авторезолва
+	 * pf-profile на фронте без явного атрибута).
+	 *
 	 * @param WP_Query $query Запрос (хук общий, поэтому фильтруем сами).
 	 */
 	public function limit_main_query_posts_per_page( $query ) {
@@ -82,29 +90,32 @@ final class PF_Plugin {
 			return;
 		}
 
-		$post_type = PF_Config::get_post_type();
+		foreach ( PF_Config::get_profiles() as $id => $profile ) {
+			$profile   = wp_parse_args( $profile, PF_Config::get_defaults() );
+			$post_type = $profile['post_type'];
 
-		$is_target_archive = $query->is_post_type_archive( $post_type );
+			$is_target_archive = $query->is_post_type_archive( $post_type );
 
-		if ( ! $is_target_archive ) {
-			$taxonomies = ( 'product' === $post_type && function_exists( 'wc_get_object_taxonomies' ) )
-				? wc_get_object_taxonomies( 'product' )
-				: get_object_taxonomies( $post_type );
+			if ( ! $is_target_archive ) {
+				$taxonomies = ( 'product' === $post_type && function_exists( 'wc_get_object_taxonomies' ) )
+					? wc_get_object_taxonomies( 'product' )
+					: get_object_taxonomies( $post_type );
 
-			$is_target_archive = ! empty( $taxonomies ) && $query->is_tax( $taxonomies );
+				$is_target_archive = ! empty( $taxonomies ) && $query->is_tax( $taxonomies );
+			}
+
+			if ( ! $is_target_archive && 'post' === $post_type ) {
+				// У типа записи 'post' нет отдельного «архива» в смысле
+				// is_post_type_archive() — его каталог это блог (главная лента).
+				$is_target_archive = $query->is_home();
+			}
+
+			if ( $is_target_archive ) {
+				PF_Config::use_profile( $id );
+				$query->set( 'posts_per_page', (int) $profile['posts_per_page'] );
+				return;
+			}
 		}
-
-		if ( ! $is_target_archive && 'post' === $post_type ) {
-			// У типа записи 'post' нет отдельного «архива» в смысле
-			// is_post_type_archive() — его каталог это блог (главная лента).
-			$is_target_archive = $query->is_home();
-		}
-
-		if ( ! $is_target_archive ) {
-			return;
-		}
-
-		$query->set( 'posts_per_page', (int) PF_Config::get( 'posts_per_page', 12 ) );
 	}
 
 	/**
