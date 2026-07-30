@@ -146,6 +146,29 @@ class PF_Attributes {
 	}
 
 	/**
+	 * Проверить и вернуть шаблон группы, которым отвечает /config — сверяется
+	 * с get_compatible_templates(), а не слепо возвращает сохранённый
+	 * $config['template']. Нужно для самовосстановления уже сохранённых на
+	 * сайте настроек: например, до 1.8.1 в админке можно было выбрать (и
+	 * сохранить) шаблон range для таксономии/custom_-атрибута — комбинация,
+	 * которую build_group() никогда не умел строить как настоящий диапазон
+	 * (у терминов/атрибутов нет numeric postmeta, откуда взять min/max), из-за
+	 * чего ползунок показывал 0..0. Без этой проверки такая уже сохранённая
+	 * группа продолжала бы отдавать template:"range" в ответе /config, пока
+	 * админ вручную не откроет настройки и не пересохранит группу.
+	 *
+	 * @param string $field   Field-идентификатор группы.
+	 * @param array  $config  Конфигурация группы.
+	 * @param string $default Шаблон по умолчанию, если сохранённый недопустим.
+	 * @return string
+	 */
+	private function resolve_group_template( $field, array $config, $default ) {
+		$requested  = isset( $config['template'] ) ? $config['template'] : $default;
+		$compatible = $this->get_compatible_templates( $field );
+		return in_array( $requested, $compatible, true ) ? $requested : $default;
+	}
+
+	/**
 	 * Построить одну группу по конфигу.
 	 *
 	 * @param array    $config                Конфигурация группы (field/label/template/...).
@@ -254,7 +277,7 @@ class PF_Attributes {
 		return array(
 			'field'    => $taxonomy,
 			'label'    => isset( $config['label'] ) ? $config['label'] : $taxonomy,
-			'template' => isset( $config['template'] ) ? $config['template'] : 'checkbox',
+			'template' => $this->resolve_group_template( $taxonomy, $config, 'checkbox' ),
 			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'values'   => $values,
@@ -499,10 +522,12 @@ class PF_Attributes {
 
 		$values = $this->sort_values( $values, $config['value_sort'] ?? 'name_asc' );
 
+		$field = $this->get_custom_attribute_field( $raw_name );
+
 		return array(
-			'field'    => $this->get_custom_attribute_field( $raw_name ),
+			'field'    => $field,
 			'label'    => isset( $config['label'] ) ? $config['label'] : $raw_name,
-			'template' => isset( $config['template'] ) ? $config['template'] : 'checkbox',
+			'template' => $this->resolve_group_template( $field, $config, 'checkbox' ),
 			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'values'   => $values,
@@ -905,8 +930,16 @@ class PF_Attributes {
 
 	/**
 	 * Список шаблонов, совместимых с данным полем (для страницы админки —
-	 * не даёт назначить бессмысленную комбинацию, например range для группы
-	 * с нечисловыми значениями).
+	 * не даёт назначить бессмысленную комбинацию).
+	 *
+	 * range умышленно НЕ предлагается для таксономий/custom_-атрибутов, даже
+	 * если все их значения по факту числовые (например, товарный атрибут
+	 * "Длина" со значениями терминов "100"/"200"/"300") — build_group()
+	 * всё равно строит для них обычную values-группу (checkbox-подобную), а
+	 * не числовой диапазон: у терминов/атрибутов нет постоянного numeric
+	 * postmeta, откуда range мог бы взять min/max. Раньше эта комбинация
+	 * была выбираемой в админке, но не реализованной — при выборе range
+	 * ползунок показывал 0..0 вместо реальных границ.
 	 *
 	 * @param string $field Field-идентификатор (имя таксономии, custom_*, любое другое — числовое meta-поле).
 	 * @return array
@@ -917,57 +950,12 @@ class PF_Attributes {
 		}
 
 		if ( taxonomy_exists( $field ) || 0 === strpos( $field, 'custom_' ) ) {
-			$flat = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
-			if ( $this->field_values_are_numeric( $field ) ) {
-				$flat[] = 'range';
-			}
-			return $flat;
+			return array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
 		}
 
 		// Всё остальное (в т.ч. 'price') — числовое meta/ACF-поле записи: у
 		// него нет списка дискретных значений, единственный осмысленный
 		// шаблон — range.
 		return array( 'range' );
-	}
-
-	/**
-	 * Все ли значения данного поля (термины таксономии, либо значения
-	 * кастомного атрибута) — числа. Используется только чтобы решить,
-	 * стоит ли предлагать шаблон range для этого поля.
-	 *
-	 * @param string $field Field-идентификатор.
-	 * @return bool
-	 */
-	private function field_values_are_numeric( $field ) {
-		$labels = array();
-
-		if ( taxonomy_exists( $field ) ) {
-			$terms  = get_terms(
-				array(
-					'taxonomy'   => $field,
-					'hide_empty' => false,
-					'fields'     => 'names',
-				)
-			);
-			$labels = is_wp_error( $terms ) ? array() : $terms;
-		} elseif ( 0 === strpos( $field, 'custom_' ) ) {
-			$raw_name = $this->resolve_custom_attribute_name( $field );
-			if ( $raw_name ) {
-				$attributes = $this->scan_custom_attributes();
-				$labels     = isset( $attributes[ $raw_name ] ) ? array_keys( $attributes[ $raw_name ] ) : array();
-			}
-		}
-
-		if ( empty( $labels ) ) {
-			return false; // нет данных — безопасный дефолт: не числовое.
-		}
-
-		foreach ( $labels as $label ) {
-			if ( ! is_numeric( trim( (string) $label ) ) ) {
-				return false;
-			}
-		}
-
-		return true;
 	}
 }
