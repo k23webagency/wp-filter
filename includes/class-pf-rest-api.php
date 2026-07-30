@@ -49,7 +49,7 @@ class PF_REST_API {
 		// (_product_attributes по всем товарам) кэшируется на нём за запрос,
 		// незачем сканировать дважды в одном REST-вызове.
 		$this->query_builder = new PF_Query( $this->attributes );
-		$this->renderer      = new PF_Renderer();
+		$this->renderer      = new PF_Renderer( $this->attributes );
 	}
 
 	/**

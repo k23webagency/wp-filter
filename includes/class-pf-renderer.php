@@ -21,10 +21,23 @@ class PF_Renderer {
 	private $card_template;
 
 	/**
-	 * Конструктор.
+	 * Сканер атрибутов — нужен для подсчёта facet-счётчиков одним групповым
+	 * SQL-запросом вместо отдельного запроса на каждое значение группы.
+	 *
+	 * @var PF_Attributes
 	 */
-	public function __construct() {
+	private $attributes;
+
+	/**
+	 * Конструктор.
+	 *
+	 * @param PF_Attributes|null $attributes Опционально — для переиспользования
+	 *                                       уже созданного экземпляра (общий кэш
+	 *                                       scan_custom_attributes() за запрос).
+	 */
+	public function __construct( PF_Attributes $attributes = null ) {
 		$this->card_template = new PF_Card_Template();
+		$this->attributes    = $attributes ?: new PF_Attributes();
 	}
 
 	/**
@@ -211,8 +224,35 @@ class PF_Renderer {
 	}
 
 	/**
-	 * Посчитать количество товаров для каждого значения таксономии
-	 * при остальных активных фильтрах.
+	 * ID записей, подходящих под заданный набор фильтров — без ограничения
+	 * по количеству. Общий первый шаг для facet-счётчиков любого типа группы:
+	 * дальше по этому фиксированному набору ID считается либо число значений
+	 * таксономии/custom-атрибута (count_taxonomy_values()), либо min/max
+	 * числового поля (count_meta_range_bounds()) — одним групповым запросом
+	 * вместо отдельного WP_Query на каждое значение/группу.
+	 *
+	 * @param array    $filters Активные фильтры.
+	 * @param string   $logic   Логика между группами.
+	 * @param PF_Query $builder Построитель запроса.
+	 * @return int[]
+	 */
+	private function matching_post_ids( array $filters, $logic, PF_Query $builder ) {
+		$query = $builder->build( $filters, $logic, 'menu_order', 'ASC', 1, -1 );
+		// $query->posts содержит объекты WP_Post — берём только ID для дальнейшего подсчёта.
+		$ids = wp_list_pluck( $query->posts, 'ID' );
+		wp_reset_postdata();
+		return $ids;
+	}
+
+	/**
+	 * Посчитать количество товаров для каждого значения таксономии/custom-
+	 * атрибута при остальных активных фильтрах.
+	 *
+	 * Одним групповым запросом (через PF_Attributes) по фиксированному набору
+	 * ID, подходящих под остальные фильтры — а не отдельным WP_Query на
+	 * каждое значение группы (для дерева категорий на несколько уровней или
+	 * таксономии с десятками термов это была реальная N+1-проблема: до
+	 * нескольких десятков лишних запросов на один-единственный /products-ответ).
 	 *
 	 * @param string   $field   Таксономия или custom_* атрибут.
 	 * @param array    $values  Список slug'ов значений.
@@ -222,15 +262,24 @@ class PF_Renderer {
 	 * @return array value => count
 	 */
 	private function count_taxonomy_values( $field, array $values, array $filters, $logic, PF_Query $builder ) {
+		$ids = $this->matching_post_ids( $filters, $logic, $builder );
+
+		if ( empty( $ids ) ) {
+			return array_fill_keys( $values, 0 );
+		}
+
+		if ( taxonomy_exists( $field ) ) {
+			$counts = $this->attributes->get_term_slug_counts_for_products( $field, $ids );
+		} elseif ( 0 === strpos( $field, 'custom_' ) ) {
+			$raw_name = $this->attributes->resolve_custom_attribute_name( $field );
+			$counts   = null !== $raw_name ? $this->attributes->count_custom_attribute_values( $raw_name, $ids ) : array();
+		} else {
+			$counts = array();
+		}
+
 		$result = array();
-
 		foreach ( $values as $value ) {
-			$test_filters          = $filters;
-			$test_filters[ $field ] = array( $value );
-
-			$query = $builder->build( $test_filters, $logic, 'menu_order', 'ASC', 1, 1 );
-			$result[ $value ] = (int) $query->found_posts;
-			wp_reset_postdata();
+			$result[ $value ] = isset( $counts[ $value ] ) ? (int) $counts[ $value ] : 0;
 		}
 
 		return $result;
@@ -249,10 +298,7 @@ class PF_Renderer {
 	private function count_meta_range_bounds( $field, array $filters, $logic, PF_Query $builder ) {
 		global $wpdb;
 
-		$query = $builder->build( $filters, $logic, 'menu_order', 'ASC', 1, -1 );
-		// $query->posts содержит объекты WP_Post — берём только ID для запроса к postmeta.
-		$ids = wp_list_pluck( $query->posts, 'ID' );
-		wp_reset_postdata();
+		$ids = $this->matching_post_ids( $filters, $logic, $builder );
 
 		if ( empty( $ids ) ) {
 			return array(

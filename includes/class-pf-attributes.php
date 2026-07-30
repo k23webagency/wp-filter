@@ -341,6 +341,44 @@ class PF_Attributes {
 	}
 
 	/**
+	 * То же самое, что get_term_counts_for_products(), но результат сразу
+	 * keyed по slug'у термина (не term_id) — то, что нужно facet-счётчикам
+	 * (PF_Renderer::count_taxonomy_values()): одним групповым SQL-запросом
+	 * на всю группу вместо отдельного WP_Query на каждое её значение.
+	 *
+	 * @param string $taxonomy Таксономия.
+	 * @param array  $post_ids Ограничение по ID записей.
+	 * @return array slug => count
+	 */
+	public function get_term_slug_counts_for_products( $taxonomy, array $post_ids ) {
+		global $wpdb;
+
+		if ( empty( $post_ids ) ) {
+			return array();
+		}
+
+		$ids_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $ids_placeholder из плейсхолдеров, значения через prepare().
+		$sql = $wpdb->prepare(
+			"SELECT t.slug, COUNT( DISTINCT tr.object_id ) AS cnt
+			 FROM {$wpdb->term_relationships} tr
+			 INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+			 INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+			 WHERE tt.taxonomy = %s AND tr.object_id IN ( {$ids_placeholder} )
+			 GROUP BY t.term_id",
+			array_merge( array( $taxonomy ), $post_ids )
+		);
+
+		$rows   = $wpdb->get_results( $sql );
+		$counts = array();
+		foreach ( $rows as $row ) {
+			$counts[ $row->slug ] = (int) $row->cnt;
+		}
+		return $counts;
+	}
+
+	/**
 	 * ID опубликованных товаров в заданной категории (для авто-релевантности групп).
 	 *
 	 * Намеренно всё ещё захардкожено на product_cat/post_type=product — этот
@@ -482,6 +520,43 @@ class PF_Attributes {
 		}
 
 		return array_values( array_unique( $matching ) );
+	}
+
+	/**
+	 * Посчитать количество записей (из заданного набора ID) для каждого
+	 * значения кастомного/локального атрибута — чистый PHP по уже
+	 * просканированным (и закэшированным на время запроса, см.
+	 * scan_custom_attributes()) спискам post_id на значение, без
+	 * дополнительных SQL-запросов. Используется facet-счётчиками
+	 * (PF_Renderer::count_taxonomy_values()) одним вызовом на всю группу
+	 * вместо отдельного WP_Query на каждое её значение.
+	 *
+	 * @param string $raw_name Сырое имя атрибута.
+	 * @param array  $post_ids Ограничение по ID записей.
+	 * @return array slug => count
+	 */
+	public function count_custom_attribute_values( $raw_name, array $post_ids ) {
+		$attributes = $this->scan_custom_attributes();
+		if ( ! isset( $attributes[ $raw_name ] ) || empty( $post_ids ) ) {
+			return array();
+		}
+
+		$post_ids_flip = array_flip( $post_ids );
+
+		$counts = array();
+		foreach ( $attributes[ $raw_name ] as $raw_value => $value_post_ids ) {
+			$count = 0;
+			foreach ( $value_post_ids as $post_id ) {
+				if ( isset( $post_ids_flip[ $post_id ] ) ) {
+					++$count;
+				}
+			}
+			if ( $count > 0 ) {
+				$counts[ sanitize_title( $raw_value ) ] = $count;
+			}
+		}
+
+		return $counts;
 	}
 
 	/**
