@@ -711,14 +711,21 @@
 		// Если бы drag/клавиши/числовые поля продолжали клэмпиться по старым
 		// min/max, перетаскивание после такого обновления работало бы неверно.
 		//
-		// slider.dataset.userAdjusted ставится в drag/клавишах/числовом поле
-		// ниже — только реальным действием пользователя. collectFilters()
-		// отправляет эту группу как активный фильтр ТОЛЬКО если этот флаг
-		// стоит. Без этого различия автоматическая подстройка границ под
-		// ДРУГИЕ активные фильтры (updateRangeBounds) "приклеивалась" бы к
-		// текущему выбору как будто пользователь сам его сделал — и после
-		// снятия ТОЙ фильтра диапазон продолжал бы слаться суженным, хотя
-		// его никто не трогал.
+		// slider.dataset.userMin/userMax ставятся в drag/клавишах/числовом
+		// поле ниже — только реальным действием пользователя, НЕЗАВИСИМО
+		// друг от друга (тронут может быть только один бегунок). Это
+		// "замороженный" абсолютный выбор пользователя, отдельно от
+		// currentMin/currentMax — те могут многократно перезаписываться
+		// автоподстройкой (updateRangeBounds) под другие активные фильтры.
+		// collectFilters() отправляет эту группу как активный фильтр только
+		// если хотя бы один из них задан. updateRangeBounds() при каждом
+		// обновлении границ клэмпит именно userMin/userMax (а не текущее,
+		// уже возможно суженное currentMin/currentMax) в новые границы —
+		// иначе после каскада из нескольких сужений (например, ещё один
+		// активный фильтр временно оставил один подходящий товар) диапазон
+		// терял исходный выбор пользователя и не мог "расшириться назад"
+		// при снятии того, другого, фильтра — оставался стянутым в точку
+		// даже когда границы трека уже честно раздвинулись.
 
 		function roundToStep( value, rangeMin, rangeMax, rangeStep ) {
 			var rounded = Math.round( ( value - rangeMin ) / rangeStep ) * rangeStep + rangeMin;
@@ -737,15 +744,16 @@
 			var currentMin = parseFloat( slider.dataset.currentMin );
 			var currentMax = parseFloat( slider.dataset.currentMax );
 
-			slider.dataset.userAdjusted = '1';
 			if ( 'min' === type ) {
 				value = clamp( value, rangeMin, currentMax );
 				slider.dataset.currentMin = value;
+				slider.dataset.userMin = value;
 				positionRangeHandle( minHandle, value, rangeMin, rangeMax, false );
 				setRangeDisplayValue( minValueEl, value );
 			} else {
 				value = clamp( value, currentMin, rangeMax );
 				slider.dataset.currentMax = value;
+				slider.dataset.userMax = value;
 				positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
 				setRangeDisplayValue( maxValueEl, value );
 			}
@@ -790,15 +798,16 @@
 				var delta = 'ArrowLeft' === e.key ? -rangeStep : rangeStep;
 				var currentMin = parseFloat( slider.dataset.currentMin );
 				var currentMax = parseFloat( slider.dataset.currentMax );
-				slider.dataset.userAdjusted = '1';
 				if ( 'min' === type ) {
 					var newMin = clamp( currentMin + delta, rangeMin, currentMax );
 					slider.dataset.currentMin = newMin;
+					slider.dataset.userMin = newMin;
 					positionRangeHandle( minHandle, newMin, rangeMin, rangeMax, false );
 					setRangeDisplayValue( minValueEl, newMin );
 				} else {
 					var newMax = clamp( currentMax + delta, currentMin, rangeMax );
 					slider.dataset.currentMax = newMax;
+					slider.dataset.userMax = newMax;
 					positionRangeHandle( maxHandle, newMax, rangeMin, rangeMax, true );
 					setRangeDisplayValue( maxValueEl, newMax );
 				}
@@ -822,14 +831,15 @@
 				if ( isNaN( value ) ) {
 					return;
 				}
-				slider.dataset.userAdjusted = '1';
 				if ( 'min' === type ) {
 					value = clamp( value, rangeMin, currentMax );
 					slider.dataset.currentMin = value;
+					slider.dataset.userMin = value;
 					positionRangeHandle( minHandle, value, rangeMin, rangeMax, false );
 				} else {
 					value = clamp( value, currentMin, rangeMax );
 					slider.dataset.currentMax = value;
+					slider.dataset.userMax = value;
 					positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
 				}
 				el.value = value;
@@ -851,24 +861,24 @@
 	 * min/max среди записей, подходящих под остальные фильтры (см.
 	 * PF_Renderer::count_meta_range_bounds).
 	 *
-	 * Если пользователь ещё не двигал ползунок (стоит на всём диапазоне) —
-	 * текущее выделение "едет" вместе с новыми границами, оставаясь "весь
-	 * диапазон". Если уже выбрал конкретный поддиапазон — граница просто
-	 * обрезается по новым min/max, чтобы не оказаться "снаружи" трека.
+	 * Если пользователь ещё не двигал бегунок (min или max — независимо друг
+	 * от друга) — он "едет" вместе с новыми границами, оставаясь на краю
+	 * диапазона. Если бегунок реально трогали — берётся ИМЕННО его
+	 * "замороженное" абсолютное значение (data-user-min/data-user-max,
+	 * записанное в момент того самого взаимодействия), обрезанное по новым
+	 * min/max, а не текущее отображаемое currentMin/currentMax.
 	 *
-	 * "Тронут ли пользователем" определяется ИСКЛЮЧИТЕЛЬНО по
-	 * data-user-adjusted, а не сравнением текущих currentMin/currentMax со
-	 * старыми min/max трека — то есть сравнением значений. Раньше было
-	 * именно так, и это ломалось, когда границы схлопывались в одну точку
-	 * (min===max — например, единственный товар после другого фильтра):
-	 * тогда ЛЮБОЕ текущее выделение (тронутое пользователем или нет —
-	 * технически на схлопнутом треке других значений и не может быть)
-	 * совпадало со старыми границами, и следующее обновление ошибочно
-	 * считало диапазон нетронутым — сбрасывало его на новые границы, даже
-	 * если пользователь его реально выбирал. Внешне это выглядело как
-	 * самопроизвольный сброс/залипание range-фильтра при снятии/добавлении
-	 * ДРУГОГО фильтра, и путало isFieldActive()/чипы, использующие те же
-	 * data-min/data-max как "полный диапазон" для сравнения.
+	 * Это важно: currentMin/currentMax может быть много раз перезаписан
+	 * ЭТИМ ЖЕ методом на предыдущих ответах сервера (подстройка под ДРУГИЕ
+	 * фильтры). Если бы клэмп брал currentMin/currentMax вместо
+	 * "замороженного" пользовательского значения, после каскада из
+	 * нескольких сужений (например, ещё один активный фильтр временно
+	 * оставил один подходящий товар — границы схлопнулись в точку) диапазон
+	 * терял исходный выбор пользователя без возможности вернуться: при
+	 * снятии того, другого, фильтра границы трека честно раздвигались
+	 * обратно, а выделение оставалось стянутым в ту схлопнувшуюся точку —
+	 * выглядело как самопроизвольное "залипание" фильтра, путало
+	 * isFieldActive()/чипы (сравнивают выбор с data-min/data-max).
 	 *
 	 * @param {{el: Element}} group  Группа из this.groups (see collectFilters).
 	 * @param {{min: number, max: number}} bounds Новые границы из data.counts[field].
@@ -889,15 +899,14 @@
 			return;
 		}
 
-		var curMin = parseFloat( slider.dataset.currentMin );
-		var curMax = parseFloat( slider.dataset.currentMax );
-		var wasFullRange = ! slider.dataset.userAdjusted;
+		var hasUserMin = undefined !== slider.dataset.userMin;
+		var hasUserMax = undefined !== slider.dataset.userMax;
 
 		slider.dataset.min = newMin;
 		slider.dataset.max = newMax;
 
-		var newCurMin = wasFullRange ? newMin : clamp( curMin, newMin, newMax );
-		var newCurMax = wasFullRange ? newMax : clamp( curMax, newMin, newMax );
+		var newCurMin = hasUserMin ? clamp( parseFloat( slider.dataset.userMin ), newMin, newMax ) : newMin;
+		var newCurMax = hasUserMax ? clamp( parseFloat( slider.dataset.userMax ), newMin, newMax ) : newMax;
 		if ( newCurMin > newCurMax ) {
 			newCurMin = newMin;
 			newCurMax = newMax;
@@ -1034,14 +1043,14 @@
 
 			if ( 'range' === template ) {
 				var slider = qs( group.el, '[pf-filter-range-slider]' );
-				// userAdjusted ставится ТОЛЬКО реальным действием пользователя
-				// (drag/клавиши/числовое поле) — см. buildRangeGroup(). Без этой
-				// проверки граница, автоматически подстроенная под ДРУГИЕ активные
-				// фильтры (updatePriceBounds — например, цена сузилась, пока был
-				// выбран конкретный цвет), после снятия того фильтра продолжала бы
+				// data-user-min/data-user-max ставятся ТОЛЬКО реальным действием
+				// пользователя (drag/клавиши/числовое поле) — см. buildRangeGroup().
+				// Без этой проверки граница, автоматически подстроенная под ДРУГИЕ
+				// активные фильтры (updateRangeBounds — например, цена сузилась, пока
+				// был выбран конкретный цвет), после снятия того фильтра продолжала бы
 				// отправляться как будто пользователь сам выбрал такой узкий диапазон
 				// цены, хотя он её вообще не трогал.
-				if ( slider && slider.dataset.userAdjusted ) {
+				if ( slider && ( undefined !== slider.dataset.userMin || undefined !== slider.dataset.userMax ) ) {
 					filters[ field ] = {
 						min: parseFloat( slider.dataset.currentMin ),
 						max: parseFloat( slider.dataset.currentMax ),
@@ -1605,8 +1614,9 @@
 				// Сброс — это тоже способ "перестать быть тронутым пользователем":
 				// иначе после ручного выбора и последующего сброса цена продолжала
 				// бы слаться как активный фильтр (полный диапазон, но formально
-				// "userAdjusted"), пока сервер не подтвердит это следующим ответом.
-				delete slider.dataset.userAdjusted;
+				// "тронутый"), пока сервер не подтвердит это следующим ответом.
+				delete slider.dataset.userMin;
+				delete slider.dataset.userMax;
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
 				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
@@ -1904,17 +1914,19 @@
 		if ( isNaN( value ) ) {
 			return;
 		}
-		// Помечаем диапазон "тронутым пользователем" — без этого collectFilters()
-		// не включил бы восстановленное значение в исходящий запрос (см.
-		// buildRangeGroup()), и после перезагрузки страницы с диапазоном в URL
+		// Помечаем именно эту границу "тронутой пользователем" (data-user-min/
+		// data-user-max — независимо друг от друга, см. buildRangeGroup()) —
+		// без этого collectFilters() не включил бы восстановленное значение в
+		// исходящий запрос, и после перезагрузки страницы с диапазоном в URL
 		// ползунок визуально стоял бы в нужном месте, но реальная фильтрация
 		// продолжала бы игнорировать эту границу.
-		slider.dataset.userAdjusted = '1';
 		if ( 'min' === minOrMax ) {
 			slider.dataset.currentMin = value;
+			slider.dataset.userMin = value;
 			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), value );
 		} else {
 			slider.dataset.currentMax = value;
+			slider.dataset.userMax = value;
 			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), value );
 		}
 	};
