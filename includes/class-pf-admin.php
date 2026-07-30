@@ -274,18 +274,53 @@ class PF_Admin {
 	}
 
 	/**
-	 * Публичные типы записи сайта (в т.ч. кастомные) — источник для выпадашки
-	 * «Тип записи» в общих настройках. Ключ — слаг типа записи, значение —
-	 * его подпись (labels->name).
+	 * Типы записи, не имеющие смысла как «каталог с фильтром» — не показываются
+	 * в выпадашке «Тип записи», даже будучи технически public=true.
+	 *
+	 * @var string[]
+	 */
+	const NON_CATALOG_POST_TYPES = array( 'attachment', 'page' );
+
+	/**
+	 * Публичные типы записи сайта (в т.ч. кастомные), пригодные для фильтра-
+	 * каталога — источник для выпадашки «Тип записи» в общих настройках.
+	 * Медиафайлы и страницы исключены (см. NON_CATALOG_POST_TYPES) — WordPress
+	 * регистрирует их public=true, но списком/каталогом с фильтром их не
+	 * листают. Ключ — слаг типа записи, значение — его подпись (labels->name).
 	 *
 	 * @return array slug => label
 	 */
 	private function get_public_post_types() {
 		$out = array();
 		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $post_type ) {
+			if ( in_array( $post_type->name, self::NON_CATALOG_POST_TYPES, true ) ) {
+				continue;
+			}
 			$out[ $post_type->name ] = $post_type->labels->name ?? $post_type->name;
 		}
 		return $out;
+	}
+
+	/**
+	 * Дополнительные (не-таксономические) поля, которые стоит предложить в
+	 * списке доступных полей группы, сверх get_available_taxonomy_fields().
+	 * Сегодня это только «Цена» — она всё ещё жёстко привязана к _price
+	 * postmeta WooCommerce (см. ROADMAP.md, этап 3), поэтому предлагается
+	 * только когда настроенный тип записи — product, иначе создавала бы
+	 * заведомо нерабочую (всегда 0..0) группу.
+	 *
+	 * @return array
+	 */
+	private function get_extra_fields() {
+		if ( 'product' !== PF_Config::get_post_type() ) {
+			return array();
+		}
+		return array(
+			array(
+				'field' => 'price',
+				'label' => __( 'Цена', 'pf-filter' ),
+			),
+		);
 	}
 
 	/**
@@ -298,15 +333,7 @@ class PF_Admin {
 
 		$settings         = PF_Config::get_settings();
 		$post_types       = $this->get_public_post_types();
-		$available_fields = array_merge(
-			$this->attributes->get_available_taxonomy_fields(),
-			array(
-				array(
-					'field' => 'price',
-					'label' => __( 'Цена', 'pf-filter' ),
-				),
-			)
-		);
+		$available_fields = array_merge( $this->attributes->get_available_taxonomy_fields(), $this->get_extra_fields() );
 		$configured_depth = (int) $settings['tree_depth'];
 		// Страница магазина используется как образец разметки для двух вспомогательных
 		// проверок ниже — списка доступных pf-template и доступности стратегий
@@ -487,15 +514,7 @@ class PF_Admin {
 	 * @return array
 	 */
 	private function get_field_compatible_templates_map() {
-		$fields = array_merge(
-			$this->attributes->get_available_taxonomy_fields(),
-			array(
-				array(
-					'field' => 'price',
-					'label' => __( 'Цена', 'pf-filter' ),
-				),
-			)
-		);
+		$fields = array_merge( $this->attributes->get_available_taxonomy_fields(), $this->get_extra_fields() );
 
 		$map = array();
 		foreach ( $fields as $f ) {

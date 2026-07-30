@@ -81,7 +81,7 @@ class PF_Attributes {
 		$configs   = array();
 
 		foreach ( get_object_taxonomies( $post_type, 'objects' ) as $taxonomy ) {
-			if ( ! $taxonomy->public ) {
+			if ( ! $this->is_taxonomy_offerable( $taxonomy ) ) {
 				continue;
 			}
 			$configs[] = array(
@@ -93,24 +93,46 @@ class PF_Attributes {
 			);
 		}
 
-		foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
+		// Кастомные/локальные атрибуты (_product_attributes) и цена (_price) —
+		// целиком WooCommerce-специфика (сканирование всегда по post_type=product
+		// в SQL/postmeta), имеет смысл только когда сам плагин настроен именно
+		// на товары — иначе в список утекали бы чужие WC-атрибуты/цена товаров
+		// даже для типа записи "услуги" или блога.
+		if ( 'product' === $post_type ) {
+			foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
+				$configs[] = array(
+					'field'    => $this->get_custom_attribute_field( $raw_name ),
+					'label'    => $raw_name,
+					'template' => 'checkbox',
+					'logic'    => 'or',
+					'enabled'  => true,
+				);
+			}
+
 			$configs[] = array(
-				'field'    => $this->get_custom_attribute_field( $raw_name ),
-				'label'    => $raw_name,
-				'template' => 'checkbox',
-				'logic'    => 'or',
+				'field'    => 'price',
+				'label'    => 'Цена',
+				'template' => 'range',
 				'enabled'  => true,
 			);
 		}
 
-		$configs[] = array(
-			'field'    => 'price',
-			'label'    => 'Цена',
-			'template' => 'range',
-			'enabled'  => true,
-		);
-
 		return $configs;
+	}
+
+	/**
+	 * Стоит ли предлагать таксономию как поле группы фильтра. Обычно —
+	 * `$taxonomy->public`, НО у WooCommerce-атрибутов (`pa_*`) этот флаг
+	 * отражает настройку "Enable Archives?" в Товары → Атрибуты, которую
+	 * почти никто не включает — при жёстком требовании `public` реальные,
+	 * рабочие атрибуты (например, «Цвет») пропадали бы из списка. Поэтому
+	 * `pa_*`-таксономии допускаются независимо от этого флага.
+	 *
+	 * @param WP_Taxonomy $taxonomy Объект таксономии.
+	 * @return bool
+	 */
+	private function is_taxonomy_offerable( $taxonomy ) {
+		return $taxonomy->public || 0 === strpos( $taxonomy->name, 'pa_' );
 	}
 
 	/**
@@ -731,9 +753,11 @@ class PF_Attributes {
 
 	/**
 	 * Список полей, доступных для группы фильтра на странице админки: все
-	 * публичные таксономии настроенного типа записи (PF_Config::get_post_type()),
-	 * плюс кастомные/локальные атрибуты товаров (WooCommerce-специфика, см.
-	 * scan_custom_attributes()) — для другого типа записи их список всегда пуст.
+	 * подходящие (см. is_taxonomy_offerable()) таксономии настроенного типа
+	 * записи (PF_Config::get_post_type()), плюс — только если этот тип записи
+	 * product — кастомные/локальные атрибуты товаров (WooCommerce-специфика,
+	 * см. scan_custom_attributes()); для другого типа записи их не показываем
+	 * вообще, иначе в список утекали бы чужие WC-атрибуты товаров.
 	 *
 	 * @return array
 	 */
@@ -742,7 +766,7 @@ class PF_Attributes {
 		$out       = array();
 
 		foreach ( get_object_taxonomies( $post_type, 'objects' ) as $taxonomy ) {
-			if ( ! $taxonomy->public ) {
+			if ( ! $this->is_taxonomy_offerable( $taxonomy ) ) {
 				continue;
 			}
 			$out[] = array(
@@ -751,11 +775,13 @@ class PF_Attributes {
 			);
 		}
 
-		foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
-			$out[] = array(
-				'field' => $this->get_custom_attribute_field( $raw_name ),
-				'label' => $raw_name,
-			);
+		if ( 'product' === $post_type ) {
+			foreach ( array_keys( $this->scan_custom_attributes() ) as $raw_name ) {
+				$out[] = array(
+					'field' => $this->get_custom_attribute_field( $raw_name ),
+					'label' => $raw_name,
+				);
+			}
 		}
 		return $out;
 	}
