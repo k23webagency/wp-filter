@@ -1043,17 +1043,27 @@
 
 			if ( 'range' === template ) {
 				var slider = qs( group.el, '[pf-filter-range-slider]' );
-				// data-user-min/data-user-max ставятся ТОЛЬКО реальным действием
-				// пользователя (drag/клавиши/числовое поле) — см. buildRangeGroup().
-				// Без этой проверки граница, автоматически подстроенная под ДРУГИЕ
-				// активные фильтры (updateRangeBounds — например, цена сузилась, пока
-				// был выбран конкретный цвет), после снятия того фильтра продолжала бы
-				// отправляться как будто пользователь сам выбрал такой узкий диапазон
-				// цены, хотя он её вообще не трогал.
-				if ( slider && ( undefined !== slider.dataset.userMin || undefined !== slider.dataset.userMax ) ) {
+				var hasUserMin = slider && undefined !== slider.dataset.userMin;
+				var hasUserMax = slider && undefined !== slider.dataset.userMax;
+				// Отправляется "замороженное" абсолютное значение выбора
+				// пользователя (data-user-min/data-user-max — только реальным
+				// действием, см. buildRangeGroup()), а НЕ отображаемое
+				// currentMin/currentMax. Это принципиально: currentMin/currentMax —
+				// чисто визуальное отображение, которое updateRangeBounds() постоянно
+				// подстраивает под ДРУГИЕ активные фильтры (в т.ч. схлопывает в 0,
+				// если с ними совпадений вообще нет) — если бы туда же уходил и
+				// реальный фильтр, снятая с одной группы констрейнта (например, "0..0"
+				// из-за третьего фильтра) навсегда протекала бы в запрос ДРУГОЙ
+				// range-группы через её же currentMin/currentMax, и группы взаимно
+				// блокировали друг друга по кругу — сброс одного фильтра не помогал,
+				// потому что другой продолжал слать чужое схлопнувшееся значение как
+				// будто это его собственный осознанный выбор. Не тронутая пользователем
+				// сторона (min либо max) отправляется как null — без ограничения,
+				// сервер это понимает (см. PF_Query::build_meta_range_query()).
+				if ( hasUserMin || hasUserMax ) {
 					filters[ field ] = {
-						min: parseFloat( slider.dataset.currentMin ),
-						max: parseFloat( slider.dataset.currentMax ),
+						min: hasUserMin ? parseFloat( slider.dataset.userMin ) : null,
+						max: hasUserMax ? parseFloat( slider.dataset.userMax ) : null,
 					};
 				}
 				return;
@@ -1552,10 +1562,18 @@
 	};
 
 	/**
-	 * Активен ли фильтр конкретно этого поля. Для range-группы (цена и любое
-	 * другое такое поле) — «активен» только если диапазон отличается от
-	 * полного (min/max шаблона), иначе он технически присутствует в
-	 * collectFilters(), но фильтром не является.
+	 * Активен ли фильтр конкретно этого поля. Для range-группы — «активен»,
+	 * если пользователь реально тронул min либо max (т.е. поле вообще есть
+	 * в filters — collectFilters() кладёт его туда только в этом случае).
+	 *
+	 * Раньше здесь ещё сравнивалось значение фильтра с текущими "полными"
+	 * границами трека (data-min/data-max) — считалось неактивным, если они
+	 * совпадали. Убрано: границы трека — величина плавающая, подстраивается
+	 * под ДРУГИЕ активные фильтры (см. updateRangeBounds()), и могла
+	 * случайно совпасть с осознанным выбором пользователя просто потому что
+	 * ДРУГОЙ фильтр в моменте сузил доступные значения до того же диапазона
+	 * — тогда чип этой группы мог мигать/пропадать при изменении СОСЕДНЕЙ
+	 * группы, никак не связанной с этой напрямую.
 	 *
 	 * @param {string} field   Поле группы.
 	 * @param {Object} filters Результат collectFilters().
@@ -1564,14 +1582,7 @@
 	PFForm.prototype.isFieldActive = function ( field, filters ) {
 		var group = this.groups[ field ];
 		if ( group && 'range' === group.config.template ) {
-			var rangeFilter = filters[ field ];
-			if ( ! rangeFilter ) {
-				return false;
-			}
-			var slider = qs( group.el, '[pf-filter-range-slider]' );
-			var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
-			var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
-			return ! ( rangeFilter.min === fullMin && rangeFilter.max === fullMax );
+			return !! filters[ field ];
 		}
 		return ( filters[ field ] || [] ).length > 0;
 	};
@@ -1673,14 +1684,20 @@
 				var groupLabel = group ? group.config.label : field;
 
 				if ( group && 'range' === group.config.template ) {
+					// Пришло из collectFilters() — уже "замороженный" выбор
+					// пользователя (min/max по отдельности, либо null если ту
+					// сторону не трогали), см. там же — почему не текущее
+					// отображаемое значение.
 					var rangeFilter = filters[ field ];
-					var slider = qs( group.el, '[pf-filter-range-slider]' );
-					var fullMin = slider ? parseFloat( slider.dataset.min ) : null;
-					var fullMax = slider ? parseFloat( slider.dataset.max ) : null;
-					if ( rangeFilter.min === fullMin && rangeFilter.max === fullMax ) {
-						return;
+					var rangeText;
+					if ( null !== rangeFilter.min && null !== rangeFilter.max ) {
+						rangeText = rangeFilter.min + '–' + rangeFilter.max;
+					} else if ( null !== rangeFilter.min ) {
+						rangeText = 'от ' + rangeFilter.min;
+					} else {
+						rangeText = 'до ' + rangeFilter.max;
 					}
-					self.appendChip( container, chipTpl, groupLabel + ': ' + rangeFilter.min + '–' + rangeFilter.max, function () {
+					self.appendChip( container, chipTpl, groupLabel + ': ' + rangeText, function () {
 						self.resetGroupFilter( field );
 					} );
 					return;
