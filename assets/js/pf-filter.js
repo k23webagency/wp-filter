@@ -1880,7 +1880,16 @@
 		if ( this.state.orderbyRaw ) {
 			params.set( 'orderby', this.state.orderbyRaw );
 		}
-		if ( this.state.paged > 1 ) {
+		// Номер страницы пишется в URL только на настоящих архивных страницах
+		// (см. pfConfig.isArchivePage, PF_Plugin::limit_main_query_posts_per_page()).
+		// На встроенном (не архивном) блоке плагин не ограничивает и не
+		// пагинирует исходный WordPress-запрос темы вообще — /page/N или
+		// ?paged=N там не соответствует ничему реальному, и при перезагрузке
+		// такой страницы запрос темы неожиданно может вернуть 0 записей
+		// (WordPress к тому же канонизирует ?paged=N в путь /page/N/ при
+		// следующей загрузке — тот же эффект). Проще не писать номер
+		// страницы в URL вообще, чем чинить последствия у каждой темы.
+		if ( this.state.paged > 1 && window.pfConfig && window.pfConfig.isArchivePage ) {
 			params.set( 'paged', this.state.paged );
 		}
 
@@ -1901,9 +1910,18 @@
 	 * форма (см. updateUrl), URLSearchParams(location.search) его не видит,
 	 * т.к. он не в query-строке, а в самом пути.
 	 *
+	 * На НЕ архивной странице (см. pfConfig.isArchivePage, updateUrl()) этот
+	 * сегмент пути не может означать ничего надёжного — WordPress-запрос
+	 * темы на такой странице никем не пагинирован, поэтому здесь он
+	 * игнорируется симметрично тому, что updateUrl() его на таких страницах
+	 * никогда не пишет.
+	 *
 	 * @return {number|null}
 	 */
 	PFForm.prototype.getPagedFromPath = function () {
+		if ( ! window.pfConfig || ! window.pfConfig.isArchivePage ) {
+			return null;
+		}
 		var match = window.location.pathname.match( /\/page\/(\d+)\/?$/ );
 		if ( ! match ) {
 			return null;
@@ -1942,7 +1960,11 @@
 				self.selectSortOption( rawValue );
 				return;
 			}
-			if ( 'paged' === key ) {
+			// ?paged=N в query-строке — то же самое соображение, что и у
+			// getPagedFromPath() для пути /page/N/: на не архивной странице
+			// (см. pfConfig.isArchivePage) номер страницы не может означать
+			// ничего надёжного, updateUrl() сам такого не пишет.
+			if ( 'paged' === key && window.pfConfig && window.pfConfig.isArchivePage ) {
 				hasRelevantParams = true;
 				self.state.paged = parseInt( rawValue, 10 ) || 1;
 				return;

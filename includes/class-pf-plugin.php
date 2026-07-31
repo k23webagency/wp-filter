@@ -34,6 +34,25 @@ final class PF_Plugin {
 	private $admin;
 
 	/**
+	 * true, если ГЛАВНЫЙ запрос текущей страницы распознан как архив
+	 * (каталог/таксономия/блог) настроенного типа записи какого-либо профиля
+	 * — выставляется в limit_main_query_posts_per_page() (pre_get_posts,
+	 * фирится раньше wp_enqueue_scripts на каждой обычной загрузке страницы)
+	 * и передаётся во фронтовый JS через pfConfig.isArchivePage. Нужно,
+	 * чтобы JS знал, можно ли доверять постраничной пагинации в URL
+	 * (`/page/N/`) — на НЕ архивной странице (например, маленький встроенный
+	 * блок фильтра на произвольной странице/главной) плагин не ограничивает
+	 * и не пагинирует исходный WordPress-запрос темы вообще (см.
+	 * limit_main_query_posts_per_page()), поэтому `/page/2/` там не
+	 * соответствует ничему реальному — при перезагрузке такой страницы
+	 * тема-запрос может неожиданно вернуть 0 записей (см. историю в
+	 * ROADMAP.md).
+	 *
+	 * @var bool
+	 */
+	private $is_archive_page = false;
+
+	/**
 	 * Получить единственный экземпляр плагина.
 	 *
 	 * @return PF_Plugin
@@ -113,6 +132,7 @@ final class PF_Plugin {
 			if ( $is_target_archive ) {
 				PF_Config::use_profile( $id );
 				$query->set( 'posts_per_page', (int) $profile['posts_per_page'] );
+				$this->is_archive_page = true;
 				return;
 			}
 		}
@@ -144,9 +164,10 @@ final class PF_Plugin {
 			'pf-filter',
 			'pfConfig',
 			array(
-				'restUrl' => esc_url_raw( rest_url( 'pf/v1/' ) ),
-				'nonce'   => wp_create_nonce( 'wp_rest' ),
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'restUrl'       => esc_url_raw( rest_url( 'pf/v1/' ) ),
+				'nonce'         => wp_create_nonce( 'wp_rest' ),
+				'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
+				'isArchivePage' => $this->is_archive_page,
 			)
 		);
 	}
