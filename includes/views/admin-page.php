@@ -33,7 +33,7 @@ defined( 'ABSPATH' ) || exit;
 			<label for="pf-profile-switch"><strong><?php esc_html_e( 'Профиль:', 'pf-filter' ); ?></strong></label>
 			<select id="pf-profile-switch" name="profile" onchange="this.form.submit()">
 				<?php foreach ( $profiles as $pid => $p ) : ?>
-					<option value="<?php echo esc_attr( $pid ); ?>" <?php selected( $active_profile_id, $pid ); ?>><?php echo esc_html( $p['name'] ?? $pid ); ?> (<?php echo esc_html( $post_types[ $p['post_type'] ] ?? $p['post_type'] ); ?>)</option>
+					<option value="<?php echo esc_attr( $pid ); ?>" <?php selected( $active_profile_id, $pid ); ?>><?php echo esc_html( $p['name'] ?? $pid ); ?> — <?php echo esc_html( $pid ); ?> (<?php echo esc_html( $post_types[ $p['post_type'] ] ?? $p['post_type'] ); ?>)</option>
 				<?php endforeach; ?>
 			</select>
 		</form>
@@ -88,6 +88,13 @@ defined( 'ABSPATH' ) || exit;
 					<th><label for="pf-profile-name"><?php esc_html_e( 'Название профиля', 'pf-filter' ); ?></label></th>
 					<td>
 						<input type="text" id="pf-profile-name" name="pf_filter_settings[name]" value="<?php echo esc_attr( $settings['name'] ?? '' ); ?>" class="regular-text" />
+					</td>
+				</tr>
+				<tr>
+					<th><?php esc_html_e( 'ID профиля', 'pf-filter' ); ?></th>
+					<td>
+						<code><?php echo esc_html( $active_profile_id ); ?></code>
+						<p class="description"><?php esc_html_e( 'Это значение атрибута pf-profile в разметке темы. Задаётся один раз при создании профиля (из его тогдашнего названия) и не меняется при переименовании.', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
 				<tr>

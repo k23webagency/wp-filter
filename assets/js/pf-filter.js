@@ -8,6 +8,18 @@
  * обязательного (pf-form/pf-list) — console.error и остановка
  * инициализации только для этой формы. pf-target нигде не обязателен —
  * его отсутствие разрешается автоматически или через console.warn (см. resolveListElement).
+ *
+ * [pf-profile] — не атрибут конкретно формы, а маркер ближайшего общего
+ * контейнера ОДНОГО блока фильтрации (форма + список + pf-loading/pf-empty/
+ * pf-count/pf-active-filters/pf-pagination-.../pf-sort внутри одной обёртки).
+ * Находится через formEl.closest('[pf-profile]') — значит атрибут можно
+ * поставить и прямо на саму форму (вырожденный случай), и на любого её
+ * предка. Все перечисленные выше pf-* элементы ищутся ВНУТРИ этого
+ * контейнера, а не по всему document — это и разруливает, какой профиль
+ * им соответствует, и заодно даёт двум независимым блокам фильтрации на
+ * одной странице не путать чужие pf-count/pf-loading и т.п. Если на
+ * странице такого контейнера нет вообще (простая тема с одним блоком
+ * фильтра) — всё ищется по всему document, как было исторически.
  */
 ( function () {
 	'use strict';
@@ -143,6 +155,7 @@
 
 	function PFForm( formEl ) {
 		this.formEl = formEl;
+		this.scopeRoot = document; // ближайший [pf-profile]-контейнер, либо document — см. init().
 		this.listEl = null;
 		this.outputEl = null;
 		this.templatesEl = null;
@@ -152,7 +165,8 @@
 		this.paginationMode = null;
 
 		this.config = null;
-		this.profileId = ''; // pf-profile атрибута формы; уточняется резолвом сервера в fetchConfig() (см. init()).
+		this.profileId = ''; // из [pf-profile]-контейнера; уточняется резолвом сервера в fetchConfig() (см. init()).
+		this.explicitProfileId = ''; // копия исходного значения ДО резолва сервером — для предупреждения о неоднозначности (см. init()).
 		this.groups = {}; // field -> { config, el }
 		this.showCounts = true;
 		this.searchThreshold = 7;
@@ -178,11 +192,16 @@
 	}
 
 	/**
-	 * Найти [pf-list] для этой формы. pf-target нигде не обязателен:
-	 * - если задан — используется как CSS-селектор (явная связь);
-	 * - если на странице ровно одна форма и один список — связываются автоматически;
-	 * - если форм/списков несколько и pf-target не задан — неоднозначность:
-	 *   console.warn с подсказкой, best-effort — первая форма связывается с первым списком.
+	 * Найти [pf-list] для этой формы в границах this.scopeRoot (см. init()).
+	 * pf-target нигде не обязателен:
+	 * - если задан — используется как CSS-селектор от всего document (явная
+	 *   связь, побеждает любую автоматику);
+	 * - если внутри scopeRoot ровно один [pf-list] — используется он,
+	 *   независимо от того, сколько внутри форм (несколько форм на один и
+	 *   тот же список — обычный случай, например мобильная и десктопная
+	 *   версии одной и той же формы фильтра — не требуют pf-target);
+	 * - если внутри scopeRoot несколько [pf-list] и pf-target не задан —
+	 *   неоднозначность: console.warn, best-effort — первый найденный список.
 	 *
 	 * @return {Element|null}
 	 */
@@ -198,20 +217,20 @@
 			return explicitList;
 		}
 
-		var allForms = qsa( document, '[pf-form]' );
-		var allLists = qsa( document, '[pf-list]' );
+		var scopedLists = qsa( this.scopeRoot, '[pf-list]' );
+		var scopeLabel = this.scopeRoot === document ? 'на странице' : 'внутри её [pf-profile]-блока';
 
-		if ( 1 === allForms.length && 1 === allLists.length ) {
-			return allLists[ 0 ];
+		if ( 1 === scopedLists.length ) {
+			return scopedLists[ 0 ];
 		}
 
-		console.warn( 'PF Filter: атрибут pf-target не указан, а на странице несколько [pf-form] и/или [pf-list] — однозначно связать их нельзя. Добавьте pf-target="#selector" на форму. Пробую связать первую форму с первым списком.' );
-
-		if ( allLists.length && allForms[ 0 ] === this.formEl ) {
-			return allLists[ 0 ];
+		if ( ! scopedLists.length ) {
+			console.error( 'PF Filter: [pf-list] не найден ' + scopeLabel + ', форма не инициализирована.' );
+			return null;
 		}
 
-		return null;
+		console.warn( 'PF Filter: атрибут pf-target не указан, а ' + scopeLabel + ' несколько [pf-list] — однозначно связать нельзя. Добавьте pf-target="#selector" на форму. Пробую связать с первым найденным списком.' );
+		return scopedLists[ 0 ];
 	};
 
 	PFForm.prototype.init = function () {
@@ -219,6 +238,15 @@
 			// На случай если элемент передан ошибочно.
 			return;
 		}
+
+		// [pf-profile] определяет и профиль, и границу блока для всех
+		// остальных pf-* элементов ниже (pf-loading/pf-count/pf-active-filters/
+		// pf-pagination-.../pf-sort) — см. пояснение в шапке файла. closest()
+		// включает саму форму, если атрибут стоит прямо на ней.
+		var profileContainer = this.formEl.closest( '[pf-profile]' );
+		this.scopeRoot = profileContainer || document;
+		this.profileId = profileContainer ? ( profileContainer.getAttribute( 'pf-profile' ) || '' ) : '';
+		this.explicitProfileId = this.profileId;
 
 		this.listEl = this.resolveListElement();
 		if ( ! this.listEl ) {
@@ -252,8 +280,8 @@
 			console.error( 'PF Filter: [pf-templates] не найден, фильтр не будет построен.' );
 		}
 
-		this.loadingEl = document.querySelector( '[pf-loading]' );
-		this.emptyEl = document.querySelector( '[pf-empty]' );
+		this.loadingEl = qs( this.scopeRoot, '[pf-loading]' );
+		this.emptyEl = qs( this.scopeRoot, '[pf-empty]' );
 		// Плагин сам гарантирует, что оба скрыты по умолчанию — не полагается на то,
 		// что тема пропишет для них display:none. is-hidden снимается/добавляется
 		// в runFilter()/handleResponse(), а не только после первого запроса.
@@ -274,11 +302,11 @@
 		var explicitLogic = this.formEl.getAttribute( 'pf-logic' );
 		this.logic = ( 'and' === explicitLogic || 'or' === explicitLogic ) ? explicitLogic : 'and';
 
-		// pf-profile нигде не обязателен, по аналогии с pf-target (см.
-		// resolveListElement()): без него сервер сам разрешает профиль —
-		// однозначно, если он на сайте ровно один, иначе неоднозначно (тогда
-		// ответ /config несёт ambiguous_profile — предупреждаем ниже).
-		this.profileId = this.formEl.getAttribute( 'pf-profile' ) || '';
+		// this.profileId уже установлен выше (из [pf-profile]-контейнера, если
+		// есть). Если контейнера/атрибута нет — не обязателен, по аналогии с
+		// pf-target: сервер сам разрешает профиль, однозначно, если он на
+		// сайте ровно один, иначе неоднозначно (тогда ответ /config несёт
+		// ambiguous_profile — предупреждаем ниже).
 
 		var self = this;
 		this.fetchConfig()
@@ -291,8 +319,8 @@
 					// между запросами.
 					self.profileId = config.profile;
 				}
-				if ( config.ambiguous_profile && ! self.formEl.getAttribute( 'pf-profile' ) ) {
-					console.warn( 'PF Filter: атрибут pf-profile не указан, а на сайте несколько профилей фильтра — однозначно выбрать нельзя. Добавьте pf-profile="..." на форму. Использован профиль "' + config.profile + '".' );
+				if ( config.ambiguous_profile && ! self.explicitProfileId ) {
+					console.warn( 'PF Filter: pf-profile не указан ни на форме, ни на её общем [pf-profile]-контейнере, а на сайте несколько профилей фильтра — однозначно выбрать нельзя. Добавьте pf-profile="..." на форму или на её общую обёртку. Использован профиль "' + config.profile + '".' );
 				}
 				self.showCounts = !! ( config.settings && config.settings.show_counts );
 				self.searchThreshold = ( config.settings && config.settings.search_threshold ) || 7;
@@ -1238,7 +1266,7 @@
 	};
 
 	PFForm.prototype.updateCounters = function ( data ) {
-		qsa( document, '[pf-count]' ).forEach( function ( el ) {
+		qsa( this.scopeRoot, '[pf-count]' ).forEach( function ( el ) {
 			el.textContent = data.count;
 		} );
 	};
@@ -1295,7 +1323,7 @@
 	// -----------------------------------------------------------------
 
 	PFForm.prototype.initSort = function ( sortOptions ) {
-		this.sortEl = document.querySelector( '[pf-sort]' );
+		this.sortEl = qs( this.scopeRoot, '[pf-sort]' );
 		if ( ! this.sortEl ) {
 			return;
 		}
@@ -1393,12 +1421,12 @@
 		// первого рендера идут в DOM раньше оригинала — повторный querySelector
 		// нашёл бы уже сгенерированный клон вместо настоящего шаблона, что ведёт
 		// к его ошибочному удалению и потере номеров страниц после первого клика.
-		this._pagesContainer  = document.querySelector( '[pf-pagination-pages]' );
-		this._pageItemTpl     = document.querySelector( '[pf-page-item]' );
-		this._prevBtn         = document.querySelector( '[pf-page-prev]' );
-		this._nextBtn         = document.querySelector( '[pf-page-next]' );
-		this._loadMoreBtn     = document.querySelector( '[pf-load-more]' );
-		this._infiniteTrigger = document.querySelector( '[pf-infinite-trigger]' );
+		this._pagesContainer  = qs( this.scopeRoot, '[pf-pagination-pages]' );
+		this._pageItemTpl     = qs( this.scopeRoot, '[pf-page-item]' );
+		this._prevBtn         = qs( this.scopeRoot, '[pf-page-prev]' );
+		this._nextBtn         = qs( this.scopeRoot, '[pf-page-next]' );
+		this._loadMoreBtn     = qs( this.scopeRoot, '[pf-load-more]' );
+		this._infiniteTrigger = qs( this.scopeRoot, '[pf-infinite-trigger]' );
 
 		// this.paginationMode берётся исключительно из настроек админки
 		// (pagination_strategy) — см. init().
@@ -1568,13 +1596,13 @@
 		// Сам шаблон должен быть скрыт сразу, а не только после первого реального
 		// обновления фильтров — иначе на пустой странице виден необработанный чип
 		// с текстом-заглушкой из разметки.
-		qsa( document, '[pf-active-chip]' ).forEach( function ( chipTpl ) {
+		qsa( this.scopeRoot, '[pf-active-chip]' ).forEach( function ( chipTpl ) {
 			chipTpl.classList.add( 'pf-hidden' );
 		} );
 
 		// Кнопка сброса по умолчанию скрыта — показывается только когда есть
 		// хоть один реально активный фильтр (см. updateActiveFilters()).
-		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
+		qsa( this.scopeRoot, '[pf-active-reset]' ).forEach( function ( btn ) {
 			btn.classList.add( 'pf-hidden' );
 			btn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
@@ -1676,7 +1704,7 @@
 		var self = this;
 		var filters = this.collectFilters();
 
-		qsa( document, '[pf-active-reset]' ).forEach( function ( btn ) {
+		qsa( this.scopeRoot, '[pf-active-reset]' ).forEach( function ( btn ) {
 			btn.classList.toggle( 'pf-hidden', ! self.hasActiveFilters( filters ) );
 		} );
 
@@ -1691,7 +1719,7 @@
 			} );
 		} );
 
-		qsa( document, '[pf-active-filters]' ).forEach( function ( container ) {
+		qsa( this.scopeRoot, '[pf-active-filters]' ).forEach( function ( container ) {
 			var chipTpl = qs( container, '[pf-active-chip]' );
 			if ( ! chipTpl ) {
 				return;
