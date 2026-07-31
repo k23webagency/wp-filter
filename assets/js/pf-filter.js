@@ -133,6 +133,21 @@
 	}
 
 	/**
+	 * То же самое, что setRangeDisplayValue(), но сразу для НЕСКОЛЬКИХ
+	 * элементов одной стороны — верстальщик может поставить
+	 * [pf-filter-range-value="min"] сразу на два элемента (например, на
+	 * редактируемый <input> и рядом на обычный <div> только для показа):
+	 * оба должны обновляться синхронно, а не только первый найденный.
+	 *
+	 * @param {Element[]} els Список элементов (см. qsa()).
+	 */
+	function setRangeDisplayValues( els, value, isTouched ) {
+		els.forEach( function ( el ) {
+			setRangeDisplayValue( el, value, isTouched );
+		} );
+	}
+
+	/**
 	 * Позиция значения в процентах по границам [min, max].
 	 *
 	 * @param {boolean} isMax Какой из двух ползунков позиционируется — нужно
@@ -790,8 +805,17 @@
 
 		var minHandle = qs( clone, '[pf-filter-range-handle="min"]' );
 		var maxHandle = qs( clone, '[pf-filter-range-handle="max"]' );
-		var minValueEl = qs( clone, '[pf-filter-range-value="min"]' );
-		var maxValueEl = qs( clone, '[pf-filter-range-value="max"]' );
+		// Атрибут [pf-filter-range-value="min"/"max"] может стоять сразу на
+		// НЕСКОЛЬКИХ элементах одной стороны (например, редактируемый <input>
+		// плюс рядом обычный <div> только для показа) — все они обновляются
+		// синхронно (setRangeDisplayValues() ниже). Редактируемым (получает
+		// обработчик change в bindNumberInput()) становится ПЕРВЫЙ найденный
+		// среди них <input> — остальные, включая другие возможные <input>,
+		// только отображают значение.
+		var minValueEls = qsa( clone, '[pf-filter-range-value="min"]' );
+		var maxValueEls = qsa( clone, '[pf-filter-range-value="max"]' );
+		var minInput = minValueEls.filter( function ( el ) { return 'INPUT' === el.tagName; } )[ 0 ] || null;
+		var maxInput = maxValueEls.filter( function ( el ) { return 'INPUT' === el.tagName; } )[ 0 ] || null;
 		// [pf-filter-range-track] — необязательная полоска подсветки между
 		// бегунками, см. positionRangeTrack(). Нет предупреждения при
 		// отсутствии — атрибут новый и не обязателен, чисто визуальное дополнение.
@@ -800,15 +824,15 @@
 		if ( ! minHandle || ! maxHandle ) {
 			console.warn( 'PF Filter: [pf-filter-range-handle] не найден для группы "' + groupConfig.field + '", drag недоступен.' );
 		}
-		if ( ! minValueEl || ! maxValueEl ) {
+		if ( ! minValueEls.length || ! maxValueEls.length ) {
 			console.warn( 'PF Filter: [pf-filter-range-value] не найден для группы "' + groupConfig.field + '", значения не отображаются.' );
 		}
 
 		// В момент построения группы ничего ещё не тронуто пользователем —
 		// оба [pf-filter-range-value] (если это <input>) показываются как
 		// placeholder текущей границы, а не как готовое value.
-		setRangeDisplayValue( minValueEl, min, false );
-		setRangeDisplayValue( maxValueEl, max, false );
+		setRangeDisplayValues( minValueEls, min, false );
+		setRangeDisplayValues( maxValueEls, max, false );
 
 		positionRangeTrack( trackEl, min, max, min, max );
 
@@ -861,13 +885,13 @@
 				slider.dataset.currentMin = value;
 				slider.dataset.userMin = value;
 				positionRangeHandle( minHandle, value, rangeMin, rangeMax, false );
-				setRangeDisplayValue( minValueEl, value, true );
+				setRangeDisplayValues( minValueEls, value, true );
 			} else {
 				value = clamp( value, currentMin, rangeMax );
 				slider.dataset.currentMax = value;
 				slider.dataset.userMax = value;
 				positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
-				setRangeDisplayValue( maxValueEl, value, true );
+				setRangeDisplayValues( maxValueEls, value, true );
 			}
 			positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 		}
@@ -916,13 +940,13 @@
 					slider.dataset.currentMin = newMin;
 					slider.dataset.userMin = newMin;
 					positionRangeHandle( minHandle, newMin, rangeMin, rangeMax, false );
-					setRangeDisplayValue( minValueEl, newMin, true );
+					setRangeDisplayValues( minValueEls, newMin, true );
 				} else {
 					var newMax = clamp( currentMax + delta, currentMin, rangeMax );
 					slider.dataset.currentMax = newMax;
 					slider.dataset.userMax = newMax;
 					positionRangeHandle( maxHandle, newMax, rangeMin, rangeMax, true );
-					setRangeDisplayValue( maxValueEl, newMax, true );
+					setRangeDisplayValues( maxValueEls, newMax, true );
 				}
 				positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
@@ -932,11 +956,21 @@
 		bindDrag( minHandle, 'min' );
 		bindDrag( maxHandle, 'max' );
 
-		function bindNumberInput( el, type ) {
-			if ( ! el || 'INPUT' !== el.tagName ) {
+		/**
+		 * Навесить обработчик прямого ввода на РЕДАКТИРУЕМЫЙ <input> этой
+		 * стороны (первый найденный среди [pf-filter-range-value], см. выше) —
+		 * но обновлять отображение нужно у ВСЕХ элементов этой стороны сразу
+		 * (els), включая сам editEl и любые другие "только для показа".
+		 *
+		 * @param {Element|null} editEl Редактируемый <input> (может отсутствовать — тогда no-op).
+		 * @param {string} type         'min' | 'max'.
+		 * @param {Element[]} els       Все [pf-filter-range-value] этой стороны.
+		 */
+		function bindNumberInput( editEl, type, els ) {
+			if ( ! editEl ) {
 				return;
 			}
-			el.addEventListener( 'change', function () {
+			editEl.addEventListener( 'change', function () {
 				var rangeMin = parseFloat( slider.dataset.min );
 				var rangeMax = parseFloat( slider.dataset.max );
 				var currentMin = parseFloat( slider.dataset.currentMin );
@@ -946,24 +980,24 @@
 				// сторону обратно к границе трека (та же логика, что и у
 				// resetGroupControls(), но только для одной стороны, не для
 				// всей группы): поле снова показывает placeholder вместо value.
-				if ( '' === el.value.trim() ) {
+				if ( '' === editEl.value.trim() ) {
 					if ( 'min' === type ) {
 						delete slider.dataset.userMin;
 						slider.dataset.currentMin = rangeMin;
 						positionRangeHandle( minHandle, rangeMin, rangeMin, rangeMax, false );
-						setRangeDisplayValue( minValueEl, rangeMin, false );
+						setRangeDisplayValues( els, rangeMin, false );
 					} else {
 						delete slider.dataset.userMax;
 						slider.dataset.currentMax = rangeMax;
 						positionRangeHandle( maxHandle, rangeMax, rangeMin, rangeMax, true );
-						setRangeDisplayValue( maxValueEl, rangeMax, false );
+						setRangeDisplayValues( els, rangeMax, false );
 					}
 					positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 					self.rangeDebounced( { resetPage: true, forceReplace: true } );
 					return;
 				}
 
-				var value = parseFloat( el.value );
+				var value = parseFloat( editEl.value );
 				if ( isNaN( value ) ) {
 					return;
 				}
@@ -978,14 +1012,14 @@
 					slider.dataset.userMax = value;
 					positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
 				}
-				setRangeDisplayValue( el, value, true );
+				setRangeDisplayValues( els, value, true );
 				positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
 			} );
 		}
 
-		bindNumberInput( minValueEl, 'min' );
-		bindNumberInput( maxValueEl, 'max' );
+		bindNumberInput( minInput, 'min', minValueEls );
+		bindNumberInput( maxInput, 'max', maxValueEls );
 
 		return clone;
 	};
@@ -1062,8 +1096,8 @@
 
 		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), newCurMin, newMin, newMax, false );
 		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), newCurMax, newMin, newMax, true );
-		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), newCurMin, hasUserMin );
-		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), newCurMax, hasUserMax );
+		setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), newCurMin, hasUserMin );
+		setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), newCurMax, hasUserMax );
 		positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), newCurMin, newCurMax, newMin, newMax );
 	};
 
@@ -1775,8 +1809,8 @@
 				delete slider.dataset.userMax;
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
-				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min, false );
-				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max, false );
+				setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min, false );
+				setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max, false );
 				positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), rangeMin, rangeMax, rangeMin, rangeMax );
 			}
 		}
@@ -2108,11 +2142,11 @@
 		if ( 'min' === minOrMax ) {
 			slider.dataset.currentMin = value;
 			slider.dataset.userMin = value;
-			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), value, true );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), value, true );
 		} else {
 			slider.dataset.currentMax = value;
 			slider.dataset.userMax = value;
-			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), value, true );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), value, true );
 		}
 	};
 
