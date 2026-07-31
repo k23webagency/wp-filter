@@ -594,8 +594,11 @@ class PF_Diagnostics {
 	 * По какой разметке на странице для каких стратегий пагинации есть все
 	 * необходимые элементы. Вынесено в статический метод — переиспользуется
 	 * и диагностикой (check_pagination_markup), и страницей настроек
-	 * (PF_Admin, через get_pagination_availability) для того, чтобы не
-	 * предлагать в списке стратегию, для которой в вёрстке нет разметки.
+	 * (`PF_Admin::render_page()`, которая сама один раз сканирует образец
+	 * разметки через `fetch_dom()` и передаёт готовый `DOMXPath` сюда — а не
+	 * через отдельный метод по URL, чтобы не сканировать дважды) для того,
+	 * чтобы не предлагать в списке стратегию, для которой в вёрстке нет
+	 * разметки.
 	 *
 	 * @param DOMXPath $xpath XPath документа.
 	 * @return array {pages, load-more, infinite, both} => bool.
@@ -609,19 +612,6 @@ class PF_Diagnostics {
 		$available['both'] = $available['pages'] && $available['load-more'];
 
 		return $available;
-	}
-
-	/**
-	 * То же самое, что detect_pagination_availability(), но по URL — сама
-	 * загружает и парсит страницу. Используется страницей настроек, у
-	 * которой (в отличие от analyze_markup()) нет уже готового DOMXPath.
-	 *
-	 * @param string $url URL страницы для сканирования.
-	 * @return array|null {pages, load-more, infinite, both} => bool, либо null если страницу не удалось загрузить.
-	 */
-	public function get_pagination_availability( $url ) {
-		$dom = $this->fetch_dom( $url );
-		return $dom ? self::detect_pagination_availability( new DOMXPath( $dom ) ) : null;
 	}
 
 	/**

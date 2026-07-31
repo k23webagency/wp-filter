@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       PF Filter
  * Plugin URI:        https://example.com/pf-filter
- * Description:       Движок AJAX-фильтрации каталога (товары WooCommerce, любой другой тип записи или блог), работающий через HTML-атрибуты pf-* в разметке темы. Не диктует внешний вид карточек и сетки.
- * Version:           1.15.1
+ * Description:       Движок AJAX-фильтрации каталога через HTML-атрибуты pf-* в разметке темы — товары WooCommerce, любой другой тип записи или блог, любое число независимых профилей фильтра (в т.ч. несколько блоков на одной странице). Не диктует внешний вид карточек и сетки.
+ * Version:           1.15.2
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            PF Filter
@@ -15,7 +15,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Константы плагина.
-define( 'PF_FILTER_VERSION', '1.15.1' );
+define( 'PF_FILTER_VERSION', '1.15.2' );
 define( 'PF_FILTER_FILE', __FILE__ );
 define( 'PF_FILTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'PF_FILTER_URL', plugin_dir_url( __FILE__ ) );

@@ -35,7 +35,7 @@ class PF_Renderer {
 	 *                                       уже созданного экземпляра (общий кэш
 	 *                                       scan_custom_attributes() за запрос).
 	 */
-	public function __construct( PF_Attributes $attributes = null ) {
+	public function __construct( ?PF_Attributes $attributes = null ) {
 		$this->attributes    = $attributes ?: new PF_Attributes();
 		$this->card_template = new PF_Card_Template( $this->attributes );
 	}

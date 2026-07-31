@@ -96,14 +96,6 @@
 		}
 	}
 
-	/** Прочитать/записать значение элемента диапазона: input -> .value, иначе textContent. */
-	function getRangeDisplayValue( el ) {
-		if ( ! el ) {
-			return null;
-		}
-		return el.tagName === 'INPUT' ? parseFloat( el.value ) : parseFloat( el.textContent );
-	}
-
 	/**
 	 * Записать отображаемое значение min/max диапазона.
 	 *

@@ -67,7 +67,7 @@ class PF_Card_Template {
 	 * @param PF_Attributes|null $attributes Опционально — для переиспользования
 	 *                                       уже созданного экземпляра.
 	 */
-	public function __construct( PF_Attributes $attributes = null ) {
+	public function __construct( ?PF_Attributes $attributes = null ) {
 		$this->attributes = $attributes ?: new PF_Attributes();
 	}
 

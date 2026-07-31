@@ -103,11 +103,7 @@ class PF_Admin {
 	 * PF_Config::OPTION_KEY целиком, а не в конкретный слот в списке профилей).
 	 */
 	public function handle_save_profile() {
-		check_admin_referer( 'pf_save_profile' );
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
-		}
+		$this->require_manage_options( 'pf_save_profile' );
 
 		$id = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
 
@@ -146,11 +142,7 @@ class PF_Admin {
 	 * Создать новый профиль (кнопка «+ Новый профиль»).
 	 */
 	public function handle_create_profile() {
-		check_admin_referer( 'pf_create_profile' );
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
-		}
+		$this->require_manage_options( 'pf_create_profile' );
 
 		$name = isset( $_POST['name'] ) ? sanitize_text_field( wp_unslash( $_POST['name'] ) ) : '';
 		if ( '' === $name ) {
@@ -172,11 +164,7 @@ class PF_Admin {
 	 * Дублировать текущий профиль целиком (кнопка «Дублировать профиль»).
 	 */
 	public function handle_duplicate_profile() {
-		check_admin_referer( 'pf_duplicate_profile' );
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
-		}
+		$this->require_manage_options( 'pf_duplicate_profile' );
 
 		$id     = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
 		$new_id = PF_Config::duplicate_profile( $id );
@@ -190,11 +178,7 @@ class PF_Admin {
 	 * это последний оставшийся, см. PF_Config::delete_profile().
 	 */
 	public function handle_delete_profile() {
-		check_admin_referer( 'pf_delete_profile' );
-
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
-		}
+		$this->require_manage_options( 'pf_delete_profile' );
 
 		$id      = isset( $_POST['profile'] ) ? sanitize_key( wp_unslash( $_POST['profile'] ) ) : '';
 		$deleted = PF_Config::delete_profile( $id );
@@ -206,6 +190,22 @@ class PF_Admin {
 			wp_safe_redirect( $this->profile_url( $id, array( 'error' => 'last_profile' ) ) );
 		}
 		exit;
+	}
+
+	/**
+	 * Общая проверка для всех admin-post.php-обработчиков CRUD профилей
+	 * выше: nonce конкретного действия + право manage_options. Останавливает
+	 * выполнение (wp_die()) сама, ничего не возвращает — вызывающему коду
+	 * достаточно вызвать её первой строкой обработчика.
+	 *
+	 * @param string $nonce_action Значение nonce-действия (см. wp_nonce_field() в admin-page.php).
+	 */
+	private function require_manage_options( $nonce_action ) {
+		check_admin_referer( $nonce_action );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Недостаточно прав.', 'pf-filter' ) );
+		}
 	}
 
 	/**
