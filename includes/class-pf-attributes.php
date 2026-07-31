@@ -1137,10 +1137,11 @@ class PF_Attributes {
 	 * «Сортировка» админки — динамический, под настроенный тип записи
 	 * активного профиля (PF_Config::get_post_type()), а не фиксированный
 	 * список WooCommerce-значений на все профили сразу:
-	 * - `menu_order`/`date` — доступны всегда;
-	 * - `price`/`price-desc`/`popularity`/`rating` — только для product
-	 *   (сортировка по _price/total_sales/_wc_average_rating, см.
-	 *   PF_Query::apply_orderby());
+	 * - `menu_order`/`date`/`date-desc` — доступны всегда;
+	 * - `price`/`price-desc`/`popularity`/`rating`/`discount`/`discount-desc`
+	 *   — только для product (сортировка по _price/total_sales/
+	 *   _wc_average_rating/скидке _regular_price minus _price, см.
+	 *   PF_Query::apply_orderby()/apply_discount_orderby());
 	 * - `meta_<имя>`/`meta_<имя>-desc` — по любому ACF-полю записи (те же
 	 *   кандидаты, что и у range-групп, см. get_acf_post_fields());
 	 * - `attr_<таксономия>`/`attr_<таксономия>-desc` — по названию термина
@@ -1160,7 +1161,11 @@ class PF_Attributes {
 			),
 			array(
 				'value' => 'date',
-				'label' => __( 'Дата', 'pf-filter' ),
+				'label' => __( 'Сначала старые', 'pf-filter' ),
+			),
+			array(
+				'value' => 'date-desc',
+				'label' => __( 'Сначала новые', 'pf-filter' ),
 			),
 		);
 
@@ -1180,6 +1185,14 @@ class PF_Attributes {
 			$options[] = array(
 				'value' => 'rating',
 				'label' => __( 'Рейтинг', 'pf-filter' ),
+			);
+			$options[] = array(
+				'value' => 'discount',
+				'label' => __( 'Скидка ↑', 'pf-filter' ),
+			);
+			$options[] = array(
+				'value' => 'discount-desc',
+				'label' => __( 'Скидка ↓ (сначала самая большая)', 'pf-filter' ),
 			);
 		}
 

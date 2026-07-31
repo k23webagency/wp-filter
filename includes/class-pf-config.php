@@ -362,7 +362,7 @@ class PF_Config {
 					'label' => __( 'По умолчанию', 'pf-filter' ),
 				),
 				array(
-					'value' => 'date',
+					'value' => 'date-desc',
 					'label' => __( 'Сначала новые', 'pf-filter' ),
 				),
 			);

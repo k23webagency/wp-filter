@@ -133,15 +133,18 @@ class PF_Query {
 		$this->apply_orderby( $args, $orderby, $order );
 
 		// Сортировка по названию термина таксономии (apply_taxonomy_orderby())
-		// не поддерживается WP_Query нативно — нужен JOIN, добавляемый через
-		// posts_clauses ТОЛЬКО на время этого конкретного запроса (фильтр —
-		// глобальный хук, задел бы вообще все запросы сайта, если не снять
-		// сразу после). filter_taxonomy_orderby_clauses() сама же и проверяет
-		// orderby именно этого запроса, поэтому даже случайный побочный запрос
-		// в этом окне (например, прогрев кэша метаданных) её не заденет.
+		// и по размеру скидки (apply_discount_orderby()) не поддерживаются
+		// WP_Query нативно — нужен JOIN, добавляемый через posts_clauses
+		// ТОЛЬКО на время этого конкретного запроса (фильтр — глобальный
+		// хук, задел бы вообще все запросы сайта, если не снять сразу
+		// после). Оба обработчика сами проверяют orderby именно этого
+		// запроса, поэтому даже случайный побочный запрос в этом окне
+		// (например, прогрев кэша метаданных) их не заденет.
 		add_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10, 2 );
+		add_filter( 'posts_clauses', array( $this, 'filter_discount_orderby_clauses' ), 10, 2 );
 		$query = new WP_Query( $args );
 		remove_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10 );
+		remove_filter( 'posts_clauses', array( $this, 'filter_discount_orderby_clauses' ), 10 );
 
 		return $query;
 	}
@@ -341,6 +344,14 @@ class PF_Query {
 			$orderby = 'menu_order';
 		}
 
+		if ( 'discount' === $orderby ) {
+			if ( 'product' === PF_Config::get_post_type() ) {
+				$this->apply_discount_orderby( $args, $order );
+				return;
+			}
+			$orderby = 'menu_order';
+		}
+
 		switch ( $orderby ) {
 			case 'price':
 				$args['orderby']  = 'meta_value_num';
@@ -450,6 +461,56 @@ class PF_Query {
 
 		$direction         = 'DESC' === strtoupper( (string) $query->get( 'order' ) ) ? 'DESC' : 'ASC';
 		$clauses['orderby'] = "MIN(pf_sort_t.name) IS NULL, MIN(pf_sort_t.name) {$direction}"
+			. ( $clauses['orderby'] ? ', ' . $clauses['orderby'] : '' );
+
+		return $clauses;
+	}
+
+	/**
+	 * Сортировка товаров по размеру скидки (разница _regular_price минус
+	 * _price — фактическая цена, действующая сейчас: равна _regular_price,
+	 * если товар не по акции, тогда разница честно 0). Тоже не умеет
+	 * WP_Query нативно — маркер + posts_clauses, тот же приём, что и
+	 * apply_taxonomy_orderby()/filter_taxonomy_orderby_clauses().
+	 *
+	 * Для вариативных товаров использует meta самого родительского товара,
+	 * не вариаций — то же ограничение, что и у обычной сортировки по цене
+	 * (`price`) в этом же классе, вариации отдельно не учитываются.
+	 *
+	 * @param array  $args  Аргументы WP_Query (по ссылке).
+	 * @param string $order 'ASC' | 'DESC'.
+	 */
+	private function apply_discount_orderby( array &$args, $order ) {
+		$args['orderby'] = 'pf_discount';
+		$args['order']   = $order;
+	}
+
+	/**
+	 * posts_clauses-фильтр для apply_discount_orderby() — JOIN на postmeta
+	 * дважды (_regular_price и _price), сортировка по их разнице.
+	 * NULLIF(...,'') + CAST(...AS DECIMAL) — на случай пустого/отсутствующего
+	 * значения (тогда разница NULL, товар уходит в конец списка независимо
+	 * от направления, тем же приёмом IS NULL первым ключом, что и у
+	 * сортировки по таксономии).
+	 *
+	 * @param array    $clauses Части SQL-запроса (join/orderby/...).
+	 * @param WP_Query $query   Текущий запрос.
+	 * @return array
+	 */
+	public function filter_discount_orderby_clauses( $clauses, $query ) {
+		if ( 'pf_discount' !== $query->get( 'orderby' ) ) {
+			return $clauses;
+		}
+
+		global $wpdb;
+
+		$clauses['join'] .= " LEFT JOIN {$wpdb->postmeta} pf_sort_regular ON pf_sort_regular.post_id = {$wpdb->posts}.ID AND pf_sort_regular.meta_key = '_regular_price'"
+			. " LEFT JOIN {$wpdb->postmeta} pf_sort_price ON pf_sort_price.post_id = {$wpdb->posts}.ID AND pf_sort_price.meta_key = '_price'";
+
+		$discount = "( CAST( NULLIF( pf_sort_regular.meta_value, '' ) AS DECIMAL(10,2) ) - CAST( NULLIF( pf_sort_price.meta_value, '' ) AS DECIMAL(10,2) ) )";
+		$direction = 'DESC' === strtoupper( (string) $query->get( 'order' ) ) ? 'DESC' : 'ASC';
+
+		$clauses['orderby'] = "{$discount} IS NULL, {$discount} {$direction}"
 			. ( $clauses['orderby'] ? ', ' . $clauses['orderby'] : '' );
 
 		return $clauses;
