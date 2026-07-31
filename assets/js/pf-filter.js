@@ -104,12 +104,29 @@
 		return el.tagName === 'INPUT' ? parseFloat( el.value ) : parseFloat( el.textContent );
 	}
 
-	function setRangeDisplayValue( el, value ) {
+	/**
+	 * Записать отображаемое значение min/max диапазона.
+	 *
+	 * @param {boolean} isTouched Тронута ли эта сторона реальным действием
+	 *   пользователя (drag/клавиши/число), см. data-user-min/data-user-max в
+	 *   buildRangeGroup(). Имеет значение только для <input>: тронутая сторона
+	 *   показывается как настоящее value (можно редактировать/увидеть, что
+	 *   реально выбрано); НЕ тронутая — value остаётся пустым, а текущая
+	 *   граница трека показывается через placeholder (подсказка "вот текущий
+	 *   предел", а не подставленный за пользователя выбор). Для элементов,
+	 *   не являющихся <input> (например, просто текст), разницы нет.
+	 */
+	function setRangeDisplayValue( el, value, isTouched ) {
 		if ( ! el ) {
 			return;
 		}
 		if ( el.tagName === 'INPUT' ) {
-			el.value = value;
+			if ( isTouched ) {
+				el.value = value;
+			} else {
+				el.value = '';
+				el.placeholder = value;
+			}
 		} else {
 			el.textContent = value;
 		}
@@ -147,6 +164,28 @@
 		}
 		handle.style.left = percentForRange( value, min, max, isMax ) + '%';
 		handle.style.transform = 'translateX(-50%)';
+	}
+
+	/**
+	 * Спозиционировать [pf-filter-range-track] — полоску подсветки между
+	 * двумя бегунками — инлайновыми left/width в процентах, теми же
+	 * границами, что и у самих бегунков (percentForRange()), так что она
+	 * всегда точно совпадает с текущим выделенным диапазоном.
+	 *
+	 * @param {Element|null} track Элемент [pf-filter-range-track] (может отсутствовать в разметке — тогда no-op).
+	 * @param {number} curMin Текущее значение min.
+	 * @param {number} curMax Текущее значение max.
+	 * @param {number} min    Левая граница трека.
+	 * @param {number} max    Правая граница трека.
+	 */
+	function positionRangeTrack( track, curMin, curMax, min, max ) {
+		if ( ! track ) {
+			return;
+		}
+		var leftPercent = percentForRange( curMin, min, max, false );
+		var rightPercent = percentForRange( curMax, min, max, true );
+		track.style.left = leftPercent + '%';
+		track.style.width = Math.max( 0, rightPercent - leftPercent ) + '%';
 	}
 
 	// ---------------------------------------------------------------------
@@ -753,6 +792,10 @@
 		var maxHandle = qs( clone, '[pf-filter-range-handle="max"]' );
 		var minValueEl = qs( clone, '[pf-filter-range-value="min"]' );
 		var maxValueEl = qs( clone, '[pf-filter-range-value="max"]' );
+		// [pf-filter-range-track] — необязательная полоска подсветки между
+		// бегунками, см. positionRangeTrack(). Нет предупреждения при
+		// отсутствии — атрибут новый и не обязателен, чисто визуальное дополнение.
+		var trackEl = qs( clone, '[pf-filter-range-track]' );
 
 		if ( ! minHandle || ! maxHandle ) {
 			console.warn( 'PF Filter: [pf-filter-range-handle] не найден для группы "' + groupConfig.field + '", drag недоступен.' );
@@ -761,8 +804,13 @@
 			console.warn( 'PF Filter: [pf-filter-range-value] не найден для группы "' + groupConfig.field + '", значения не отображаются.' );
 		}
 
-		setRangeDisplayValue( minValueEl, min );
-		setRangeDisplayValue( maxValueEl, max );
+		// В момент построения группы ничего ещё не тронуто пользователем —
+		// оба [pf-filter-range-value] (если это <input>) показываются как
+		// placeholder текущей границы, а не как готовое value.
+		setRangeDisplayValue( minValueEl, min, false );
+		setRangeDisplayValue( maxValueEl, max, false );
+
+		positionRangeTrack( trackEl, min, max, min, max );
 
 		positionRangeHandle( minHandle, min, min, max, false );
 		positionRangeHandle( maxHandle, max, min, max, true );
@@ -813,14 +861,15 @@
 				slider.dataset.currentMin = value;
 				slider.dataset.userMin = value;
 				positionRangeHandle( minHandle, value, rangeMin, rangeMax, false );
-				setRangeDisplayValue( minValueEl, value );
+				setRangeDisplayValue( minValueEl, value, true );
 			} else {
 				value = clamp( value, currentMin, rangeMax );
 				slider.dataset.currentMax = value;
 				slider.dataset.userMax = value;
 				positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
-				setRangeDisplayValue( maxValueEl, value );
+				setRangeDisplayValue( maxValueEl, value, true );
 			}
+			positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 		}
 
 		function bindDrag( handle, type ) {
@@ -867,14 +916,15 @@
 					slider.dataset.currentMin = newMin;
 					slider.dataset.userMin = newMin;
 					positionRangeHandle( minHandle, newMin, rangeMin, rangeMax, false );
-					setRangeDisplayValue( minValueEl, newMin );
+					setRangeDisplayValue( minValueEl, newMin, true );
 				} else {
 					var newMax = clamp( currentMax + delta, currentMin, rangeMax );
 					slider.dataset.currentMax = newMax;
 					slider.dataset.userMax = newMax;
 					positionRangeHandle( maxHandle, newMax, rangeMin, rangeMax, true );
-					setRangeDisplayValue( maxValueEl, newMax );
+					setRangeDisplayValue( maxValueEl, newMax, true );
 				}
+				positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
 			} );
 		}
@@ -891,6 +941,28 @@
 				var rangeMax = parseFloat( slider.dataset.max );
 				var currentMin = parseFloat( slider.dataset.currentMin );
 				var currentMax = parseFloat( slider.dataset.currentMax );
+
+				// Поле очищено вручную — пользователь "отпускает" именно эту
+				// сторону обратно к границе трека (та же логика, что и у
+				// resetGroupControls(), но только для одной стороны, не для
+				// всей группы): поле снова показывает placeholder вместо value.
+				if ( '' === el.value.trim() ) {
+					if ( 'min' === type ) {
+						delete slider.dataset.userMin;
+						slider.dataset.currentMin = rangeMin;
+						positionRangeHandle( minHandle, rangeMin, rangeMin, rangeMax, false );
+						setRangeDisplayValue( minValueEl, rangeMin, false );
+					} else {
+						delete slider.dataset.userMax;
+						slider.dataset.currentMax = rangeMax;
+						positionRangeHandle( maxHandle, rangeMax, rangeMin, rangeMax, true );
+						setRangeDisplayValue( maxValueEl, rangeMax, false );
+					}
+					positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
+					self.rangeDebounced( { resetPage: true, forceReplace: true } );
+					return;
+				}
+
 				var value = parseFloat( el.value );
 				if ( isNaN( value ) ) {
 					return;
@@ -906,7 +978,8 @@
 					slider.dataset.userMax = value;
 					positionRangeHandle( maxHandle, value, rangeMin, rangeMax, true );
 				}
-				el.value = value;
+				setRangeDisplayValue( el, value, true );
+				positionRangeTrack( trackEl, parseFloat( slider.dataset.currentMin ), parseFloat( slider.dataset.currentMax ), rangeMin, rangeMax );
 				self.rangeDebounced( { resetPage: true, forceReplace: true } );
 			} );
 		}
@@ -989,8 +1062,9 @@
 
 		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), newCurMin, newMin, newMax, false );
 		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), newCurMax, newMin, newMax, true );
-		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), newCurMin );
-		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), newCurMax );
+		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), newCurMin, hasUserMin );
+		setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), newCurMax, hasUserMax );
+		positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), newCurMin, newCurMax, newMin, newMax );
 	};
 
 	/** Дерево категорий — рекурсивный алгоритм buildLevel по нумерованным уровням. */
@@ -1701,8 +1775,9 @@
 				delete slider.dataset.userMax;
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
 				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
-				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min );
-				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max );
+				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min, false );
+				setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max, false );
+				positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), rangeMin, rangeMax, rangeMin, rangeMax );
 			}
 		}
 	};
@@ -2033,11 +2108,11 @@
 		if ( 'min' === minOrMax ) {
 			slider.dataset.currentMin = value;
 			slider.dataset.userMin = value;
-			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), value );
+			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="min"]' ), value, true );
 		} else {
 			slider.dataset.currentMax = value;
 			slider.dataset.userMax = value;
-			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), value );
+			setRangeDisplayValue( qs( group.el, '[pf-filter-range-value="max"]' ), value, true );
 		}
 	};
 
