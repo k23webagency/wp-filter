@@ -330,15 +330,61 @@ class PF_Diagnostics {
 	}
 
 	/**
+	 * Экранировать строку для использования как XPath string-литерал.
+	 * DOMXPath не поддерживает параметризованные запросы (в отличие от
+	 * $wpdb->prepare()); значения ниже (id/class/[attr=value] из
+	 * selector_exists(), pf-template из check_group_templates()) приходят не
+	 * из кода плагина, а из HTML, которое сканирует диагностика — обычно это
+	 * собственная разметка темы сайта (доверенная), но если админ на вкладке
+	 * «Диагностика» укажет URL чужой страницы, её содержимое таким доверенным
+	 * уже не является. XPath 1.0 не умеет экранировать кавычку ВНУТРИ
+	 * литерала того же типа — стандартный обход: обернуть в кавычки другого
+	 * типа, если строка их не содержит, иначе склеить через concat().
+	 *
+	 * @param string $value Значение для использования как строковый литерал XPath.
+	 * @return string Готовое выражение, уже включающее обрамляющие кавычки/concat().
+	 */
+	public static function xpath_literal( $value ) {
+		$value = (string) $value;
+
+		if ( false === strpos( $value, '"' ) ) {
+			return '"' . $value . '"';
+		}
+		if ( false === strpos( $value, "'" ) ) {
+			return "'" . $value . "'";
+		}
+
+		$parts  = explode( '"', $value );
+		$pieces = array();
+		$last   = count( $parts ) - 1;
+		foreach ( $parts as $i => $part ) {
+			if ( '' !== $part || 0 === $i || $last === $i ) {
+				$pieces[] = '"' . $part . '"';
+			}
+			if ( $i < $last ) {
+				$pieces[] = '\'"\'';
+			}
+		}
+		return 'concat(' . implode( ', ', $pieces ) . ')';
+	}
+
+	/**
 	 * Минимальный резолвер CSS-селектора (#id, .class, [attr], [attr="value"], тег) в XPath.
 	 * Составные/комбинированные селекторы не поддерживаются — вернёт false (считается не найденным).
+	 *
+	 * Имена элемента/атрибута (не значения — для них см. xpath_literal())
+	 * XPath не даёт экранировать как строковый литерал, поэтому вместо этого
+	 * сверяются с regex допустимых для HTML-идентификатора символов —
+	 * несовпадение тихо считается «не найдено», как и для нераспознанного
+	 * составного селектора ниже.
 	 *
 	 * @param DOMXPath $xpath    XPath документа.
 	 * @param string   $selector CSS-селектор из pf-target.
 	 * @return bool
 	 */
 	private function selector_exists( DOMXPath $xpath, $selector ) {
-		$selector = trim( $selector );
+		$selector    = trim( $selector );
+		$name_re     = '/^[a-zA-Z_][a-zA-Z0-9_-]*$/';
 
 		if ( '' === $selector ) {
 			return false;
@@ -346,13 +392,13 @@ class PF_Diagnostics {
 
 		if ( '#' === $selector[0] ) {
 			$id    = substr( $selector, 1 );
-			$nodes = $xpath->query( '//*[@id="' . $id . '"]' );
+			$nodes = $xpath->query( '//*[@id=' . self::xpath_literal( $id ) . ']' );
 			return $nodes && $nodes->length > 0;
 		}
 
 		if ( '.' === $selector[0] ) {
 			$class = substr( $selector, 1 );
-			$nodes = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " ' . $class . ' ")]' );
+			$nodes = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), concat(" ", ' . self::xpath_literal( $class ) . ', " "))]' );
 			return $nodes && $nodes->length > 0;
 		}
 
@@ -360,9 +406,17 @@ class PF_Diagnostics {
 			$inner = substr( $selector, 1, -1 );
 			if ( false !== strpos( $inner, '=' ) ) {
 				list( $attr, $value ) = explode( '=', $inner, 2 );
+				$attr  = trim( $attr );
 				$value = trim( $value, '"\'' );
-				$nodes = $xpath->query( '//*[@' . $attr . '="' . $value . '"]' );
+				if ( ! preg_match( $name_re, $attr ) ) {
+					return false;
+				}
+				$nodes = $xpath->query( '//*[@' . $attr . '=' . self::xpath_literal( $value ) . ']' );
 			} else {
+				$inner = trim( $inner );
+				if ( ! preg_match( $name_re, $inner ) ) {
+					return false;
+				}
 				$nodes = $xpath->query( '//*[@' . $inner . ']' );
 			}
 			return $nodes && $nodes->length > 0;
@@ -410,7 +464,7 @@ class PF_Diagnostics {
 		$row_value_templates = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
 
 		foreach ( $found_templates as $template ) {
-			$template_nodes = $xpath->query( '//*[@pf-template="' . $template . '"]' );
+			$template_nodes = $xpath->query( '//*[@pf-template=' . self::xpath_literal( $template ) . ']' );
 			if ( ! $template_nodes || 0 === $template_nodes->length ) {
 				continue;
 			}
@@ -659,7 +713,7 @@ class PF_Diagnostics {
 	 */
 	public static function has_attribute( DOMXPath $xpath, $attribute, $template = null ) {
 		$query = $template
-			? '//*[@pf-template="' . $template . '"]//*[@' . $attribute . ']'
+			? '//*[@pf-template=' . self::xpath_literal( $template ) . ']//*[@' . $attribute . ']'
 			: '//*[@' . $attribute . ']';
 		return $xpath->query( $query )->length > 0;
 	}
@@ -674,7 +728,7 @@ class PF_Diagnostics {
 	 * @return bool
 	 */
 	public static function has_text_input( DOMXPath $xpath, $template ) {
-		return $xpath->query( '//*[@pf-template="' . $template . '"]//input[@type="text"]' )->length > 0;
+		return $xpath->query( '//*[@pf-template=' . self::xpath_literal( $template ) . ']//input[@type="text"]' )->length > 0;
 	}
 
 	/**

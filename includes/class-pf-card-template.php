@@ -175,8 +175,8 @@ class PF_Card_Template {
 		$template_slug = get_page_template_slug( $post_id );
 		if ( $template_slug ) {
 			foreach ( array( get_stylesheet_directory(), get_template_directory() ) as $theme_dir ) {
-				$path = $theme_dir . '/' . ltrim( $template_slug, '/' );
-				if ( file_exists( $path ) && ! in_array( $path, $found, true ) ) {
+				$path = $this->resolve_within_dir( $theme_dir, $template_slug );
+				if ( $path && ! in_array( $path, $found, true ) ) {
 					$found[] = $path;
 				}
 			}
@@ -213,6 +213,36 @@ class PF_Card_Template {
 		}
 
 		return $found;
+	}
+
+	/**
+	 * Абсолютный путь к $relative внутри $base_dir, либо null — если файла
+	 * нет, или (главное) если после разрешения `../`/симлинков результат
+	 * оказался ВНЕ $base_dir. get_page_template_slug() по умолчанию всегда
+	 * возвращает значение, которое сам WordPress уже сверил со списком
+	 * реальных файлов темы (см. get_page_templates()) при сохранении — но
+	 * это гарантия чужого кода (админки/REST-контроллера страниц), а не
+	 * этого плагина; дешёвая проверка здесь не полагается на неё слепо.
+	 *
+	 * @param string $base_dir Директория темы (get_stylesheet_directory()/get_template_directory()).
+	 * @param string $relative Слаг шаблона (_wp_page_template) — ожидается относительный путь внутри темы.
+	 * @return string|null
+	 */
+	private function resolve_within_dir( $base_dir, $relative ) {
+		$path = $base_dir . '/' . ltrim( $relative, '/' );
+
+		if ( ! file_exists( $path ) ) {
+			return null;
+		}
+
+		$real_base = realpath( $base_dir );
+		$real_path = realpath( $path );
+
+		if ( ! $real_base || ! $real_path || 0 !== strpos( $real_path, $real_base . DIRECTORY_SEPARATOR ) ) {
+			return null;
+		}
+
+		return $path;
 	}
 
 	/**

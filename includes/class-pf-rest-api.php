@@ -72,9 +72,11 @@ class PF_REST_API {
 				'permission_callback' => '__return_true',
 				'args'                => array(
 					'category' => array(
+						'type'              => 'string',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
 					'profile'  => array(
+						'type'              => 'string',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
 				),
