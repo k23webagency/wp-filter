@@ -277,6 +277,8 @@ class PF_Renderer {
 		} elseif ( 0 === strpos( $field, 'custom_' ) ) {
 			$raw_name = $this->attributes->resolve_custom_attribute_name( $field );
 			$counts   = null !== $raw_name ? $this->attributes->count_custom_attribute_values( $raw_name, $ids ) : array();
+		} elseif ( 'stock_status' === $field ) {
+			$counts = $this->attributes->count_stock_status_values( $ids );
 		} else {
 			$counts = array();
 		}

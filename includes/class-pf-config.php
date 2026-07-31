@@ -81,7 +81,6 @@ class PF_Config {
 			'logic'               => 'and',
 			'search_threshold'    => 7,
 			'show_counts'         => true,
-			'tree_depth'          => 4,
 			'sync_url'            => true,
 			'pagination_strategy' => 'pages',
 			'posts_per_page'      => 12,
@@ -350,6 +349,25 @@ class PF_Config {
 		$profile               = self::get_defaults();
 		$profile['name']       = $name;
 		$profile['post_type']  = $post_type;
+
+		// Дефолтные опции сортировки get_defaults() — WooCommerce-специфичные
+		// (цена/популярность) и на не-товарном типе записи были бы тихо
+		// отброшены при первом же сохранении (см. PF_Admin::sanitize_sort_options(),
+		// PF_Attributes::get_sortable_field_options()) — для нового профиля
+		// сразу подставляем нейтральные, применимые к любому типу записи.
+		if ( 'product' !== $post_type ) {
+			$profile['sort_options'] = array(
+				array(
+					'value' => 'menu_order',
+					'label' => __( 'По умолчанию', 'pf-filter' ),
+				),
+				array(
+					'value' => 'date',
+					'label' => __( 'Сначала новые', 'pf-filter' ),
+				),
+			);
+		}
+
 		$profiles[ $id ]       = $profile;
 
 		update_option( self::PROFILES_OPTION_KEY, $profiles );

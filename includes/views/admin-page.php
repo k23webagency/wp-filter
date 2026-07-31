@@ -2,8 +2,7 @@
 /**
  * Разметка страницы настроек PF Filter.
  * Переменные приходят из PF_Admin::render_page(): $settings, $post_types,
- * $available_fields, $configured_depth, $available_templates,
- * $profiles, $active_profile_id.
+ * $available_fields, $available_templates, $profiles, $active_profile_id.
  *
  * @package PF_Filter
  */
@@ -141,13 +140,6 @@ defined( 'ABSPATH' ) || exit;
 						<p class="description"><?php esc_html_e( 'Если включено — применённые фильтры записываются в URL страницы (можно поделиться ссылкой, работает кнопка "назад" браузера). Если выключено — URL всегда остаётся чистым, состояние фильтров между перезагрузками страницы не сохраняется.', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
-				<tr>
-					<th><label for="pf-tree-depth"><?php esc_html_e( 'Глубина дерева категорий (по умолчанию)', 'pf-filter' ); ?></label></th>
-					<td>
-						<input type="number" min="1" id="pf-tree-depth" name="pf_filter_settings[tree_depth]" value="<?php echo esc_attr( $configured_depth ); ?>" />
-						<p class="description"><?php esc_html_e( 'Используется для групп с шаблоном category-tree, у которых глубина не задана явно в самой группе. Реальная глубина по каждой такой группе сравнивается с эффективной на вкладке «Группы фильтров».', 'pf-filter' ); ?></p>
-					</td>
-				</tr>
 				<?php
 				$pagination_labels = array(
 					'pages'     => __( 'Страницы', 'pf-filter' ),
@@ -226,7 +218,7 @@ defined( 'ABSPATH' ) || exit;
 						<th><?php esc_html_e( 'Логика в группе', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Поиск', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Range: шаг / ед.', 'pf-filter' ); ?></th>
-						<th><?php esc_html_e( 'Дерево: глубина', 'pf-filter' ); ?></th>
+						<th><?php esc_html_e( 'Глубина вложенности', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Сортировка значений', 'pf-filter' ); ?></th>
 						<th></th>
@@ -299,7 +291,7 @@ defined( 'ABSPATH' ) || exit;
 				<thead>
 					<tr>
 						<th></th>
-						<th><?php esc_html_e( 'Значение WooCommerce', 'pf-filter' ); ?></th>
+						<th><?php esc_html_e( 'Поле сортировки', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Подпись', 'pf-filter' ); ?></th>
 						<th></th>
 					</tr>
@@ -310,8 +302,8 @@ defined( 'ABSPATH' ) || exit;
 							<td class="pf-drag-handle">☰</td>
 							<td>
 								<select name="pf_filter_settings[sort_options][<?php echo esc_attr( $index ); ?>][value]">
-									<?php foreach ( PF_Query::ORDERBY_WHITELIST as $value ) : ?>
-										<option value="<?php echo esc_attr( $value ); ?>" <?php selected( $option['value'], $value ); ?>><?php echo esc_html( $value ); ?></option>
+									<?php foreach ( $sortable_options as $opt ) : ?>
+										<option value="<?php echo esc_attr( $opt['value'] ); ?>" <?php selected( $option['value'], $opt['value'] ); ?>><?php echo esc_html( $opt['label'] ); ?></option>
 									<?php endforeach; ?>
 								</select>
 							</td>
@@ -330,8 +322,8 @@ defined( 'ABSPATH' ) || exit;
 					<td class="pf-drag-handle">☰</td>
 					<td>
 						<select name="pf_filter_settings[sort_options][__INDEX__][value]">
-							<?php foreach ( PF_Query::ORDERBY_WHITELIST as $value ) : ?>
-								<option value="<?php echo esc_attr( $value ); ?>"><?php echo esc_html( $value ); ?></option>
+							<?php foreach ( $sortable_options as $opt ) : ?>
+								<option value="<?php echo esc_attr( $opt['value'] ); ?>"><?php echo esc_html( $opt['label'] ); ?></option>
 							<?php endforeach; ?>
 						</select>
 					</td>

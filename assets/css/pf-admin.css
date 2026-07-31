@@ -51,7 +51,13 @@
 	visibility: visible;
 }
 
-.pf-filter-admin tr[data-template="category-tree"] .pf-extra-tree {
+/* Глубина дерева применима к category-tree и к любому плоскому шаблону
+   (checkbox/radio/tags/dropdown-*) — но только когда САМО поле группы
+   иерархическая таксономия (data-hierarchical, см. pf-admin.js) — для
+   плоской таксономии/кастомного атрибута/диапазона ограничение по глубине
+   не имеет смысла и в списке шаблонов такого поля category-tree не
+   предлагается вовсе. */
+.pf-filter-admin tr[data-hierarchical="1"] .pf-extra-tree {
 	visibility: visible;
 }
 
@@ -70,6 +76,16 @@
 }
 
 .pf-filter-admin tr[data-template="range"] .pf-extra-value-sort {
+	visibility: hidden;
+}
+
+/* Поиск применим к любому шаблону со списком значений — у range (диапазон/
+   слайдер) искать нечего, поле поиска там в принципе не появляется. */
+.pf-filter-admin .pf-extra-search {
+	visibility: visible;
+}
+
+.pf-filter-admin tr[data-template="range"] .pf-extra-search {
 	visibility: hidden;
 }
 

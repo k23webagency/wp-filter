@@ -24,6 +24,18 @@ class PF_Attributes {
 	const VALUE_SORT_OPTIONS = array( 'name_asc', 'name_desc', 'count_desc', 'count_asc' );
 
 	/**
+	 * Глубина дерева категорий, если группа с шаблоном category-tree (или
+	 * депth-ограничение для плоского шаблона на иерархической таксономии, см.
+	 * build_taxonomy_group()) не задала свою явно. Раньше была отдельной
+	 * глобальной настройкой в админке ("Общие настройки") — убрана как
+	 * избыточная: у каждой такой группы уже есть собственное поле «Дерево:
+	 * глубина», отдельный глобальный дефолт только путал.
+	 *
+	 * @var int
+	 */
+	const DEFAULT_TREE_DEPTH = 4;
+
+	/**
 	 * Кэш результата scan_custom_attributes() за запрос.
 	 *
 	 * @var array|null
@@ -190,6 +202,13 @@ class PF_Attributes {
 			return null;
 		}
 
+		// Наличие товара (WooCommerce _stock_status) — синтетическое поле по
+		// аналогии с 'price': не таксономия и не ACF-поле, фиксированный
+		// небольшой набор значений. Имеет смысл только для настоящих товаров.
+		if ( 'stock_status' === $field ) {
+			return 'product' === PF_Config::get_post_type() ? $this->build_stock_status_group( $config, $category_product_ids ) : null;
+		}
+
 		// Любая реальная таксономия обрабатывается одинаково, независимо от
 		// её имени (раньше здесь были спецкейсы под product_cat/product_tag/pa_*).
 		// category-tree — только когда шаблон явно выбран таким (или не задан
@@ -223,6 +242,11 @@ class PF_Attributes {
 	 * это плоский список без вложенности, см. build_category_tree_group())
 	 * таксономии.
 	 *
+	 * Если у группы на иерархической таксономии задана tree_depth (обычно
+	 * настраивается для шаблона category-tree, но применяется независимо от
+	 * шаблона) — термины глубже этого уровня в список не попадают вообще,
+	 * даже при плоском шаблоне (checkbox/radio/tags/dropdown-*).
+	 *
 	 * @param array      $config               Конфигурация группы.
 	 * @param int[]|null $category_product_ids ID товаров текущей категории, или null.
 	 * @return array|null
@@ -250,6 +274,16 @@ class PF_Attributes {
 
 		if ( is_wp_error( $terms ) || empty( $terms ) ) {
 			return null;
+		}
+
+		if ( is_taxonomy_hierarchical( $taxonomy ) && isset( $config['tree_depth'] ) && '' !== $config['tree_depth'] ) {
+			$allowed_ids = $this->collect_term_ids_within_depth( $taxonomy, 0, (int) $config['tree_depth'], 1 );
+			$terms       = array_filter(
+				$terms,
+				function ( $term ) use ( $allowed_ids ) {
+					return in_array( $term->term_id, $allowed_ids, true );
+				}
+			);
 		}
 
 		// term->count у get_terms() всегда глобальный (по всему сайту), даже с
@@ -664,6 +698,121 @@ class PF_Attributes {
 	}
 
 	/**
+	 * Группа фильтра — наличие товара (WooCommerce _stock_status). Синтетическое
+	 * поле по аналогии с 'price': не таксономия (термов не существует) и не
+	 * ACF-поле, а фиксированный небольшой набор значений
+	 * (instock/outofstock/onbackorder, см. get_stock_status_labels()) —
+	 * устроена как обычная values-группа (совместима с любым шаблоном списка
+	 * значений — checkbox/radio/tags/dropdown-*, но не с category-tree/range,
+	 * см. get_compatible_templates()).
+	 *
+	 * @param array      $config               Конфигурация группы.
+	 * @param int[]|null $category_product_ids ID товаров текущей категории, или null.
+	 * @return array|null
+	 */
+	private function build_stock_status_group( array $config, $category_product_ids = null ) {
+		if ( null !== $category_product_ids && empty( $category_product_ids ) ) {
+			return null;
+		}
+
+		$counts = $this->count_stock_status_values( $category_product_ids );
+		$labels = $this->get_stock_status_labels();
+
+		$values = array();
+		foreach ( $labels as $status => $label ) {
+			$count = isset( $counts[ $status ] ) ? (int) $counts[ $status ] : 0;
+			if ( $count < 1 ) {
+				continue;
+			}
+			$values[] = array(
+				'value' => $status,
+				'label' => $label,
+				'color' => null,
+				'count' => $count,
+			);
+		}
+
+		if ( empty( $values ) ) {
+			return null;
+		}
+
+		$values = $this->sort_values( $values, $config['value_sort'] ?? 'name_asc' );
+
+		return array(
+			'field'    => 'stock_status',
+			'label'    => isset( $config['label'] ) ? $config['label'] : __( 'Наличие', 'pf-filter' ),
+			'template' => $this->resolve_group_template( 'stock_status', $config, 'checkbox' ),
+			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'values'   => $values,
+		);
+	}
+
+	/**
+	 * Подписи статусов наличия — берутся из самого WooCommerce
+	 * (wc_get_product_stock_status_options(), те же, что в редакторе товара),
+	 * свой список — только запасной вариант, если функция вдруг недоступна.
+	 *
+	 * @return array status => label
+	 */
+	public function get_stock_status_labels() {
+		if ( function_exists( 'wc_get_product_stock_status_options' ) ) {
+			return wc_get_product_stock_status_options();
+		}
+
+		return array(
+			'instock'     => __( 'В наличии', 'pf-filter' ),
+			'outofstock'  => __( 'Нет в наличии', 'pf-filter' ),
+			'onbackorder' => __( 'Под заказ', 'pf-filter' ),
+		);
+	}
+
+	/**
+	 * Посчитать количество товаров для каждого значения _stock_status —
+	 * глобально (без ограничения по ID) либо в заданном наборе (авто-
+	 * релевантность по категории/facet-счётчики, см. PF_Renderer).
+	 *
+	 * @param int[]|null $post_ids Ограничение по ID товаров, или null — без ограничения.
+	 * @return array status => count
+	 */
+	public function count_stock_status_values( $post_ids = null ) {
+		global $wpdb;
+
+		if ( null !== $post_ids ) {
+			if ( empty( $post_ids ) ) {
+				return array();
+			}
+
+			$ids_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $ids_placeholder из плейсхолдеров, значения через prepare().
+			$sql = $wpdb->prepare(
+				"SELECT meta_value, COUNT(*) AS cnt
+				 FROM {$wpdb->postmeta}
+				 WHERE meta_key = '_stock_status' AND post_id IN ( {$ids_placeholder} )
+				 GROUP BY meta_value",
+				$post_ids
+			);
+		} else {
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- нет пользовательского ввода, только литералы.
+			$sql = "SELECT pm.meta_value, COUNT(*) AS cnt
+			        FROM {$wpdb->postmeta} pm
+			        INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			        WHERE pm.meta_key = '_stock_status'
+			          AND p.post_status = 'publish'
+			          AND p.post_type = 'product'
+			        GROUP BY pm.meta_value";
+		}
+
+		$rows   = $wpdb->get_results( $sql );
+		$counts = array();
+		foreach ( $rows as $row ) {
+			$counts[ $row->meta_value ] = (int) $row->cnt;
+		}
+
+		return $counts;
+	}
+
+	/**
 	 * Пост-типы, среди записей которых искать значения meta-поля для
 	 * глобального (без ограничения по ID) диапазона. Для WooCommerce-товаров
 	 * дополнительно учитываются вариации (у них своя собственная _price) —
@@ -743,7 +892,7 @@ class PF_Attributes {
 			return null;
 		}
 
-		$depth = isset( $config['tree_depth'] ) ? (int) $config['tree_depth'] : (int) PF_Config::get( 'tree_depth', 4 );
+		$depth = isset( $config['tree_depth'] ) && '' !== $config['tree_depth'] ? (int) $config['tree_depth'] : self::DEFAULT_TREE_DEPTH;
 		$tree  = $this->get_category_tree( $taxonomy, 0, $depth, 1 );
 		$tree  = $this->sort_values( $tree, $config['value_sort'] ?? 'name_asc' );
 
@@ -837,6 +986,47 @@ class PF_Attributes {
 		}
 
 		return $tree;
+	}
+
+	/**
+	 * ID терминов иерархической таксономии не глубже $max_depth уровней (корень
+	 * — уровень 1) — используется build_taxonomy_group(), чтобы ограничивать
+	 * глубину показанных значений у ПЛОСКОГО шаблона (checkbox/radio/tags/
+	 * dropdown-*) на иерархической таксономии так же, как tree_depth уже
+	 * ограничивает глубину настоящего дерева (category-tree). hide_empty
+	 * специально false — это чисто структурный обход, "пустой" по прямым
+	 * товарам родитель всё равно должен считаться существующим уровнем.
+	 *
+	 * @param string $taxonomy  Слаг иерархической таксономии.
+	 * @param int    $parent_id ID родителя (0 — корень).
+	 * @param int    $max_depth Максимальная глубина.
+	 * @param int    $level     Текущий уровень (с 1).
+	 * @return int[]
+	 */
+	private function collect_term_ids_within_depth( $taxonomy, $parent_id, $max_depth, $level ) {
+		if ( $level > $max_depth ) {
+			return array();
+		}
+
+		$terms = get_terms(
+			array(
+				'taxonomy'   => $taxonomy,
+				'hide_empty' => false,
+				'parent'     => $parent_id,
+				'fields'     => 'ids',
+			)
+		);
+
+		if ( is_wp_error( $terms ) || empty( $terms ) ) {
+			return array();
+		}
+
+		$ids = $terms;
+		foreach ( $terms as $term_id ) {
+			$ids = array_merge( $ids, $this->collect_term_ids_within_depth( $taxonomy, $term_id, $max_depth, $level + 1 ) );
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -943,6 +1133,85 @@ class PF_Attributes {
 	}
 
 	/**
+	 * Список опций сортировки, доступных для настройки на вкладке
+	 * «Сортировка» админки — динамический, под настроенный тип записи
+	 * активного профиля (PF_Config::get_post_type()), а не фиксированный
+	 * список WooCommerce-значений на все профили сразу:
+	 * - `menu_order`/`date` — доступны всегда;
+	 * - `price`/`price-desc`/`popularity`/`rating` — только для product
+	 *   (сортировка по _price/total_sales/_wc_average_rating, см.
+	 *   PF_Query::apply_orderby());
+	 * - `meta_<имя>`/`meta_<имя>-desc` — по любому ACF-полю записи (те же
+	 *   кандидаты, что и у range-групп, см. get_acf_post_fields());
+	 * - `attr_<таксономия>`/`attr_<таксономия>-desc` — по названию термина
+	 *   любой таксономии настроенного типа записи (только настоящие
+	 *   таксономии — не custom_-атрибуты, у тех нет отдельной таблицы термов
+	 *   для сортировки), см. PF_Query::apply_taxonomy_orderby().
+	 *
+	 * @return array [{value, label}, ...]
+	 */
+	public function get_sortable_field_options() {
+		$post_type = PF_Config::get_post_type();
+
+		$options = array(
+			array(
+				'value' => 'menu_order',
+				'label' => __( 'Порядок (по умолчанию)', 'pf-filter' ),
+			),
+			array(
+				'value' => 'date',
+				'label' => __( 'Дата', 'pf-filter' ),
+			),
+		);
+
+		if ( 'product' === $post_type ) {
+			$options[] = array(
+				'value' => 'price',
+				'label' => __( 'Цена ↑', 'pf-filter' ),
+			);
+			$options[] = array(
+				'value' => 'price-desc',
+				'label' => __( 'Цена ↓', 'pf-filter' ),
+			);
+			$options[] = array(
+				'value' => 'popularity',
+				'label' => __( 'Популярность', 'pf-filter' ),
+			);
+			$options[] = array(
+				'value' => 'rating',
+				'label' => __( 'Рейтинг', 'pf-filter' ),
+			);
+		}
+
+		foreach ( $this->get_acf_post_fields( $post_type ) as $af ) {
+			$options[] = array(
+				'value' => 'meta_' . $af['name'],
+				'label' => $af['label'] . ' ↑',
+			);
+			$options[] = array(
+				'value' => 'meta_' . $af['name'] . '-desc',
+				'label' => $af['label'] . ' ↓',
+			);
+		}
+
+		foreach ( get_object_taxonomies( $post_type, 'objects' ) as $taxonomy ) {
+			if ( ! $this->is_taxonomy_offerable( $taxonomy ) ) {
+				continue;
+			}
+			$options[] = array(
+				'value' => 'attr_' . $taxonomy->name,
+				'label' => $taxonomy->label . ' (А→Я)',
+			);
+			$options[] = array(
+				'value' => 'attr_' . $taxonomy->name . '-desc',
+				'label' => $taxonomy->label . ' (Я→А)',
+			);
+		}
+
+		return $options;
+	}
+
+	/**
 	 * Поля ACF, привязанные (через правила локации) к термину указанной
 	 * таксономии — чтобы в админке можно было ВЫБРАТЬ поле с цветом термина
 	 * (например, ACF-поле "cvet" у pa_color), а не вписывать его имя руками.
@@ -1031,7 +1300,7 @@ class PF_Attributes {
 			return array( 'category-tree', 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
 		}
 
-		if ( taxonomy_exists( $field ) || 0 === strpos( $field, 'custom_' ) ) {
+		if ( taxonomy_exists( $field ) || 0 === strpos( $field, 'custom_' ) || 'stock_status' === $field ) {
 			return array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
 		}
 

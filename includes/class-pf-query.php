@@ -13,13 +13,6 @@ defined( 'ABSPATH' ) || exit;
 class PF_Query {
 
 	/**
-	 * Разрешённые значения orderby.
-	 *
-	 * @var array
-	 */
-	const ORDERBY_WHITELIST = array( 'menu_order', 'popularity', 'rating', 'date', 'price', 'price-desc' );
-
-	/**
 	 * Сканер атрибутов — нужен для разрешения кастомных (не таксономических) полей.
 	 *
 	 * @var PF_Attributes
@@ -85,6 +78,14 @@ class PF_Query {
 				continue;
 			}
 
+			// Наличие товара (WooCommerce _stock_status) — фиксированный набор
+			// значений, а не таксономия/custom_-атрибут, но по форме ({значения})
+			// собирается в meta_query точно так же, как диапазон выше.
+			if ( 'stock_status' === $field && is_array( $value ) ) {
+				$meta_clauses[] = $this->build_stock_status_clause( $value );
+				continue;
+			}
+
 			// Любая реальная таксономия обрабатывается одинаково, независимо от
 			// её имени — раньше здесь были спецкейсы под product_cat/product_tag/pa_*.
 			if ( taxonomy_exists( $field ) ) {
@@ -131,7 +132,18 @@ class PF_Query {
 
 		$this->apply_orderby( $args, $orderby, $order );
 
-		return new WP_Query( $args );
+		// Сортировка по названию термина таксономии (apply_taxonomy_orderby())
+		// не поддерживается WP_Query нативно — нужен JOIN, добавляемый через
+		// posts_clauses ТОЛЬКО на время этого конкретного запроса (фильтр —
+		// глобальный хук, задел бы вообще все запросы сайта, если не снять
+		// сразу после). filter_taxonomy_orderby_clauses() сама же и проверяет
+		// orderby именно этого запроса, поэтому даже случайный побочный запрос
+		// в этом окне (например, прогрев кэша метаданных) её не заденет.
+		add_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10, 2 );
+		$query = new WP_Query( $args );
+		remove_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10 );
+
+		return $query;
 	}
 
 	/**
@@ -259,21 +271,75 @@ class PF_Query {
 	}
 
 	/**
-	 * Применить orderby/order к аргументам запроса с проверкой по whitelist.
+	 * Собрать meta_query для наличия товара (WooCommerce _stock_status).
+	 *
+	 * @param array $values Запрошенные значения (instock/outofstock/onbackorder).
+	 * @return array
+	 */
+	private function build_stock_status_clause( array $values ) {
+		return array(
+			'key'     => '_stock_status',
+			'value'   => array_map( 'sanitize_key', $values ),
+			'compare' => 'IN',
+		);
+	}
+
+	/**
+	 * Применить orderby/order к аргументам запроса.
+	 *
+	 * Значения не сверяются с фиксированным whitelist-константой (раньше
+	 * была ORDERBY_WHITELIST) — они формируются динамически под настроенный
+	 * тип записи профиля (см. PF_Attributes::get_sortable_field_options()),
+	 * поэтому здесь вместо этого структурная валидация: `meta_<имя>` только
+	 * если такое ACF-поле реально существует у настроенного типа записи
+	 * (иначе можно было бы отсортировать по ЛЮБОМУ чужому postmeta —
+	 * небольшая, но реальная утечка через порядок сортировки), `attr_<таксономия>`
+	 * только если такая таксономия реально существует, `price`/`popularity`/
+	 * `rating` — только для настоящих товаров (WooCommerce). Всё
+	 * не прошедшее проверку — тихий откат на menu_order, как и раньше при
+	 * недопустимом значении.
 	 *
 	 * @param array  $args    Аргументы WP_Query (по ссылке).
 	 * @param string $orderby Запрошенное поле сортировки.
 	 * @param string $order   Запрошенное направление.
 	 */
 	private function apply_orderby( array &$args, $orderby, $order ) {
-		$orderby = in_array( $orderby, self::ORDERBY_WHITELIST, true ) ? $orderby : 'menu_order';
+		$orderby = (string) $orderby;
 
-		if ( 'price-desc' === $orderby ) {
-			$orderby = 'price';
+		// JS уже разделяет "-desc"-суффикс на orderby+order отдельно (см.
+		// PFForm.prototype.applyOrderby()) до отправки запроса — эта проверка
+		// чисто оборонительная, на случай прямого вызова REST API с
+		// orderby="...-desc" целиком.
+		if ( preg_match( '/^(.+)-desc$/', $orderby, $matches ) ) {
+			$orderby = $matches[1];
 			$order   = 'DESC';
 		}
 
 		$order = ( 'DESC' === strtoupper( (string) $order ) ) ? 'DESC' : 'ASC';
+
+		if ( in_array( $orderby, array( 'price', 'popularity', 'rating' ), true ) && 'product' !== PF_Config::get_post_type() ) {
+			$orderby = 'menu_order';
+		}
+
+		if ( 0 === strpos( $orderby, 'meta_' ) ) {
+			$meta_key = substr( $orderby, 5 );
+			if ( '' !== $meta_key && $this->is_sortable_meta_field( $meta_key ) ) {
+				$args['orderby']  = 'meta_value_num';
+				$args['meta_key'] = $meta_key; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- ключ проверен против реальных ACF-полей настроенного типа записи выше.
+				$args['order']    = $order;
+				return;
+			}
+			$orderby = 'menu_order';
+		}
+
+		if ( 0 === strpos( $orderby, 'attr_' ) ) {
+			$taxonomy = substr( $orderby, 5 );
+			if ( '' !== $taxonomy && taxonomy_exists( $taxonomy ) ) {
+				$this->apply_taxonomy_orderby( $args, $taxonomy, $order );
+				return;
+			}
+			$orderby = 'menu_order';
+		}
 
 		switch ( $orderby ) {
 			case 'price':
@@ -305,5 +371,87 @@ class PF_Query {
 				$args['order']   = $order;
 				break;
 		}
+	}
+
+	/**
+	 * Реально ли настроенный тип записи (PF_Config::get_post_type()) имеет
+	 * ACF-поле с таким именем — защита от сортировки по произвольному чужому
+	 * postmeta-ключу (см. apply_orderby()).
+	 *
+	 * @param string $meta_key Имя ACF-поля.
+	 * @return bool
+	 */
+	private function is_sortable_meta_field( $meta_key ) {
+		foreach ( $this->attributes->get_acf_post_fields( PF_Config::get_post_type() ) as $field ) {
+			if ( $field['name'] === $meta_key ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Сортировка по названию термина таксономии («атрибут» в терминах
+	 * плагина) — WP_Query нативно такого не умеет, значение orderby
+	 * подставляется маркером, а сам JOIN/ORDER BY добавляется через
+	 * posts_clauses (см. filter_taxonomy_orderby_clauses(), подключается на
+	 * время запроса в build()).
+	 *
+	 * @param array  $args     Аргументы WP_Query (по ссылке).
+	 * @param string $taxonomy Слаг таксономии.
+	 * @param string $order    'ASC' | 'DESC'.
+	 */
+	private function apply_taxonomy_orderby( array &$args, $taxonomy, $order ) {
+		$args['orderby']             = 'pf_taxonomy_name';
+		$args['order']               = $order;
+		$args['pf_orderby_taxonomy'] = $taxonomy;
+	}
+
+	/**
+	 * posts_clauses-фильтр, добавляющий JOIN на wp_terms для сортировки по
+	 * apply_taxonomy_orderby(). Многозначная таксономия у одной записи даёт
+	 * несколько строк JOIN — GROUP BY + MIN(term.name) сводит к одной строке
+	 * на запись и берёт первый по алфавиту термин как ключ сортировки.
+	 * Записи без термина в этой таксономии (LEFT JOIN → NULL) сортируются
+	 * последними независимо от направления — `MIN(...) IS NULL` первым
+	 * ключом сортировки гарантирует это для ASC и DESC одинаково.
+	 *
+	 * Подключается ТОЛЬКО на время одного конкретного запроса (см. build()) —
+	 * сама проверяет, что $query->get('orderby') относится именно к этому
+	 * механизму, поэтому даже если случайно останется подключённым дольше,
+	 * на чужие запросы не повлияет.
+	 *
+	 * @param array    $clauses Части SQL-запроса (join/groupby/orderby/...).
+	 * @param WP_Query $query   Текущий запрос.
+	 * @return array
+	 */
+	public function filter_taxonomy_orderby_clauses( $clauses, $query ) {
+		if ( 'pf_taxonomy_name' !== $query->get( 'orderby' ) ) {
+			return $clauses;
+		}
+
+		$taxonomy = $query->get( 'pf_orderby_taxonomy' );
+		if ( ! $taxonomy || ! taxonomy_exists( $taxonomy ) ) {
+			return $clauses;
+		}
+
+		global $wpdb;
+
+		$clauses['join'] .= $wpdb->prepare(
+			" LEFT JOIN {$wpdb->term_relationships} pf_sort_tr ON pf_sort_tr.object_id = {$wpdb->posts}.ID
+			  LEFT JOIN {$wpdb->term_taxonomy} pf_sort_tt ON pf_sort_tt.term_taxonomy_id = pf_sort_tr.term_taxonomy_id AND pf_sort_tt.taxonomy = %s
+			  LEFT JOIN {$wpdb->terms} pf_sort_t ON pf_sort_t.term_id = pf_sort_tt.term_id",
+			$taxonomy
+		);
+
+		if ( false === strpos( $clauses['groupby'], "{$wpdb->posts}.ID" ) ) {
+			$clauses['groupby'] = "{$wpdb->posts}.ID" . ( $clauses['groupby'] ? ', ' . $clauses['groupby'] : '' );
+		}
+
+		$direction         = 'DESC' === strtoupper( (string) $query->get( 'order' ) ) ? 'DESC' : 'ASC';
+		$clauses['orderby'] = "MIN(pf_sort_t.name) IS NULL, MIN(pf_sort_t.name) {$direction}"
+			. ( $clauses['orderby'] ? ', ' . $clauses['orderby'] : '' );
+
+		return $clauses;
 	}
 }

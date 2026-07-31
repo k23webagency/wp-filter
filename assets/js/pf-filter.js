@@ -1413,9 +1413,15 @@
 		this.applyOrderby( option.value );
 	};
 
+	/**
+	 * Разобрать значение опции сортировки в orderby+order. Суффикс "-desc"
+	 * обозначает убывающее направление для ЛЮБОГО поля сортировки, не только
+	 * "price-desc" — то же соглашение для сгенерированных на сервере
+	 * meta_<поле>-desc/attr_<таксономия>-desc (см. PF_Attributes::get_sortable_field_options()).
+	 */
 	PFForm.prototype.applyOrderby = function ( value ) {
-		if ( 'price-desc' === value ) {
-			this.state.orderby = 'price';
+		if ( /-desc$/.test( value ) ) {
+			this.state.orderby = value.replace( /-desc$/, '' );
 			this.state.order = 'DESC';
 		} else {
 			this.state.orderby = value;

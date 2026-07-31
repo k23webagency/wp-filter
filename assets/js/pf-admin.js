@@ -94,6 +94,18 @@
 
 			var all = allOptionsOf( templateSelect );
 			var compatible = map[ fieldSelect.value ];
+
+			// Поле группы «Дерево: глубина» имеет смысл для ЛЮБОГО шаблона (не
+			// только category-tree) на иерархической таксономии — ограничивает
+			// показанные значения по уровню вложенности даже в плоском списке
+			// (см. PF_Attributes::build_taxonomy_group()). "Иерархичность" поля
+			// узнаём по тому же признаку, что и сервер: category-tree предлагается
+			// только для иерархических таксономий (get_compatible_templates()).
+			if ( row ) {
+				var isHierarchical = !! ( compatible && -1 !== compatible.indexOf( 'category-tree' ) );
+				row.setAttribute( 'data-hierarchical', isHierarchical ? '1' : '0' );
+			}
+
 			var filtered = compatible ? all.filter( function ( o ) { return compatible.indexOf( o.value ) !== -1; } ) : all;
 			if ( ! filtered.length ) {
 				filtered = all; // неизвестное поле — не оставлять пустой список.

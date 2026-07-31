@@ -312,7 +312,6 @@ class PF_Admin {
 		$clean['logic']              = in_array( $input['logic'] ?? '', array( 'and', 'or' ), true ) ? $input['logic'] : 'and';
 		$clean['search_threshold']   = isset( $input['search_threshold'] ) ? absint( $input['search_threshold'] ) : 7;
 		$clean['show_counts']        = ! empty( $input['show_counts'] );
-		$clean['tree_depth']         = isset( $input['tree_depth'] ) ? max( 1, absint( $input['tree_depth'] ) ) : 4;
 		$clean['sync_url']           = ! empty( $input['sync_url'] );
 		$clean['pagination_strategy'] = in_array( $input['pagination_strategy'] ?? '', PF_Config::PAGINATION_STRATEGIES, true )
 			? $input['pagination_strategy']
@@ -384,7 +383,7 @@ class PF_Admin {
 			return array();
 		}
 
-		$whitelist = PF_Query::ORDERBY_WHITELIST;
+		$whitelist = wp_list_pluck( $this->attributes->get_sortable_field_options(), 'value' );
 		$clean     = array();
 
 		foreach ( $options as $option ) {
@@ -461,15 +460,18 @@ class PF_Admin {
 	/**
 	 * Дополнительные (не-таксономические) поля, которые стоит предложить в
 	 * списке доступных полей группы, сверх get_available_taxonomy_fields():
-	 * числовые meta/ACF-поля записи-кандидаты на range-группу.
+	 * «Цена» и «Наличие» (обе — WooCommerce-специфика, предлагаются только
+	 * когда настроенный тип записи product) плюс числовые ACF-поля записи-
+	 * кандидаты на range-группу.
 	 *
-	 * «Цена» — WooCommerce-специфика (meta-ключ _price жёстко зашит в
-	 * PF_Attributes::resolve_range_meta_key()), предлагается только когда
-	 * настроенный тип записи — product, иначе создавала бы заведомо
-	 * нерабочую (всегда 0..0) группу. Остальные кандидаты — любые ACF-поля,
-	 * зарегистрированные на настроенный тип записи (см. get_acf_post_fields()) —
-	 * выбор, какое из них численное и подходит для диапазона, остаётся за
-	 * админом (тот же принцип, что и у color_meta_key).
+	 * «Цена» — meta-ключ _price жёстко зашит в
+	 * PF_Attributes::resolve_range_meta_key(), иначе создавала бы заведомо
+	 * нерабочую (всегда 0..0) группу для другого типа записи. «Наличие» —
+	 * фиксированный набор значений _stock_status, см.
+	 * PF_Attributes::build_stock_status_group(). Остальные кандидаты — любые
+	 * ACF-поля, зарегистрированные на настроенный тип записи (см.
+	 * get_acf_post_fields()) — выбор, какое из них численное и подходит для
+	 * диапазона, остаётся за админом (тот же принцип, что и у color_meta_key).
 	 *
 	 * @return array
 	 */
@@ -481,6 +483,10 @@ class PF_Admin {
 			$fields[] = array(
 				'field' => 'price',
 				'label' => __( 'Цена', 'pf-filter' ),
+			);
+			$fields[] = array(
+				'field' => 'stock_status',
+				'label' => __( 'Наличие', 'pf-filter' ),
 			);
 		}
 
@@ -509,7 +515,7 @@ class PF_Admin {
 		$settings         = PF_Config::get_settings();
 		$post_types       = $this->get_public_post_types();
 		$available_fields = array_merge( $this->attributes->get_available_taxonomy_fields(), $this->get_extra_fields() );
-		$configured_depth = (int) $settings['tree_depth'];
+		$sortable_options = $this->attributes->get_sortable_field_options();
 		// Страница магазина используется как образец разметки для двух вспомогательных
 		// проверок ниже — списка доступных pf-template и доступности стратегий
 		// пагинации. Раньше для этого нужно было вручную вписывать URL в отдельное
@@ -563,12 +569,15 @@ class PF_Admin {
 		// в остальных местах, завязанных на скан образца разметки).
 		$search_available = $scan_xpath ? PF_Diagnostics::has_text_input( $scan_xpath, $template ) : null;
 		$colors_available = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter-swatch', $template ) : null;
-		// Реальная глубина дерева этой таксономии vs эффективно настроенная
-		// (своя tree_depth группы, иначе глобальная настройка) — только для
-		// иерархических таксономий с шаблоном category-tree.
+		// Реальная глубина дерева этой таксономии vs эффективно настроенная.
+		// Для category-tree депth всегда эффективна (своя, иначе дефолт
+		// PF_Attributes::DEFAULT_TREE_DEPTH, см. build_category_tree_group()).
+		// Для плоских шаблонов (checkbox/radio/tags/dropdown-*) депth
+		// ограничивает показанные значения ТОЛЬКО если явно задана на самой
+		// группе (см. build_taxonomy_group()) — без неё предупреждать не о чем.
 		$tree_depth_warning = null;
-		if ( 'category-tree' === $template && taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) ) {
-			$effective_depth = '' !== $tree_d ? (int) $tree_d : (int) PF_Config::get( 'tree_depth', 4 );
+		if ( taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) && ( 'category-tree' === $template || '' !== $tree_d ) ) {
+			$effective_depth = '' !== $tree_d ? (int) $tree_d : PF_Attributes::DEFAULT_TREE_DEPTH;
 			$real_depth      = $this->attributes->get_real_category_depth( $field );
 			if ( $real_depth > $effective_depth ) {
 				$tree_depth_warning = sprintf(
@@ -608,7 +617,7 @@ class PF_Admin {
 					<option value="and" <?php selected( $logic, 'and' ); ?>><?php esc_html_e( 'AND', 'pf-filter' ); ?></option>
 				</select>
 			</td>
-			<td>
+			<td class="pf-extra-search">
 				<label title="<?php esc_attr_e( 'Если выключено — поле поиска в этой группе не показывается никогда, независимо от порога', 'pf-filter' ); ?>">
 					<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[search]" value="1" <?php checked( $search ); ?> />
 					<?php esc_html_e( 'Поиск', 'pf-filter' ); ?>
