@@ -223,22 +223,24 @@ class PF_Diagnostics {
 	 * Проверить, удалось ли автоматически извлечь шаблон карточки из PHP-файла
 	 * этой страницы (PF_Card_Template) — тот самый механизм, который рендерит
 	 * карточки при AJAX-фильтрации. Если не удалось — плагин молча откатится
-	 * на wc_get_template_part('content','product'), что может не совпадать
-	 * с оформлением темы (см. предупреждение про content-product.php выше).
+	 * на PF_Renderer::render_default() (для product при активном WooCommerce —
+	 * wc_get_template_part('content','product'), иначе обычная конвенция темы
+	 * content-{post_type}.php), что может не совпадать с оформлением темы
+	 * (см. предупреждение про content-product.php выше).
 	 *
 	 * @param string $url URL страницы, которую анализируем.
 	 * @return array
 	 */
 	private function check_card_template_extraction( $url ) {
-		$card_template = new PF_Card_Template();
-		$cache_file    = $card_template->get_cached_template_file( $url );
+		$card_template = new PF_Card_Template( $this->attributes );
+		$cache_file    = $card_template->get_cached_template_file( $url, PF_Config::get_active_profile_id() );
 
 		return $this->result(
 			$cache_file ? 'ok' : 'warning',
 			__( 'Автоматическое извлечение шаблона карточки', 'pf-filter' ),
 			$cache_file
 				? __( 'Найден и используется PHP-шаблон страницы — карточки при AJAX-фильтрации рендерятся тем же кодом, что и при обычной загрузке.', 'pf-filter' )
-				: __( 'Не удалось найти/разобрать PHP-шаблон этой страницы. Плагин использует wc_get_template_part(\'content\',\'product\') — если тема не переопределяет content-product.php, карточки при AJAX-фильтрации могут отличаться от исходной страницы.', 'pf-filter' )
+				: __( 'Не удалось найти/разобрать PHP-шаблон этой страницы. Плагин использует запасной рендер по конвенции темы — карточки при AJAX-фильтрации могут отличаться от исходной страницы.', 'pf-filter' )
 		);
 	}
 

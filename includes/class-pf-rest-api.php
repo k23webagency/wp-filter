@@ -122,10 +122,17 @@ class PF_REST_API {
 
 		$settings = PF_Config::get_settings();
 
+		// Таксономия «категории» резолвится под активный профиль (первая
+		// сконфигурированная group с template=category-tree, иначе первая
+		// иерархическая публичная таксономия настроенного типа записи) — см.
+		// PF_Attributes::get_configured_category_tree_taxonomy(). Раньше здесь
+		// было жёстко захардкожено product_cat.
+		$category_taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+
 		$response = array(
 			'profile'          => $resolved_profile['id'],
 			'ambiguous_profile' => $resolved_profile['ambiguous'],
-			'groups'           => $this->attributes->get_groups( $category ),
+			'groups'           => $this->attributes->get_groups( $category_taxonomy, $category ),
 			'sort_options'     => $settings['sort_options'],
 			'settings'         => array(
 				'logic'               => $settings['logic'],
@@ -174,14 +181,15 @@ class PF_REST_API {
 		$query = $this->query_builder->build( $filters, $logic, $orderby, $order, $paged, $per_page );
 
 		$page_url = isset( $body['page_url'] ) ? esc_url_raw( (string) $body['page_url'] ) : '';
-		$html     = $this->render_in_page_context( $query, $page_url );
+		$html     = $this->render_in_page_context( $query, $page_url, $resolved_profile['id'] );
 
 		// "Активная категория" (авто-сужение счётчиков/видимости остальных
-		// групп) намеренно всё ещё захардкожена на product_cat — этот механизм
-		// не обобщён на произвольную таксономию/тип записи (см. ROADMAP.md);
-		// для не-WooCommerce настроек просто не активируется.
-		$active_category = isset( $filters['product_cat'][0] ) ? $filters['product_cat'][0] : '';
-		$groups          = $this->attributes->get_groups( $active_category );
+		// групп под текущий выбор в таксономии-«категории», см.
+		// PF_Attributes::get_configured_category_tree_taxonomy()) — работает для
+		// любой таксономии/типа записи, не только product_cat/product.
+		$category_taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+		$active_category   = ( $category_taxonomy && isset( $filters[ $category_taxonomy ][0] ) ) ? $filters[ $category_taxonomy ][0] : '';
+		$groups             = $this->attributes->get_groups( $category_taxonomy, $active_category );
 		$counts          = $this->renderer->get_counts( $groups, $filters, $logic, $this->query_builder );
 
 		$response = array(
@@ -205,11 +213,12 @@ class PF_REST_API {
 	 * поэтому такие ссылки ломаются. Подставляем на время рендера реальный URL
 	 * страницы (который прислал клиент) и обязательно возвращаем исходный обратно.
 	 *
-	 * @param WP_Query $query    Выполненный запрос товаров.
-	 * @param string   $page_url URL страницы каталога, на которой находится пользователь.
+	 * @param WP_Query $query      Выполненный запрос товаров.
+	 * @param string   $page_url   URL страницы каталога, на которой находится пользователь.
+	 * @param string   $profile_id ID профиля текущего запроса (см. PF_Renderer::render()).
 	 * @return string
 	 */
-	private function render_in_page_context( WP_Query $query, $page_url ) {
+	private function render_in_page_context( WP_Query $query, $page_url, $profile_id = '' ) {
 		$original_request_uri = $_SERVER['REQUEST_URI'] ?? '';
 		$replaced              = false;
 
@@ -228,7 +237,7 @@ class PF_REST_API {
 		}
 
 		try {
-			return $this->renderer->render( $query, $page_url );
+			return $this->renderer->render( $query, $page_url, $profile_id );
 		} finally {
 			if ( $replaced ) {
 				$_SERVER['REQUEST_URI'] = $original_request_uri;

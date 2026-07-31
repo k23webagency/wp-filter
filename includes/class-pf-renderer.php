@@ -36,8 +36,8 @@ class PF_Renderer {
 	 *                                       scan_custom_attributes() за запрос).
 	 */
 	public function __construct( PF_Attributes $attributes = null ) {
-		$this->card_template = new PF_Card_Template();
 		$this->attributes    = $attributes ?: new PF_Attributes();
+		$this->card_template = new PF_Card_Template( $this->attributes );
 	}
 
 	/**
@@ -49,13 +49,17 @@ class PF_Renderer {
 	 * Если извлечь не удалось (или извлечённый код не выполнился без ошибок) —
 	 * откат на стандартный wc_get_template_part('content','product').
 	 *
-	 * @param WP_Query $query    Выполненный запрос товаров.
-	 * @param string   $page_url URL страницы каталога (для поиска её PHP-шаблона), может быть пустым.
+	 * @param WP_Query $query      Выполненный запрос товаров.
+	 * @param string   $page_url   URL страницы каталога (для поиска её PHP-шаблона), может быть пустым.
+	 * @param string   $profile_id ID профиля текущего запроса — на странице с
+	 *                             несколькими встроенными блоками фильтра
+	 *                             (разные профили) нужен, чтобы найти [pf-list]
+	 *                             именно своего блока (см. PF_Card_Template).
 	 * @return string HTML карточек.
 	 */
-	public function render( WP_Query $query, $page_url = '' ) {
+	public function render( WP_Query $query, $page_url = '', $profile_id = '' ) {
 		if ( $page_url ) {
-			$cache_file = $this->card_template->get_cached_template_file( $page_url );
+			$cache_file = $this->card_template->get_cached_template_file( $page_url, $profile_id );
 			if ( $cache_file ) {
 				try {
 					return $this->render_with_extracted_template( $query, $cache_file );

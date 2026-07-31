@@ -36,20 +36,27 @@ class PF_Attributes {
 	 * Список включённых групп всегда один и тот же (глобальный, из настроек
 	 * админки) — ручного переопределения по категориям больше нет. Вместо этого
 	 * при указанной категории каждая группа автоматически показывается только
-	 * если среди товаров этой категории есть хотя бы одно её значение; если нет —
+	 * если среди записей этой категории есть хотя бы одно её значение; если нет —
 	 * группа тихо пропускается.
 	 *
-	 * @param string $category_slug Slug категории (для авто-релевантности), может быть пустым.
+	 * @param string $category_taxonomy Таксономия «категории» (см.
+	 *                                  get_configured_category_tree_taxonomy()),
+	 *                                  может быть пустой — тогда авто-релевантность
+	 *                                  не применяется вообще.
+	 * @param string $category_slug     Slug выбранного значения этой таксономии,
+	 *                                  может быть пустым.
 	 * @return array Список групп в формате ответа REST API.
 	 */
-	public function get_groups( $category_slug = '' ) {
+	public function get_groups( $category_taxonomy = '', $category_slug = '' ) {
 		$configs = PF_Config::get( 'groups', array() );
 
 		if ( empty( $configs ) ) {
 			$configs = $this->build_default_group_configs();
 		}
 
-		$category_product_ids = '' !== $category_slug ? $this->get_product_ids_in_category( $category_slug ) : null;
+		$category_product_ids = ( '' !== $category_taxonomy && '' !== $category_slug )
+			? $this->get_ids_in_category( $category_taxonomy, $category_slug )
+			: null;
 
 		$groups = array();
 
@@ -379,27 +386,27 @@ class PF_Attributes {
 	}
 
 	/**
-	 * ID опубликованных товаров в заданной категории (для авто-релевантности групп).
+	 * ID опубликованных записей настроенного типа записи (см.
+	 * PF_Config::get_post_type()) в заданном значении заданной таксономии
+	 * (для авто-релевантности групп — см. get_groups()). Работает для любой
+	 * таксономии/типа записи — раньше было жёстко захардкожено на
+	 * product_cat/post_type=product.
 	 *
-	 * Намеренно всё ещё захардкожено на product_cat/post_type=product — этот
-	 * механизм ("активная категория" в /config сужает счётчики/видимость
-	 * остальных групп) пока не обобщён на произвольную таксономию/тип записи;
-	 * для не-WooCommerce настроек он просто не активируется (см. ROADMAP.md).
-	 *
-	 * @param string $category_slug Slug категории товаров.
+	 * @param string $taxonomy      Слаг таксономии.
+	 * @param string $category_slug Slug значения этой таксономии.
 	 * @return int[]
 	 */
-	public function get_product_ids_in_category( $category_slug ) {
+	public function get_ids_in_category( $taxonomy, $category_slug ) {
 		$query = new WP_Query(
 			array(
-				'post_type'           => 'product',
+				'post_type'           => PF_Config::get_post_type(),
 				'post_status'         => 'publish',
 				'posts_per_page'      => -1,
 				'fields'              => 'ids',
 				'ignore_sticky_posts' => true,
 				'tax_query'           => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
 					array(
-						'taxonomy' => 'product_cat',
+						'taxonomy' => $taxonomy,
 						'field'    => 'slug',
 						'terms'    => array( $category_slug ),
 					),
