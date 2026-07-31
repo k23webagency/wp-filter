@@ -58,6 +58,7 @@ class PF_Admin {
 		add_action( 'admin_post_pf_create_profile', array( $this, 'handle_create_profile' ) );
 		add_action( 'admin_post_pf_duplicate_profile', array( $this, 'handle_duplicate_profile' ) );
 		add_action( 'admin_post_pf_delete_profile', array( $this, 'handle_delete_profile' ) );
+		add_action( 'admin_post_pf_refresh_attributes_cache', array( $this, 'handle_refresh_attributes_cache' ) );
 	}
 
 	/**
@@ -189,6 +190,25 @@ class PF_Admin {
 		} else {
 			wp_safe_redirect( $this->profile_url( $id, array( 'error' => 'last_profile' ) ) );
 		}
+		exit;
+	}
+
+	/**
+	 * Кнопка «Обновить кэш» (вкладка «Диагностика») — принудительно
+	 * пересканировать и перезаписать персистентный кэш кастомных атрибутов
+	 * товаров прямо сейчас, не дожидаясь ни следующего save_post, ни
+	 * планового обновления по расписанию (см.
+	 * PF_Attributes::rebuild_custom_attributes_cache()). Нужна на случай
+	 * массового импорта товаров в обход обычного сохранения (сторонний
+	 * импортёр, прямая запись в БД) — оба автоматических механизма такое не
+	 * ловят.
+	 */
+	public function handle_refresh_attributes_cache() {
+		$this->require_manage_options( 'pf_refresh_attributes_cache' );
+
+		PF_Attributes::rebuild_custom_attributes_cache();
+
+		wp_safe_redirect( $this->profile_url( PF_Config::get_active_profile_id(), array( 'cache_refreshed' => 1 ) ) );
 		exit;
 	}
 

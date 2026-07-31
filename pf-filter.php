@@ -3,7 +3,7 @@
  * Plugin Name:       PF Filter
  * Plugin URI:        https://example.com/pf-filter
  * Description:       Движок AJAX-фильтрации каталога через HTML-атрибуты pf-* в разметке темы — товары WooCommerce, любой другой тип записи или блог, любое число независимых профилей фильтра (в т.ч. несколько блоков на одной странице). Не диктует внешний вид карточек и сетки.
- * Version:           1.15.2
+ * Version:           1.16.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            PF Filter
@@ -15,7 +15,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // Константы плагина.
-define( 'PF_FILTER_VERSION', '1.15.2' );
+define( 'PF_FILTER_VERSION', '1.16.0' );
 define( 'PF_FILTER_FILE', __FILE__ );
 define( 'PF_FILTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'PF_FILTER_URL', plugin_dir_url( __FILE__ ) );
@@ -73,11 +73,27 @@ add_action( 'plugins_loaded', 'pf_filter_init' );
 /**
  * Активация плагина — завести профиль по умолчанию, если профилей ещё нет
  * (ни домультипрофильной опции 'pf_filter_settings' для миграции, ни уже
- * созданных профилей).
+ * созданных профилей), плюс завести расписание проактивного обновления
+ * персистентного кэша PF_Attributes::scan_custom_attributes() (см. её
+ * комментарий про CUSTOM_ATTRIBUTES_TRANSIENT).
  */
 function pf_filter_activate() {
 	if ( false === get_option( PF_Config::PROFILES_OPTION_KEY ) && false === get_option( 'pf_filter_settings' ) ) {
 		add_option( PF_Config::PROFILES_OPTION_KEY, array( 'default' => PF_Config::get_defaults() ) );
 	}
+
+	if ( ! wp_next_scheduled( 'pf_filter_refresh_custom_attributes_cache' ) ) {
+		wp_schedule_event( time(), 'twicedaily', 'pf_filter_refresh_custom_attributes_cache' );
+	}
 }
 register_activation_hook( __FILE__, 'pf_filter_activate' );
+
+/**
+ * Деактивация плагина — снять расписание из pf_filter_activate(), иначе
+ * WP-Cron продолжал бы пытаться его выполнять (обработчик отвязан вместе с
+ * остальными хуками плагина) до следующей активации.
+ */
+function pf_filter_deactivate() {
+	wp_clear_scheduled_hook( 'pf_filter_refresh_custom_attributes_cache' );
+}
+register_deactivation_hook( __FILE__, 'pf_filter_deactivate' );

@@ -36,7 +36,39 @@ class PF_Attributes {
 	const DEFAULT_TREE_DEPTH = 4;
 
 	/**
-	 * Кэш результата scan_custom_attributes() за запрос.
+	 * Ключ transient'а персистентного (между запросами) кэша
+	 * scan_custom_attributes(). Полный скан _product_attributes по всем
+	 * товарам — единственное место в плагине, где раньше не было ничего,
+	 * кроме request-scoped кэша; при каталоге в десятки тысяч товаров это
+	 * заметная повторяющаяся нагрузка на каждый /config и /products.
+	 *
+	 * Инвалидация: см. invalidate_custom_attributes_cache() — подключена
+	 * (PF_Plugin) к save_post/trashed_post/untrashed_post/deleted_post для
+	 * ЛЮБОГО типа записи, не только 'product' — дешёвый delete_transient(),
+	 * не стоит того, чтобы фильтровать по типу записи ради небольшой
+	 * экономии. TTL ниже — подстраховка на случай пути изменения товара,
+	 * который эти хуки не ловят (некоторые импортёры пишут в БД напрямую);
+	 * pf_filter_refresh_custom_attributes_cache (cron, дважды в сутки)
+	 * обновляет кэш проактивно, поэтому TTL на практике почти никогда не
+	 * успевает истечь сам по себе при исправно работающем cron. Кнопка
+	 * «Обновить кэш» в админке (PF_Admin) — ручной запасной вариант на
+	 * случай массового импорта в обход обоих механизмов.
+	 *
+	 * @var string
+	 */
+	const CUSTOM_ATTRIBUTES_TRANSIENT = 'pf_filter_custom_attrs';
+
+	/**
+	 * Время жизни transient'а из CUSTOM_ATTRIBUTES_TRANSIENT — см. его
+	 * комментарий.
+	 *
+	 * @var int
+	 */
+	const CUSTOM_ATTRIBUTES_CACHE_TTL = DAY_IN_SECONDS;
+
+	/**
+	 * Кэш результата scan_custom_attributes() за запрос (L1, поверх
+	 * персистентного transient'а — L2).
 	 *
 	 * @var array|null
 	 */
@@ -454,8 +486,10 @@ class PF_Attributes {
 	/**
 	 * Просканировать _product_attributes всех опубликованных товаров и собрать
 	 * кастомные (не таксономические, "локальные") атрибуты: их сырые имена,
-	 * сырые значения и ID товаров у каждого значения. Результат кэшируется на
-	 * время запроса — сканирование одно на весь /config или /products вызов.
+	 * сырые значения и ID товаров у каждого значения. Двухуровневый кэш: L1 —
+	 * на время запроса (это свойство), L2 — персистентный transient
+	 * (CUSTOM_ATTRIBUTES_TRANSIENT), переживающий между запросами; см. его
+	 * комментарий про инвалидацию/TTL.
 	 *
 	 * @return array raw_name => array( raw_value => array( post_id, ... ) )
 	 */
@@ -464,6 +498,27 @@ class PF_Attributes {
 			return $this->custom_attributes_cache;
 		}
 
+		$cached = get_transient( self::CUSTOM_ATTRIBUTES_TRANSIENT );
+		if ( is_array( $cached ) ) {
+			$this->custom_attributes_cache = $cached;
+			return $cached;
+		}
+
+		$attributes = $this->scan_custom_attributes_fresh();
+
+		set_transient( self::CUSTOM_ATTRIBUTES_TRANSIENT, $attributes, self::CUSTOM_ATTRIBUTES_CACHE_TTL );
+		$this->custom_attributes_cache = $attributes;
+		return $attributes;
+	}
+
+	/**
+	 * Настоящий SQL-скан _product_attributes, без учёта обоих уровней кэша —
+	 * вызывается только из scan_custom_attributes() (кэш промахнулся) и
+	 * rebuild_custom_attributes_cache() (принудительное обновление).
+	 *
+	 * @return array raw_name => array( raw_value => array( post_id, ... ) )
+	 */
+	private function scan_custom_attributes_fresh() {
 		global $wpdb;
 
 		$rows = $wpdb->get_results(
@@ -509,7 +564,36 @@ class PF_Attributes {
 			}
 		}
 
-		$this->custom_attributes_cache = $attributes;
+		return $attributes;
+	}
+
+	/**
+	 * Сбросить персистентный (L2) кэш scan_custom_attributes() — подключена
+	 * как обработчик save_post/trashed_post/untrashed_post/deleted_post (см.
+	 * PF_Plugin), фирится для ЛЮБОГО типа записи. Ничего не пересчитывает —
+	 * следующий вызов scan_custom_attributes() (L1 тоже промахнётся, это
+	 * новый HTTP-запрос) просто просканирует заново и запишет свежий
+	 * transient.
+	 */
+	public static function invalidate_custom_attributes_cache() {
+		delete_transient( self::CUSTOM_ATTRIBUTES_TRANSIENT );
+	}
+
+	/**
+	 * Принудительно пересчитать и сохранить персистентный кэш немедленно (а
+	 * не откладывать до следующего реального запроса) — используется
+	 * плановым обновлением по расписанию (pf_filter_refresh_custom_attributes_cache,
+	 * см. PF_Plugin) и кнопкой «Обновить кэш» в админке (PF_Admin) для
+	 * случая массового импорта в обход save_post.
+	 *
+	 * @return array Свежепросканированные данные (raw_name => raw_value => post_id[]).
+	 */
+	public static function rebuild_custom_attributes_cache() {
+		$instance   = new self();
+		$attributes = $instance->scan_custom_attributes_fresh();
+
+		set_transient( self::CUSTOM_ATTRIBUTES_TRANSIENT, $attributes, self::CUSTOM_ATTRIBUTES_CACHE_TTL );
+
 		return $attributes;
 	}
 

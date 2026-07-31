@@ -78,6 +78,21 @@ final class PF_Plugin {
 
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
 		add_action( 'pre_get_posts', array( $this, 'limit_main_query_posts_per_page' ) );
+
+		// Инвалидация персистентного кэша PF_Attributes::scan_custom_attributes()
+		// (см. её комментарий) — на любое изменение любой записи, не только
+		// товаров: дешёвый delete_transient(), фильтровать по типу записи
+		// ради небольшой экономии не стоит.
+		add_action( 'save_post', array( 'PF_Attributes', 'invalidate_custom_attributes_cache' ) );
+		add_action( 'trashed_post', array( 'PF_Attributes', 'invalidate_custom_attributes_cache' ) );
+		add_action( 'untrashed_post', array( 'PF_Attributes', 'invalidate_custom_attributes_cache' ) );
+		add_action( 'deleted_post', array( 'PF_Attributes', 'invalidate_custom_attributes_cache' ) );
+
+		// Плановое проактивное обновление того же кэша (см. регистрацию
+		// расписания в pf_filter_activate()) — подстраховка на случай пути
+		// изменения товара, который хуки выше не ловят (некоторые импортёры
+		// пишут в БД напрямую, минуя save_post).
+		add_action( 'pf_filter_refresh_custom_attributes_cache', array( 'PF_Attributes', 'rebuild_custom_attributes_cache' ) );
 	}
 
 	/**

@@ -20,6 +20,8 @@ defined( 'ABSPATH' ) || exit;
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Профиль продублирован.', 'pf-filter' ); ?></p></div>
 	<?php elseif ( isset( $_GET['deleted'] ) ) : ?>
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Профиль удалён.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['cache_refreshed'] ) ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Кэш кастомных атрибутов обновлён.', 'pf-filter' ); ?></p></div>
 	<?php elseif ( isset( $_GET['error'] ) && 'last_profile' === $_GET['error'] ) : ?>
 		<div class="notice notice-error"><p><?php esc_html_e( 'Нельзя удалить последний оставшийся профиль.', 'pf-filter' ); ?></p></div>
 	<?php elseif ( isset( $_GET['error'] ) && 'id_taken' === $_GET['error'] ) : ?>
@@ -339,6 +341,16 @@ defined( 'ABSPATH' ) || exit;
 
 	<div class="pf-tab-panel" id="pf-tab-diagnostics" data-tab="diagnostics" style="display:none">
 		<p><?php esc_html_e( 'Проверка окружения сервера, разметки страницы каталога и собственных REST-эндпоинтов плагина. Результаты не кешируются — каждый запуск делает свежие проверки.', 'pf-filter' ); ?></p>
+
+		<?php if ( class_exists( 'WooCommerce' ) ) : ?>
+			<h2><?php esc_html_e( 'Кэш кастомных атрибутов товаров', 'pf-filter' ); ?></h2>
+			<p class="description"><?php esc_html_e( 'Список кастомных (не таксономических) атрибутов товаров обновляется автоматически при сохранении любой записи и дважды в сутки по расписанию. Нажмите кнопку ниже, если только что делали массовый импорт товаров в обход обычного сохранения (сторонний импортёр, прямая запись в базу) — такие способы автоматическое обновление не ловит.', 'pf-filter' ); ?></p>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<?php wp_nonce_field( 'pf_refresh_attributes_cache' ); ?>
+				<input type="hidden" name="action" value="pf_refresh_attributes_cache" />
+				<button type="submit" class="button"><?php esc_html_e( 'Обновить кэш сейчас', 'pf-filter' ); ?></button>
+			</form>
+		<?php endif; ?>
 
 		<p>
 			<label for="pf-diag-url"><?php esc_html_e( 'URL страницы каталога для анализа разметки:', 'pf-filter' ); ?></label><br />

@@ -29,6 +29,20 @@ class PF_Renderer {
 	private $attributes;
 
 	/**
+	 * Кэш результатов matching_post_ids() за вызов get_counts() — ключ:
+	 * сериализованные filters+logic. Группа, у которой сейчас нет активного
+	 * фильтра, даёт filters_without_group идентичный $filters (unset() по
+	 * несуществующему ключу — no-op), поэтому без этого кэша при заходе без
+	 * единого выбранного фильтра ВСЕ группы гоняли бы один и тот же
+	 * неограниченный WP_Query по отдельности — N одинаковых запросов вместо
+	 * одного. Реально разные (более дешёвые, их меньше) варианты остаются
+	 * только у групп, чей фильтр как раз сейчас активен.
+	 *
+	 * @var array
+	 */
+	private $matching_ids_cache = array();
+
+	/**
 	 * Конструктор.
 	 *
 	 * @param PF_Attributes|null $attributes Опционально — для переиспользования
@@ -241,10 +255,17 @@ class PF_Renderer {
 	 * @return int[]
 	 */
 	private function matching_post_ids( array $filters, $logic, PF_Query $builder ) {
+		$cache_key = md5( $logic . '|' . wp_json_encode( $filters ) );
+		if ( isset( $this->matching_ids_cache[ $cache_key ] ) ) {
+			return $this->matching_ids_cache[ $cache_key ];
+		}
+
 		$query = $builder->build( $filters, $logic, 'menu_order', 'ASC', 1, -1 );
 		// $query->posts содержит объекты WP_Post — берём только ID для дальнейшего подсчёта.
 		$ids = wp_list_pluck( $query->posts, 'ID' );
 		wp_reset_postdata();
+
+		$this->matching_ids_cache[ $cache_key ] = $ids;
 		return $ids;
 	}
 
