@@ -288,6 +288,56 @@ class PF_Config {
 	}
 
 	/**
+	 * Переименовать id профиля (то самое значение, которое пишется в
+	 * pf-profile="..." в разметке темы) — отдельно от имени (name), которое
+	 * просто подпись в админке. Позиция профиля в списке (важна для
+	 * авторезолва "первый по порядку", см. get_active_profile_id()/
+	 * PF_Plugin::limit_main_query_posts_per_page()) сохраняется — id
+	 * меняется на месте, весь список не пересобирается в порядке вставки.
+	 *
+	 * @param string $old_id Текущий id профиля.
+	 * @param string $new_id Запрошенный новый id (санируется через sanitize_title()).
+	 * @return bool true — переименовано (или новый id совпал со старым, no-op);
+	 *              false — старый id не найден, новый id пуст после санации,
+	 *              либо уже занят ДРУГИМ профилем.
+	 */
+	public static function rename_profile_id( $old_id, $new_id ) {
+		$profiles = self::get_profiles();
+
+		if ( ! isset( $profiles[ $old_id ] ) ) {
+			return false;
+		}
+
+		$new_id = sanitize_title( $new_id );
+
+		if ( '' === $new_id ) {
+			return false;
+		}
+
+		if ( $new_id === $old_id ) {
+			return true;
+		}
+
+		if ( isset( $profiles[ $new_id ] ) ) {
+			return false;
+		}
+
+		$reordered = array();
+		foreach ( $profiles as $id => $profile ) {
+			if ( $id === $old_id ) {
+				$reordered[ $new_id ] = $profile;
+			} else {
+				$reordered[ $id ] = $profile;
+			}
+		}
+
+		update_option( self::PROFILES_OPTION_KEY, $reordered );
+		self::flush_cache();
+
+		return true;
+	}
+
+	/**
 	 * Создать новый профиль с настройками по умолчанию.
 	 *
 	 * @param string $name      Имя профиля.

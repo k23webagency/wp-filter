@@ -115,13 +115,30 @@ class PF_Admin {
 			wp_die( esc_html__( 'Профиль не найден.', 'pf-filter' ) );
 		}
 
+		// ID профиля (значение pf-profile в разметке темы) — редактируемое
+		// поле формы, отдельное от pf_filter_settings[...] (это не настройка
+		// профиля, а ключ, под которым он хранится в списке). Пустое значение
+		// (поле оставили пустым) тихо игнорируется — id остаётся прежним,
+		// а не обнуляется.
+		$requested_id = isset( $_POST['profile_id'] ) ? sanitize_title( wp_unslash( $_POST['profile_id'] ) ) : '';
+		$final_id     = $id;
+		$id_collision = false;
+
+		if ( $requested_id && $requested_id !== $id ) {
+			if ( PF_Config::rename_profile_id( $id, $requested_id ) ) {
+				$final_id = $requested_id;
+			} else {
+				$id_collision = true;
+			}
+		}
+
 		$input = isset( $_POST['pf_filter_settings'] ) && is_array( $_POST['pf_filter_settings'] )
 			? wp_unslash( $_POST['pf_filter_settings'] )
 			: array();
 
-		PF_Config::save_profile( $id, $this->sanitize( $input ) );
+		PF_Config::save_profile( $final_id, $this->sanitize( $input ) );
 
-		wp_safe_redirect( $this->profile_url( $id, array( 'updated' => 1 ) ) );
+		wp_safe_redirect( $this->profile_url( $final_id, $id_collision ? array( 'error' => 'id_taken' ) : array( 'updated' => 1 ) ) );
 		exit;
 	}
 

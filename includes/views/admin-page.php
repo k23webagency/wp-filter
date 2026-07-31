@@ -23,6 +23,8 @@ defined( 'ABSPATH' ) || exit;
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Профиль удалён.', 'pf-filter' ); ?></p></div>
 	<?php elseif ( isset( $_GET['error'] ) && 'last_profile' === $_GET['error'] ) : ?>
 		<div class="notice notice-error"><p><?php esc_html_e( 'Нельзя удалить последний оставшийся профиль.', 'pf-filter' ); ?></p></div>
+	<?php elseif ( isset( $_GET['error'] ) && 'id_taken' === $_GET['error'] ) : ?>
+		<div class="notice notice-error"><p><?php esc_html_e( 'Остальные настройки сохранены, но ID профиля не изменён — запрошенное значение уже занято другим профилем.', 'pf-filter' ); ?></p></div>
 	<?php elseif ( isset( $_GET['error'] ) ) : ?>
 		<div class="notice notice-error"><p><?php esc_html_e( 'Профиль не найден.', 'pf-filter' ); ?></p></div>
 	<?php endif; ?>
@@ -91,10 +93,10 @@ defined( 'ABSPATH' ) || exit;
 					</td>
 				</tr>
 				<tr>
-					<th><?php esc_html_e( 'ID профиля', 'pf-filter' ); ?></th>
+					<th><label for="pf-profile-id"><?php esc_html_e( 'ID профиля', 'pf-filter' ); ?></label></th>
 					<td>
-						<code><?php echo esc_html( $active_profile_id ); ?></code>
-						<p class="description"><?php esc_html_e( 'Это значение атрибута pf-profile в разметке темы. Задаётся один раз при создании профиля (из его тогдашнего названия) и не меняется при переименовании.', 'pf-filter' ); ?></p>
+						<input type="text" id="pf-profile-id" name="profile_id" value="<?php echo esc_attr( $active_profile_id ); ?>" class="regular-text code" />
+						<p class="description"><?php esc_html_e( 'Это значение атрибута pf-profile в разметке темы. При создании профиля заполняется автоматически из названия, но его можно изменить здесь — например, на короткий понятный слаг. Допустимы латиница, цифры, дефис (остальное будет автоматически приведено к такому виду). Если уже опубликованная разметка использует pf-profile со старым значением — её нужно будет поправить вручную на новое.', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
 				<tr>
