@@ -142,6 +142,7 @@ class PF_REST_API {
 				'show_counts'         => (bool) $settings['show_counts'],
 				'sync_url'            => (bool) $settings['sync_url'],
 				'pagination_strategy' => $settings['pagination_strategy'],
+				'filter_mode'         => isset( $settings['filter_mode'] ) ? $settings['filter_mode'] : 'auto',
 				'posts_per_page'      => (int) $settings['posts_per_page'],
 			),
 		);

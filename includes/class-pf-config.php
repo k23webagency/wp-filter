@@ -54,6 +54,19 @@ class PF_Config {
 	const PAGINATION_STRATEGIES = array( 'load-more', 'pages', 'both', 'infinite' );
 
 	/**
+	 * Допустимые значения режима применения фильтра.
+	 * 'auto' — как было исторически: изменение любого значения фильтра сразу
+	 * запускает полный запрос (список, счётчики, пагинация, чипы, URL).
+	 * 'manual' — список/пагинация/чипы/URL обновляются только по клику на
+	 * [pf-apply]; при этом счётчики значений и границы range-групп ([pf-filter-count],
+	 * [pf-filter-range-slider]) продолжают обновляться "вживую" под ещё не
+	 * применённый выбор — отдельным облегчённым запросом, см. PFForm.prototype.previewFilterCounts() в pf-filter.js.
+	 *
+	 * @var array
+	 */
+	const FILTER_MODES = array( 'auto', 'manual' );
+
+	/**
 	 * Кэш списка профилей за запрос.
 	 *
 	 * @var array|null
@@ -83,6 +96,7 @@ class PF_Config {
 			'show_counts'         => true,
 			'sync_url'            => true,
 			'pagination_strategy' => 'pages',
+			'filter_mode'         => 'auto',
 			'posts_per_page'      => 12,
 			'groups'              => array(),
 			'sort_options'        => array(

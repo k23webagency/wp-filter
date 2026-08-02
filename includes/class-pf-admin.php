@@ -336,6 +336,9 @@ class PF_Admin {
 		$clean['pagination_strategy'] = in_array( $input['pagination_strategy'] ?? '', PF_Config::PAGINATION_STRATEGIES, true )
 			? $input['pagination_strategy']
 			: 'pages';
+		$clean['filter_mode']        = in_array( $input['filter_mode'] ?? '', PF_Config::FILTER_MODES, true )
+			? $input['filter_mode']
+			: 'auto';
 		$clean['posts_per_page']    = isset( $input['posts_per_page'] ) ? max( 1, absint( $input['posts_per_page'] ) ) : 12;
 
 		$clean['groups']       = $this->sanitize_groups( $input['groups'] ?? array() );

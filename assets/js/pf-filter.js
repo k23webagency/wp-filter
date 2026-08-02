@@ -209,6 +209,9 @@
 		this.emptyEl = null;
 		this.sortEl = null;
 		this.paginationMode = null;
+		this.filterMode = 'auto'; // 'auto' | 'manual' — настройка pf_filter_settings.filter_mode, см. init().
+		this.applyBtn = null;
+		this.previewAbortController = null;
 
 		this.config = null;
 		this.profileId = ''; // из [pf-profile]-контейнера; уточняется резолвом сервера в fetchConfig() (см. init()).
@@ -234,7 +237,10 @@
 		this._suppressAutoFilter = false; // true во время пачечного восстановления/сброса контролов — подавляет автозапуск runFilter() по change.
 
 		this.runFilterDebounced = debounce( this.runFilter.bind( this ), 0 );
-		this.rangeDebounced = debounce( this.runFilter.bind( this ), 400 );
+		// onFilterValueChanged(), не runFilter() напрямую — при filter_mode:'manual'
+		// перетаскивание range-бегунка тоже не должно сразу заменять список, см.
+		// PFForm.prototype.onFilterValueChanged().
+		this.rangeDebounced = debounce( this.onFilterValueChanged.bind( this ), 400 );
 	}
 
 	/**
@@ -375,6 +381,7 @@
 					self.logic = ( config.settings && config.settings.logic ) || 'and';
 				}
 				self.paginationMode = ( config.settings && config.settings.pagination_strategy ) || null;
+				self.filterMode = ( config.settings && config.settings.filter_mode ) || 'auto';
 				self.syncUrl = ! config.settings || false !== config.settings.sync_url;
 
 				if ( self.outputEl && self.templatesEl ) {
@@ -386,6 +393,7 @@
 				self.initSort( config.sort_options || [] );
 				self.initPagination();
 				self.initActiveFilters();
+				self.initApplyButton();
 
 				var restoredFromUrl = self.restoreFromUrl();
 				if ( ! restoredFromUrl ) {
@@ -643,7 +651,7 @@
 					if ( self._suppressAutoFilter ) {
 						return;
 					}
-					self.runFilter( { resetPage: true, forceReplace: true } );
+					self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
 				} );
 			} else if ( isTags ) {
 				// preventDefault обязателен: если верстальщик сделал строку через
@@ -653,7 +661,7 @@
 				rowClone.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
 					rowClone.classList.toggle( 'is-active' );
-					self.runFilter( { resetPage: true, forceReplace: true } );
+					self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
 				} );
 			}
 
@@ -1203,7 +1211,7 @@
 				if ( self._suppressAutoFilter ) {
 					return;
 				}
-				self.runFilter( { resetPage: true, forceReplace: true } );
+				self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
 			} );
 		} );
 	};
@@ -1274,6 +1282,104 @@
 	// -----------------------------------------------------------------
 	// AJAX-запрос при изменении фильтров
 	// -----------------------------------------------------------------
+
+	/**
+	 * Единая точка для "значение фильтра изменилось" (checkbox/radio/tags/
+	 * дерево категорий/диапазон) — вызывается ИЗ ИХ обработчиков вместо
+	 * прямого runFilter(). Сортировка, пагинация и сброс фильтров сюда не
+	 * заходят — они всегда применяются сразу, независимо от filter_mode.
+	 * - 'auto' (по умолчанию, как было исторически) — обычный полный runFilter().
+	 * - 'manual' (pf_filter_settings.filter_mode) — список/пагинация/чипы/URL
+	 *   не трогаются вообще, обновляются только счётчики значений и границы
+	 *   range-групп под ещё не применённый выбор — см. previewFilterCounts().
+	 *   Настоящее применение — только по клику [pf-apply], см. initApplyButton().
+	 */
+	PFForm.prototype.onFilterValueChanged = function ( opts ) {
+		if ( 'manual' === this.filterMode ) {
+			this.previewFilterCounts();
+			return;
+		}
+		this.runFilter( opts );
+	};
+
+	/**
+	 * [pf-apply] — кнопка "Применить фильтр", имеет смысл только при
+	 * filter_mode:'manual'. Клик — обычный полный runFilter(), тот же самый
+	 * запрос, что при filter_mode:'auto' случился бы сразу по изменению
+	 * значения фильтра.
+	 */
+	PFForm.prototype.initApplyButton = function () {
+		if ( 'manual' !== this.filterMode ) {
+			return;
+		}
+		this.applyBtn = qs( this.scopeRoot, '[pf-apply]' );
+		if ( ! this.applyBtn ) {
+			console.warn( 'PF Filter: filter_mode="manual", но [pf-apply] не найден в разметке — список не будет обновляться, пока кнопка не появится в теме.' );
+			return;
+		}
+		var self = this;
+		this.applyBtn.addEventListener( 'click', function ( e ) {
+			e.preventDefault();
+			self.runFilter( { resetPage: true, forceReplace: true } );
+		} );
+	};
+
+	/**
+	 * Облегчённый запрос-предпросмотр для filter_mode:'manual' — тот же
+	 * /products (единственный источник counts на сервере), с ТЕКУЩИМ, ещё не
+	 * применённым выбором из collectFilters(), но результат обновляет ТОЛЬКО
+	 * счётчики значений и границы range-групп через updateGroupCounts() — ту
+	 * же функцию, что использует и обычный runFilter()/handleResponse(),
+	 * поэтому нерелевантные группы одинаково скрываются/показываются что при
+	 * предпросмотре, что при реальном применении. Список карточек, пагинация,
+	 * чипы активных фильтров и URL этот запрос НЕ трогает — это исключительно
+	 * ответственность runFilter() по клику [pf-apply]. Свой собственный
+	 * AbortController — предпросмотр не должен прерывать настоящий runFilter()
+	 * (у него общий this.abortController) и наоборот.
+	 */
+	PFForm.prototype.previewFilterCounts = function () {
+		if ( this.previewAbortController ) {
+			this.previewAbortController.abort();
+		}
+		this.previewAbortController = new AbortController();
+
+		var body = {
+			profile: this.profileId || '',
+			filters: this.collectFilters(),
+			logic: this.logic,
+			orderby: this.state.orderby,
+			order: this.state.order,
+			paged: 1,
+			posts_per_page: this.perPage,
+			page_url: window.location.href,
+		};
+
+		var self = this;
+		fetch( window.pfConfig.restUrl + 'products', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'X-WP-Nonce': window.pfConfig.nonce,
+			},
+			body: JSON.stringify( body ),
+			signal: this.previewAbortController.signal,
+		} )
+			.then( function ( res ) {
+				if ( ! res.ok ) {
+					throw new Error( 'HTTP ' + res.status );
+				}
+				return res.json();
+			} )
+			.then( function ( data ) {
+				self.updateGroupCounts( data.counts || {} );
+			} )
+			.catch( function ( err ) {
+				if ( 'AbortError' === err.name ) {
+					return;
+				}
+				console.error( 'PF Filter: ошибка запроса предпросмотра счётчиков.', err );
+			} );
+	};
 
 	PFForm.prototype.runFilter = function ( opts ) {
 		opts = opts || {};

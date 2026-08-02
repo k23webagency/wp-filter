@@ -195,6 +195,7 @@ class PF_Diagnostics {
 		$checks          = array_merge( $checks, $this->check_smart_hints( $xpath ) );
 		$checks          = array_merge( $checks, $this->check_tree_depth( $xpath, $found_templates ) );
 		$checks          = array_merge( $checks, $this->check_pagination_markup( $xpath ) );
+		$checks          = array_merge( $checks, $this->check_apply_button_markup( $xpath ) );
 
 		return array(
 			'checks'          => $checks,
@@ -686,6 +687,36 @@ class PF_Diagnostics {
 		}
 
 		return $checks;
+	}
+
+	/**
+	 * [pf-apply] имеет смысл проверять только когда сама настройка filter_mode —
+	 * 'manual': без этой кнопки список тогда никогда не обновится, что бы
+	 * пользователь ни выбрал (счётчики значений и границы range при этом
+	 * продолжат обновляться вживую — см. PFForm.prototype.previewFilterCounts()
+	 * в pf-filter.js, только сам список этого не делает). В 'auto' (по
+	 * умолчанию) кнопка не нужна вообще — ничего не проверяем и не
+	 * предупреждаем, даже если она случайно есть в разметке.
+	 *
+	 * @param DOMXPath $xpath XPath документа.
+	 * @return array
+	 */
+	private function check_apply_button_markup( DOMXPath $xpath ) {
+		if ( 'manual' !== PF_Config::get( 'filter_mode', 'auto' ) ) {
+			return array();
+		}
+
+		$has_apply = self::has_attribute( $xpath, 'pf-apply' );
+
+		return array(
+			$this->result(
+				$has_apply ? 'ok' : 'error',
+				__( 'Режим применения фильтра — «по кнопке» (filter_mode: manual)', 'pf-filter' ),
+				$has_apply
+					? __( '[pf-apply] найден на странице.', 'pf-filter' )
+					: __( '[pf-apply] не найден — список никогда не обновится, что бы пользователь ни выбрал.', 'pf-filter' )
+			),
+		);
 	}
 
 	/**

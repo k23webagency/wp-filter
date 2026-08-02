@@ -198,6 +198,27 @@ defined( 'ABSPATH' ) || exit;
 						<?php endif; ?>
 					</td>
 				</tr>
+				<?php
+				$filter_mode           = $settings['filter_mode'] ?? 'auto';
+				$has_apply_button      = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-apply' ) : null;
+				?>
+				<tr>
+					<th><?php esc_html_e( 'Режим применения фильтра', 'pf-filter' ); ?></th>
+					<td>
+						<label>
+							<input type="radio" name="pf_filter_settings[filter_mode]" value="auto" <?php checked( $filter_mode, 'auto' ); ?> />
+							<?php esc_html_e( 'Сразу — каждое изменение фильтра сразу обновляет список', 'pf-filter' ); ?>
+						</label><br />
+						<label>
+							<input type="radio" name="pf_filter_settings[filter_mode]" value="manual" <?php checked( $filter_mode, 'manual' ); ?> />
+							<?php esc_html_e( 'По кнопке «Применить» — список обновляется только по клику на [pf-apply]', 'pf-filter' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'В режиме «По кнопке» счётчики значений и границы диапазона продолжают обновляться вживую под ещё не применённый выбор — ждёт кнопку только сам список, пагинация, чипы активных фильтров и URL.', 'pf-filter' ); ?></p>
+						<?php if ( 'manual' === $filter_mode && false === $has_apply_button ) : ?>
+							<p class="description" style="color:#b32d2e"><?php esc_html_e( 'В разметке страницы не найден [pf-apply] — список не будет обновляться вообще, пока кнопка не появится в теме.', 'pf-filter' ); ?></p>
+						<?php endif; ?>
+					</td>
+				</tr>
 				<tr>
 					<th><label for="pf-posts-per-page"><?php esc_html_e( 'Товаров на странице', 'pf-filter' ); ?></label></th>
 					<td>
