@@ -386,6 +386,14 @@ class PF_Admin {
 				$row['color_meta_key'] = sanitize_key( $group['color_meta_key'] );
 			}
 
+			// Вариант оформления шаблона (pf-template-variant в разметке) — верстальщик
+			// может свёрстать несколько вариантов одного и того же pf-template
+			// (напр. checkbox плоским списком и checkbox в дропдауне), это
+			// произвольная строка, значение которой полностью выбирает верстальщик.
+			if ( isset( $group['template_variant'] ) && '' !== trim( (string) $group['template_variant'] ) ) {
+				$row['template_variant'] = sanitize_key( $group['template_variant'] );
+			}
+
 			$clean[] = $row;
 		}
 
@@ -425,7 +433,7 @@ class PF_Admin {
 	 *
 	 * @var array
 	 */
-	const DEFAULT_TEMPLATES = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio', 'range', 'category-tree' );
+	const DEFAULT_TEMPLATES = array( 'checkbox', 'radio', 'tags', 'range', 'category-tree' );
 
 	/**
 	 * Русская подпись шаблона для выпадашки "Шаблон" в таблице групп — реальное
@@ -437,13 +445,11 @@ class PF_Admin {
 	 */
 	private function template_label( $slug ) {
 		$labels = array(
-			'checkbox'          => __( 'Чекбоксы', 'pf-filter' ),
-			'radio'             => __( 'Радиокнопки', 'pf-filter' ),
-			'tags'              => __( 'Теги/чипы', 'pf-filter' ),
-			'dropdown-checkbox' => __( 'Дропдаун (чекбоксы)', 'pf-filter' ),
-			'dropdown-radio'    => __( 'Дропдаун (радиокнопки)', 'pf-filter' ),
-			'range'             => __( 'Диапазон (слайдер)', 'pf-filter' ),
-			'category-tree'     => __( 'Дерево категорий', 'pf-filter' ),
+			'checkbox'      => __( 'Чекбоксы', 'pf-filter' ),
+			'radio'         => __( 'Радиокнопки', 'pf-filter' ),
+			'tags'          => __( 'Теги/чипы', 'pf-filter' ),
+			'range'         => __( 'Диапазон (слайдер)', 'pf-filter' ),
+			'category-tree' => __( 'Дерево категорий', 'pf-filter' ),
 		);
 
 		return $labels[ $slug ] ?? $slug;
@@ -550,6 +556,7 @@ class PF_Admin {
 		$scan_dom              = $this->diagnostics->fetch_dom( $diagnostics_default_url );
 		$scan_xpath            = $scan_dom ? new DOMXPath( $scan_dom ) : null;
 		$available_pagination  = $scan_xpath ? PF_Diagnostics::detect_pagination_availability( $scan_xpath ) : null;
+		$template_variants_map = $this->get_available_template_variants_map( $scan_xpath, $available_templates );
 
 		require PF_FILTER_PATH . 'includes/views/admin-page.php';
 	}
@@ -565,14 +572,17 @@ class PF_Admin {
 	 * @param array         $available_templates Список доступных значений pf-template.
 	 * @param DOMXPath|null $scan_xpath          XPath образца разметки (см. PF_Admin::render_page()) для точечных
 	 *                                           предупреждений "нет нужного элемента"; null — сканирование недоступно.
+	 * @param array         $template_variants   Карта template => найденные варианты pf-template-variant
+	 *                                           (см. PF_Admin::get_available_template_variants_map()).
 	 */
-	public function render_group_row( $name_prefix, $index, array $group, array $available_fields, array $available_templates, $scan_xpath = null ) {
+	public function render_group_row( $name_prefix, $index, array $group, array $available_fields, array $available_templates, $scan_xpath = null, array $template_variants = array() ) {
 		$n = $name_prefix . '[' . $index . ']';
-		$field    = $group['field'] ?? '';
-		$label    = $group['label'] ?? '';
-		$template = $group['template'] ?? 'checkbox';
-		$logic    = $group['logic'] ?? 'or';
-		$enabled  = ! empty( $group['enabled'] );
+		$field            = $group['field'] ?? '';
+		$label            = $group['label'] ?? '';
+		$template         = $group['template'] ?? 'checkbox';
+		$template_variant = $group['template_variant'] ?? '';
+		$logic            = $group['logic'] ?? 'or';
+		$enabled          = ! empty( $group['enabled'] );
 		// По умолчанию (для новых групп и уже существующих без явной настройки)
 		// поиск включён — как и было раньше, до появления этого переключателя.
 		$search   = ! isset( $group['search'] ) || ! empty( $group['search'] );
@@ -592,7 +602,7 @@ class PF_Admin {
 		// Реальная глубина дерева этой таксономии vs эффективно настроенная.
 		// Для category-tree депth всегда эффективна (своя, иначе дефолт
 		// PF_Attributes::DEFAULT_TREE_DEPTH, см. build_category_tree_group()).
-		// Для плоских шаблонов (checkbox/radio/tags/dropdown-*) депth
+		// Для плоских шаблонов (checkbox/radio/tags) депth
 		// ограничивает показанные значения ТОЛЬКО если явно задана на самой
 		// группе (см. build_taxonomy_group()) — без неё предупреждать не о чем.
 		$tree_depth_warning = null;
@@ -628,6 +638,28 @@ class PF_Admin {
 				<select name="<?php echo esc_attr( $n ); ?>[template]" class="pf-template-select">
 					<?php foreach ( $available_templates as $tpl ) : ?>
 						<option value="<?php echo esc_attr( $tpl ); ?>" <?php selected( $template, $tpl ); ?>><?php echo esc_html( $this->template_label( $tpl ) ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</td>
+			<td>
+				<?php
+				/*
+				 * Подпись варианта — сам его слаг из разметки (pf-template-variant),
+				 * человекочитаемой подписи не существует: верстальщик придумывает
+				 * это имя сам, плагину неоткуда взять для него перевод. Список
+				 * options — ВСЕ найденные варианты всех шаблонов сразу (не только
+				 * текущего $template) с data-template на каждом — JS (initTemplateVariantFilter
+				 * в pf-admin.js) сужает видимые опции до совместимых с выбранным в
+				 * этой же строке [template] при загрузке страницы и при его смене,
+				 * тем же приёмом, что и pf-field-select сужает список [template].
+				 */
+				?>
+				<select name="<?php echo esc_attr( $n ); ?>[template_variant]" class="pf-template-variant-select">
+					<option value=""><?php esc_html_e( '— по умолчанию —', 'pf-filter' ); ?></option>
+					<?php foreach ( $template_variants as $tpl => $variants ) : ?>
+						<?php foreach ( $variants as $variant ) : ?>
+							<option value="<?php echo esc_attr( $variant ); ?>" data-template="<?php echo esc_attr( $tpl ); ?>" <?php selected( $tpl === $template && $variant === $template_variant ); ?>><?php echo esc_html( $variant ); ?></option>
+						<?php endforeach; ?>
 					<?php endforeach; ?>
 				</select>
 			</td>
@@ -708,6 +740,47 @@ class PF_Admin {
 		$found = array_unique( array_map( 'strtolower', $matches[1] ?? array() ) );
 
 		return empty( $found ) ? self::DEFAULT_TEMPLATES : array_values( $found );
+	}
+
+	/**
+	 * Карта template => варианты (pf-template-variant), реально найденные в
+	 * разметке для каждого значения pf-template. Верстальщик волен свёрстать
+	 * несколько вариантов одного и того же типа шаблона (например, checkbox
+	 * плоским списком и checkbox внутри дропдауна) — подпись варианта в
+	 * админке ЭТО ЖЕ САМОЕ значение атрибута, отдельной человекочитаемой
+	 * подписи не существует (верстальщик пишет в атрибут любое имя сам).
+	 *
+	 * В отличие от get_available_templates() (простой regex по телу ответа)
+	 * здесь нужна привязка "этот вариант — именно для ЭТОГО pf-template", а
+	 * не просто список всех значений pf-template-variant на странице — для
+	 * этого используется уже распарсенный DOMXPath (тот же, что и остальная
+	 * диагностика разметки на этой странице настроек), а не повторный fetch.
+	 *
+	 * @param DOMXPath|null $scan_xpath XPath образца разметки, либо null (сканирование недоступно).
+	 * @param array         $templates  Значения pf-template, для которых искать варианты.
+	 * @return array template => string[] варианты
+	 */
+	private function get_available_template_variants_map( $scan_xpath, array $templates ) {
+		$map = array();
+		if ( ! $scan_xpath ) {
+			return $map;
+		}
+
+		foreach ( $templates as $template ) {
+			$nodes    = $scan_xpath->query( '//*[@pf-template=' . PF_Diagnostics::xpath_literal( $template ) . ']/@pf-template-variant' );
+			$variants = array();
+			foreach ( $nodes as $node ) {
+				$value = trim( $node->nodeValue );
+				if ( '' !== $value && ! in_array( $value, $variants, true ) ) {
+					$variants[] = $value;
+				}
+			}
+			if ( $variants ) {
+				$map[ $template ] = $variants;
+			}
+		}
+
+		return $map;
 	}
 
 	/**

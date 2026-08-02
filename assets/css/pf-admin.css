@@ -52,20 +52,18 @@
 }
 
 /* Глубина дерева применима к category-tree и к любому плоскому шаблону
-   (checkbox/radio/tags/dropdown-*) — но только когда САМО поле группы
-   иерархическая таксономия (data-hierarchical, см. pf-admin.js) — для
-   плоской таксономии/кастомного атрибута/диапазона ограничение по глубине
-   не имеет смысла и в списке шаблонов такого поля category-tree не
-   предлагается вовсе. */
+   (checkbox/radio/tags) — но только когда САМО поле группы иерархическая
+   таксономия (data-hierarchical, см. pf-admin.js) — для плоской
+   таксономии/кастомного атрибута/диапазона ограничение по глубине не имеет
+   смысла и в списке шаблонов такого поля category-tree не предлагается
+   вовсе. */
 .pf-filter-admin tr[data-hierarchical="1"] .pf-extra-tree {
 	visibility: visible;
 }
 
 .pf-filter-admin tr[data-template="checkbox"] .pf-extra-colors,
 .pf-filter-admin tr[data-template="radio"] .pf-extra-colors,
-.pf-filter-admin tr[data-template="tags"] .pf-extra-colors,
-.pf-filter-admin tr[data-template="dropdown-checkbox"] .pf-extra-colors,
-.pf-filter-admin tr[data-template="dropdown-radio"] .pf-extra-colors {
+.pf-filter-admin tr[data-template="tags"] .pf-extra-colors {
 	visibility: visible;
 }
 

@@ -452,18 +452,32 @@
 			this._consumedTemplates = new WeakSet();
 		}
 		if ( ! this._templateCache ) {
-			// Кэш узлов-шаблонов по имени: первую группу с данным pf-template мы
-			// физически ПЕРЕМЕЩАЕМ из [pf-templates] (см. ниже), и после этого его
-			// уже не найти свежим querySelector внутри templatesEl. Кэш хранит
-			// ссылку на узел независимо от того, где он сейчас находится в DOM.
+			// Кэш узлов-шаблонов по ключу "template + вариант": первую группу с
+			// данной парой мы физически ПЕРЕМЕЩАЕМ из [pf-templates] (см. ниже), и
+			// после этого её уже не найти свежим querySelector внутри templatesEl.
+			// Кэш хранит ссылку на узел независимо от того, где он сейчас
+			// находится в DOM.
 			this._templateCache = {};
 		}
 
 		groups.forEach( function ( groupConfig ) {
-			var tpl = self._templateCache[ groupConfig.template ];
+			var variant   = groupConfig.template_variant || '';
+			var cacheKey  = groupConfig.template + '::' + variant;
+			var tpl = self._templateCache[ cacheKey ];
 			if ( undefined === tpl ) {
-				tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
-				self._templateCache[ groupConfig.template ] = tpl;
+				if ( variant ) {
+					tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"][pf-template-variant="' + variant + '"]' );
+					if ( ! tpl ) {
+						// Настроенный в админке вариант не найден в разметке (убрали/
+						// переименовали верстальщик) — деградируем на первый попавшийся
+						// узел этого pf-template, а не пропускаем группу целиком.
+						console.warn( 'PF Filter: вариант [pf-template="' + groupConfig.template + '"][pf-template-variant="' + variant + '"] не найден, использую вариант по умолчанию.' );
+						tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
+					}
+				} else {
+					tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
+				}
+				self._templateCache[ cacheKey ] = tpl;
 			}
 			if ( ! tpl ) {
 				console.warn( 'PF Filter: шаблон [pf-template="' + groupConfig.template + '"] не найден, группа "' + groupConfig.field + '" пропущена.' );
@@ -502,7 +516,7 @@
 	 * этой группы, может быть где угодно внутри pf-template. В отличие от
 	 * [pf-active-reset] (сбрасывает вообще все фильтры сразу), эта — только
 	 * значения своей группы. Работает одинаково для любого типа шаблона —
-	 * checkbox/radio/tags/range/dropdown-checkbox/dropdown-radio/category-tree.
+	 * checkbox/radio/tags/range/category-tree.
 	 * Скрыта по умолчанию (как и [pf-active-reset]/[pf-active-chip]) — до
 	 * первого ответа сервера показываться нечему, видимость обновляется в
 	 * updateActiveFilters() по факту реально активного фильтра этой группы.
@@ -580,7 +594,7 @@
 		} ) );
 	};
 
-	/** checkbox / radio / tags / dropdown-checkbox / dropdown-radio — общий алгоритм строк. */
+	/** checkbox / radio / tags — общий алгоритм строк (для любого варианта оформления). */
 	PFForm.prototype.buildListGroup = function ( groupConfig, groupNode ) {
 		var self = this;
 		// groupNode уже решён вызывающим кодом (buildGroups) — это либо перемещённый
@@ -606,7 +620,7 @@
 
 		var rowParent = rowTpl.parentElement;
 		var isTags = 'tags' === groupConfig.template;
-		var isRadio = 'radio' === groupConfig.template || 'dropdown-radio' === groupConfig.template;
+		var isRadio = 'radio' === groupConfig.template;
 		var values = groupConfig.values || [];
 
 		values.forEach( function ( value ) {
@@ -1245,7 +1259,7 @@
 				return;
 			}
 
-			// checkbox / radio / dropdown-checkbox / dropdown-radio / category-tree
+			// checkbox / radio / category-tree
 			var checked = qsa( group.el, 'input:checked' ).map( function ( input ) {
 				return input.value;
 			} );

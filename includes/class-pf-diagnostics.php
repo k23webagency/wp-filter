@@ -461,55 +461,74 @@ class PF_Diagnostics {
 		// шаблонов. У range и category-tree — свои обязательные зацепки
 		// (pf-filter-range-slider и pf-filter-list-1 соответственно), проверять
 		// их по общему правилу неверно — это всегда давало бы ложную ошибку.
-		$row_value_templates = array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+		$row_value_templates = array( 'checkbox', 'radio', 'tags' );
 
 		foreach ( $found_templates as $template ) {
 			$template_nodes = $xpath->query( '//*[@pf-template=' . self::xpath_literal( $template ) . ']' );
 			if ( ! $template_nodes || 0 === $template_nodes->length ) {
 				continue;
 			}
-			$node = $template_nodes->item( 0 );
 
-			if ( 'range' === $template ) {
-				$has_slider = $xpath->query( './/*[@pf-filter-range-slider]', $node )->length > 0;
-				$checks[]   = $this->result(
-					$has_slider ? 'ok' : 'error',
-					'[pf-template="range"] → [pf-filter-range-slider]',
-					$has_slider ? __( 'найден', 'pf-filter' ) : __( 'Шаблон `range` не будет работать', 'pf-filter' )
-				);
-				continue;
+			// Верстальщик может свёрстать несколько ВАРИАНТОВ одного и того же
+			// pf-template (pf-template-variant, разные визуальные обёртки одной и
+			// той же логики) — у каждого своя разметка, проверять нужно каждый
+			// отдельно, а не только первый попавшийся узел с этим pf-template
+			// (иначе можно пропустить сломанный второй вариант или ложно
+			// сообщить об ошибке из-за первого, хотя реально используется второй).
+			$nodes_by_variant = array();
+			foreach ( $template_nodes as $template_node ) {
+				$variant = $template_node->getAttribute( 'pf-template-variant' );
+				if ( ! isset( $nodes_by_variant[ $variant ] ) ) {
+					$nodes_by_variant[ $variant ] = $template_node;
+				}
 			}
 
-			if ( 'category-tree' === $template ) {
-				$has_list = $xpath->query( './/*[@pf-filter-list-1]', $node )->length > 0;
+			foreach ( $nodes_by_variant as $variant => $node ) {
+				$template_label = '' !== $variant
+					? sprintf( '[pf-template="%1$s"][pf-template-variant="%2$s"]', $template, $variant )
+					: sprintf( '[pf-template="%s"]', $template );
+
+				if ( 'range' === $template ) {
+					$has_slider = $xpath->query( './/*[@pf-filter-range-slider]', $node )->length > 0;
+					$checks[]   = $this->result(
+						$has_slider ? 'ok' : 'error',
+						$template_label . ' → [pf-filter-range-slider]',
+						$has_slider ? __( 'найден', 'pf-filter' ) : __( 'Шаблон `range` не будет работать', 'pf-filter' )
+					);
+					continue;
+				}
+
+				if ( 'category-tree' === $template ) {
+					$has_list = $xpath->query( './/*[@pf-filter-list-1]', $node )->length > 0;
+					$checks[] = $this->result(
+						$has_list ? 'ok' : 'error',
+						$template_label . ' → [pf-filter-list-1]',
+						$has_list ? __( 'найден', 'pf-filter' ) : __( 'Дерево категорий не будет построено', 'pf-filter' )
+					);
+					continue;
+				}
+
+				if ( ! in_array( $template, $row_value_templates, true ) ) {
+					continue; // Незнакомый/кастомный тип шаблона — общую зацепку не проверяем.
+				}
+
+				$has_row  = $xpath->query( './/*[@pf-filter-row]', $node )->length > 0;
 				$checks[] = $this->result(
-					$has_list ? 'ok' : 'error',
-					'[pf-template="category-tree"] → [pf-filter-list-1]',
-					$has_list ? __( 'найден', 'pf-filter' ) : __( 'Дерево категорий не будет построено', 'pf-filter' )
+					$has_row ? 'ok' : 'error',
+					$template_label . ' → [pf-filter-row]',
+					$has_row
+						? __( 'найден', 'pf-filter' )
+						/* translators: %s: значение pf-template */
+						: sprintf( __( 'Шаблон `%s` не будет наполнен данными', 'pf-filter' ), $template )
 				);
-				continue;
+
+				$has_value = $xpath->query( './/*[@pf-filter-value]', $node )->length > 0;
+				$checks[]  = $this->result(
+					$has_value ? 'ok' : 'warning',
+					$template_label . ' → [pf-filter-value]',
+					$has_value ? __( 'найден', 'pf-filter' ) : __( 'Значения будут без текста', 'pf-filter' )
+				);
 			}
-
-			if ( ! in_array( $template, $row_value_templates, true ) ) {
-				continue; // Незнакомый/кастомный тип шаблона — общую зацепку не проверяем.
-			}
-
-			$has_row = $xpath->query( './/*[@pf-filter-row]', $node )->length > 0;
-			$checks[] = $this->result(
-				$has_row ? 'ok' : 'error',
-				sprintf( '[pf-template="%s"] → [pf-filter-row]', $template ),
-				$has_row
-					/* translators: %s: значение pf-template */
-					? __( 'найден', 'pf-filter' )
-					: sprintf( __( 'Шаблон `%s` не будет наполнен данными', 'pf-filter' ), $template )
-			);
-
-			$has_value = $xpath->query( './/*[@pf-filter-value]', $node )->length > 0;
-			$checks[] = $this->result(
-				$has_value ? 'ok' : 'warning',
-				sprintf( '[pf-template="%s"] → [pf-filter-value]', $template ),
-				$has_value ? __( 'найден', 'pf-filter' ) : __( 'Значения будут без текста', 'pf-filter' )
-			);
 		}
 
 		$configured_groups = PF_Config::get( 'groups', array() );
@@ -528,6 +547,31 @@ class PF_Diagnostics {
 						$group['template']
 					)
 				);
+				continue;
+			}
+
+			// Шаблон на странице есть, но настроенного конкретного ВАРИАНТА
+			// (pf-template-variant) среди его узлов может не быть — например,
+			// верстальщик убрал/переименовал вариант, а группа продолжает
+			// на него ссылаться. Некритично (JS в этом случае падает обратно на
+			// первый найденный узел этого pf-template, см. pf-filter.js), но
+			// стоит подсветить — иначе выбор варианта в админке тихо не работает.
+			if ( ! empty( $group['template_variant'] ) ) {
+				$variant_nodes = $xpath->query(
+					'//*[@pf-template=' . self::xpath_literal( $group['template'] ) . '][@pf-template-variant=' . self::xpath_literal( $group['template_variant'] ) . ']'
+				);
+				if ( ! $variant_nodes || 0 === $variant_nodes->length ) {
+					$checks[] = $this->result(
+						'warning',
+						sprintf( '%s → [pf-template-variant="%s"]', $group['label'] ?: $group['field'], $group['template_variant'] ),
+						sprintf(
+							/* translators: 1: название группы, 2: значение pf-template-variant */
+							__( 'Для группы «%1$s» назначен вариант оформления `%2$s`, но он не найден на странице — будет использован первый попавшийся узел шаблона', 'pf-filter' ),
+							$group['label'] ?: $group['field'],
+							$group['template_variant']
+						)
+					);
+				}
 			}
 		}
 

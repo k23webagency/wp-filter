@@ -277,7 +277,7 @@ class PF_Attributes {
 	 * Если у группы на иерархической таксономии задана tree_depth (обычно
 	 * настраивается для шаблона category-tree, но применяется независимо от
 	 * шаблона) — термины глубже этого уровня в список не попадают вообще,
-	 * даже при плоском шаблоне (checkbox/radio/tags/dropdown-*).
+	 * даже при плоском шаблоне (checkbox/radio/tags).
 	 *
 	 * @param array      $config               Конфигурация группы.
 	 * @param int[]|null $category_product_ids ID товаров текущей категории, или null.
@@ -348,12 +348,13 @@ class PF_Attributes {
 		$values = $this->sort_values( $values, $config['value_sort'] ?? 'name_asc' );
 
 		return array(
-			'field'    => $taxonomy,
-			'label'    => isset( $config['label'] ) ? $config['label'] : $taxonomy,
-			'template' => $this->resolve_group_template( $taxonomy, $config, 'checkbox' ),
-			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
-			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
-			'values'   => $values,
+			'field'            => $taxonomy,
+			'label'            => isset( $config['label'] ) ? $config['label'] : $taxonomy,
+			'template'         => $this->resolve_group_template( $taxonomy, $config, 'checkbox' ),
+			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
+			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'values'           => $values,
 		);
 	}
 
@@ -725,12 +726,13 @@ class PF_Attributes {
 		$field = $this->get_custom_attribute_field( $raw_name );
 
 		return array(
-			'field'    => $field,
-			'label'    => isset( $config['label'] ) ? $config['label'] : $raw_name,
-			'template' => $this->resolve_group_template( $field, $config, 'checkbox' ),
-			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
-			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
-			'values'   => $values,
+			'field'            => $field,
+			'label'            => isset( $config['label'] ) ? $config['label'] : $raw_name,
+			'template'         => $this->resolve_group_template( $field, $config, 'checkbox' ),
+			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
+			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'values'           => $values,
 		);
 	}
 
@@ -771,13 +773,14 @@ class PF_Attributes {
 		$range    = $this->get_meta_numeric_range( $meta_key, $category_product_ids );
 
 		return array(
-			'field'    => $field,
-			'label'    => isset( $config['label'] ) ? $config['label'] : ( 'price' === $field ? 'Цена' : $field ),
-			'template' => 'range',
-			'min'      => $range['min'],
-			'max'      => $range['max'],
-			'step'     => isset( $config['step'] ) ? (float) $config['step'] : 500,
-			'unit'     => isset( $config['unit'] ) ? $config['unit'] : ( 'price' === $field ? '₽' : '' ),
+			'field'            => $field,
+			'label'            => isset( $config['label'] ) ? $config['label'] : ( 'price' === $field ? 'Цена' : $field ),
+			'template'         => 'range',
+			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
+			'min'              => $range['min'],
+			'max'              => $range['max'],
+			'step'             => isset( $config['step'] ) ? (float) $config['step'] : 500,
+			'unit'             => isset( $config['unit'] ) ? $config['unit'] : ( 'price' === $field ? '₽' : '' ),
 		);
 	}
 
@@ -787,7 +790,7 @@ class PF_Attributes {
 	 * ACF-поле, а фиксированный небольшой набор значений
 	 * (instock/outofstock/onbackorder, см. get_stock_status_labels()) —
 	 * устроена как обычная values-группа (совместима с любым шаблоном списка
-	 * значений — checkbox/radio/tags/dropdown-*, но не с category-tree/range,
+	 * значений — checkbox/radio/tags, но не с category-tree/range,
 	 * см. get_compatible_templates()).
 	 *
 	 * @param array      $config               Конфигурация группы.
@@ -823,12 +826,13 @@ class PF_Attributes {
 		$values = $this->sort_values( $values, $config['value_sort'] ?? 'name_asc' );
 
 		return array(
-			'field'    => 'stock_status',
-			'label'    => isset( $config['label'] ) ? $config['label'] : __( 'Наличие', 'pf-filter' ),
-			'template' => $this->resolve_group_template( 'stock_status', $config, 'checkbox' ),
-			'logic'    => isset( $config['logic'] ) ? $config['logic'] : 'or',
-			'search'   => ! array_key_exists( 'search', $config ) || false !== $config['search'],
-			'values'   => $values,
+			'field'            => 'stock_status',
+			'label'            => isset( $config['label'] ) ? $config['label'] : __( 'Наличие', 'pf-filter' ),
+			'template'         => $this->resolve_group_template( 'stock_status', $config, 'checkbox' ),
+			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
+			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'values'           => $values,
 		);
 	}
 
@@ -981,13 +985,14 @@ class PF_Attributes {
 		$tree  = $this->sort_values( $tree, $config['value_sort'] ?? 'name_asc' );
 
 		return array(
-			'field'      => $taxonomy,
-			'label'      => isset( $config['label'] ) ? $config['label'] : $taxonomy,
-			'template'   => 'category-tree',
-			'logic'      => isset( $config['logic'] ) ? $config['logic'] : 'or',
-			'search'     => ! array_key_exists( 'search', $config ) || false !== $config['search'],
-			'tree_depth' => $depth,
-			'values'     => $tree,
+			'field'            => $taxonomy,
+			'label'            => isset( $config['label'] ) ? $config['label'] : $taxonomy,
+			'template'         => 'category-tree',
+			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
+			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
+			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'tree_depth'       => $depth,
+			'values'           => $tree,
 		);
 	}
 
@@ -1075,8 +1080,8 @@ class PF_Attributes {
 	/**
 	 * ID терминов иерархической таксономии не глубже $max_depth уровней (корень
 	 * — уровень 1) — используется build_taxonomy_group(), чтобы ограничивать
-	 * глубину показанных значений у ПЛОСКОГО шаблона (checkbox/radio/tags/
-	 * dropdown-*) на иерархической таксономии так же, как tree_depth уже
+	 * глубину показанных значений у ПЛОСКОГО шаблона (checkbox/radio/tags)
+	 * на иерархической таксономии так же, как tree_depth уже
 	 * ограничивает глубину настоящего дерева (category-tree). hide_empty
 	 * специально false — это чисто структурный обход, "пустой" по прямым
 	 * товарам родитель всё равно должен считаться существующим уровнем.
@@ -1394,11 +1399,11 @@ class PF_Attributes {
 	 */
 	public function get_compatible_templates( $field ) {
 		if ( taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) ) {
-			return array( 'category-tree', 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+			return array( 'category-tree', 'checkbox', 'radio', 'tags' );
 		}
 
 		if ( taxonomy_exists( $field ) || 0 === strpos( $field, 'custom_' ) || 'stock_status' === $field ) {
-			return array( 'checkbox', 'radio', 'tags', 'dropdown-checkbox', 'dropdown-radio' );
+			return array( 'checkbox', 'radio', 'tags' );
 		}
 
 		// Всё остальное (в т.ч. 'price') — числовое meta/ACF-поле записи: у

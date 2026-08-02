@@ -17,6 +17,7 @@
 		initTabs( root );
 		initTemplateDataAttr( root );
 		initFieldTemplateFilter( root );
+		initTemplateVariantFilter( root );
 		initDragAndDrop( root );
 		initAddGroup( root );
 		initAddSort( root );
@@ -136,6 +137,66 @@
 		// Применить сразу к уже отрисованным строкам (в т.ч. по умолчанию при
 		// первом заходе на страницу).
 		root.querySelectorAll( '.pf-field-select' ).forEach( applyFilter );
+	}
+
+	// ---- Список вариантов сужается до совместимых с выбранным [template] ----
+
+	/**
+	 * Селект «Вариант оформления» (.pf-template-variant-select) в таблице групп
+	 * содержит СРАЗУ все варианты, найденные в разметке для ЛЮБОГО значения
+	 * pf-template (каждый option несёт data-template, см. PF_Admin::render_group_row()).
+	 * Здесь список видимых опций сужается до вариантов, реально относящихся к
+	 * шаблону, выбранному в этой же строке — тот же приём, что и у
+	 * initFieldTemplateFilter() выше (там поле сужает список шаблонов).
+	 */
+	function initTemplateVariantFilter( root ) {
+		function allOptionsOf( variantSelect ) {
+			if ( ! variantSelect._pfAllOptions ) {
+				variantSelect._pfAllOptions = Array.prototype.map.call( variantSelect.options, function ( o ) {
+					return { value: o.value, label: o.textContent, template: o.getAttribute( 'data-template' ) || '' };
+				} );
+			}
+			return variantSelect._pfAllOptions;
+		}
+
+		function applyFilter( templateSelect ) {
+			var row           = templateSelect.closest( 'tr' );
+			var variantSelect = row ? row.querySelector( '.pf-template-variant-select' ) : null;
+			if ( ! variantSelect ) {
+				return;
+			}
+
+			var all = allOptionsOf( variantSelect );
+			// data-template="" — служебная опция "— по умолчанию —", видна всегда,
+			// независимо от того, какой шаблон выбран.
+			var visible = all.filter( function ( o ) {
+				return '' === o.template || o.template === templateSelect.value;
+			} );
+
+			var currentValue = variantSelect.value;
+
+			variantSelect.innerHTML = '';
+			visible.forEach( function ( o ) {
+				var opt = document.createElement( 'option' );
+				opt.value = o.value;
+				opt.textContent = o.label;
+				variantSelect.appendChild( opt );
+			} );
+
+			var stillValid = visible.some( function ( o ) { return o.value === currentValue; } );
+			variantSelect.value = stillValid ? currentValue : '';
+		}
+
+		root.addEventListener( 'change', function ( e ) {
+			if ( e.target.classList && e.target.classList.contains( 'pf-template-select' ) ) {
+				applyFilter( e.target );
+			}
+		} );
+
+		// Применить сразу к уже отрисованным строкам (в т.ч. по умолчанию при
+		// первом заходе на страницу) — не полагаемся на каскад из
+		// initFieldTemplateFilter(), у него есть собственный ранний return.
+		root.querySelectorAll( '.pf-template-select' ).forEach( applyFilter );
 	}
 
 	// ---- Drag-and-drop реордера строк ------------------------------------
@@ -269,6 +330,14 @@
 				var newFieldSelect = newRow.querySelector( '.pf-field-select' );
 				if ( newFieldSelect ) {
 					newFieldSelect.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+				}
+
+				// Список вариантов новой строки сразу сузить до совместимых с её
+				// шаблоном по умолчанию — не полагаемся на каскад из события выше
+				// (initFieldTemplateFilter() может рано выйти, если карта не пришла).
+				var newTemplateSelect = newRow.querySelector( '.pf-template-select' );
+				if ( newTemplateSelect ) {
+					newTemplateSelect.dispatchEvent( new Event( 'change', { bubbles: true } ) );
 				}
 			} );
 		} );
