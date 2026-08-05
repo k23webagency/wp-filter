@@ -127,11 +127,29 @@ class PF_Renderer {
 		// $product->get_attribute(...) в собственном коде темы).
 		global $post, $product;
 
+		$debug_log = defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG;
+
 		ob_start();
 
 		try {
 			while ( $query->have_posts() ) {
 				$query->the_post();
+
+				// Временная точечная диагностика: что реально приходит в $product
+				// на хук the_post() ДО того, как код темы успевает в нём упасть —
+				// theme-код обращается к $product напрямую, и если это не тот
+				// объект/не тот класс, что на обычной странице, тема падает по
+				// ЕЁ СОБСТВЕННОЙ логике (мы её код не контролируем), но нам важно
+				// увидеть, ЧТО именно там лежит в момент include.
+				if ( $debug_log ) {
+					error_log( sprintf( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+						'PF Filter: перед include — post #%d, $product = %s%s',
+						get_the_ID(),
+						is_object( $product ) ? get_class( $product ) : var_export( $product, true ),
+						( $product instanceof WC_Product ) ? sprintf( ' (id=%d, type=%s, parent_id=%d)', $product->get_id(), $product->get_type(), $product->get_parent_id() ) : ''
+					) );
+				}
+
 				include $cache_file;
 			}
 		} catch ( \Throwable $e ) {
