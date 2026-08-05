@@ -226,6 +226,7 @@ class PF_Diagnostics {
 		$found_templates = $this->find_template_values( $xpath );
 		$checks          = array_merge( $checks, $this->check_group_templates( $xpath, $found_templates ) );
 		$checks          = array_merge( $checks, $this->check_smart_hints( $xpath ) );
+		$checks          = array_merge( $checks, $this->check_third_party_widget_hints( $xpath ) );
 		$checks          = array_merge( $checks, $this->check_tree_depth( $xpath, $found_templates ) );
 		$checks          = array_merge( $checks, $this->check_pagination_markup( $xpath ) );
 		$checks          = array_merge( $checks, $this->check_apply_button_markup( $xpath ) );
@@ -673,6 +674,86 @@ class PF_Diagnostics {
 					/* translators: %d: количество найденных форм */
 					__( 'Найдено несколько форм фильтра на странице: %d', 'pf-filter' ),
 					$form_count
+				)
+			);
+		}
+
+		return $checks;
+	}
+
+	/**
+	 * Эвристика: библиотека засчитывается, только если её имя встретилось
+	 * ОДНОВРЕМЕННО и в разметке карточки (класс/атрибут — карточка её
+	 * "ждёт"), и в <script> на странице (src подключаемого файла либо текст
+	 * инлайнового скрипта — она реально подключена). Одной разметки
+	 * недостаточно — совпадение класса могло быть случайным совпадением
+	 * слова. Библиотеки без предсказуемого следа в разметке (GSAP,
+	 * anime.js — управляют произвольными селекторами, не оставляют своих
+	 * классов) сюда принципиально не входят: подсказка либо точная, либо
+	 * никакая, "может быть" — не показываем.
+	 *
+	 * @param DOMXPath $xpath XPath документа.
+	 * @return array
+	 */
+	private function check_third_party_widget_hints( DOMXPath $xpath ) {
+		$checks = array();
+
+		$list_nodes = $xpath->query( '//*[@pf-list]' );
+		if ( ! $list_nodes || 0 === $list_nodes->length ) {
+			return $checks;
+		}
+
+		// label => [ needle для <script>, xpath-условие узла внутри карточки ].
+		$signatures = array(
+			'Swiper'       => array( 'swiper', "contains(@class, 'swiper')" ),
+			'Slick'        => array( 'slick', "contains(@class, 'slick')" ),
+			'Glide.js'     => array( 'glide', "contains(@class, 'glide')" ),
+			'Splide'       => array( 'splide', "contains(@class, 'splide')" ),
+			'Owl Carousel' => array( 'owl-carousel', "contains(@class, 'owl-carousel')" ),
+			'Flickity'     => array( 'flickity', "contains(@class, 'flickity')" ),
+			'Fancybox'     => array( 'fancybox', "contains(@class, 'fancybox')" ),
+			'PhotoSwipe'   => array( 'photoswipe', "contains(@class, 'photoswipe')" ),
+			'lightGallery' => array( 'lightgallery', "contains(@class, 'lightgallery')" ),
+			'AOS'          => array( 'aos', '@data-aos' ),
+			'Lottie'       => array( 'lottie', "contains(@class, 'lottie') or self::lottie-player" ),
+		);
+
+		$markup_hits = array();
+		foreach ( $list_nodes as $list_node ) {
+			foreach ( $signatures as $label => $signature ) {
+				if ( isset( $markup_hits[ $label ] ) ) {
+					continue;
+				}
+				if ( $xpath->query( './/*[' . $signature[1] . ']', $list_node )->length > 0 ) {
+					$markup_hits[ $label ] = true;
+				}
+			}
+		}
+
+		if ( empty( $markup_hits ) ) {
+			return $checks;
+		}
+
+		$script_text = '';
+		foreach ( $xpath->query( '//script' ) as $script_node ) {
+			$script_text .= ' ' . strtolower( $script_node->getAttribute( 'src' ) ) . ' ' . strtolower( $script_node->textContent );
+		}
+
+		foreach ( $markup_hits as $label => $unused ) {
+			if ( false === strpos( $script_text, $signatures[ $label ][0] ) ) {
+				continue; // Разметка совпала случайно — самой библиотеки на странице не нашлось.
+			}
+			$checks[] = $this->result(
+				'info',
+				sprintf(
+					/* translators: %s: название библиотеки (Swiper, Slick и т.п.) */
+					__( 'В карточках товара похоже используется %s', 'pf-filter' ),
+					$label
+				),
+				sprintf(
+					/* translators: %s: название библиотеки (Swiper, Slick и т.п.) */
+					__( 'Такие галереи/слайдеры/анимации перестают работать в карточках, которые плагин подставляет после фильтрации, — браузер запускает их только один раз, при обычной загрузке страницы. Передайте разработчику темы: нужно подписать %1$s на событие `pf-filter:list-updated`, чтобы она запускалась и для новых карточек.', 'pf-filter' ),
+					$label
 				)
 			);
 		}
