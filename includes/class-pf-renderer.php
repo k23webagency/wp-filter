@@ -99,6 +99,16 @@ class PF_Renderer {
 	 * @return string
 	 */
 	private function render_with_extracted_template( WP_Query $query, $cache_file ) {
+		// Настоящая тема подключает свой файл через load_template()/WordPress
+		// template loader — это происходит в ГЛОБАЛЬНОЙ области видимости, где
+		// $post/$product (последний ставит WooCommerce на хук the_post) доступны
+		// без единого слова global. Здесь include происходит внутри метода
+		// класса — отдельная область видимости, и без явного global эти
+		// переменные внутри извлечённого куска карточки были бы не определены,
+		// хотя в разметке темы могут использоваться напрямую (например,
+		// $product->get_attribute(...) в собственном коде темы).
+		global $post, $product;
+
 		ob_start();
 
 		try {
