@@ -72,18 +72,36 @@ class PF_Renderer {
 	 * @return string HTML карточек.
 	 */
 	public function render( WP_Query $query, $page_url = '', $profile_id = '' ) {
+		$debug_log = defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG;
+
 		if ( $page_url ) {
 			$cache_file = $this->card_template->get_cached_template_file( $page_url, $profile_id );
 			if ( $cache_file ) {
+				if ( $debug_log ) {
+					error_log( sprintf( 'PF Filter: рендер через извлечённый шаблон карточки (%s)', $cache_file ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+				}
 				try {
 					return $this->render_with_extracted_template( $query, $cache_file );
 				} catch ( \Throwable $e ) {
 					// Извлечённый шаблон скомпилировался, но упал во время выполнения
 					// (например, вызвал функцию темы, которой в этом контексте нет) —
-					// тихо откатываемся на стандартный рендер ниже.
+					// тихо откатываемся на стандартный рендер ниже, ничего не ломая на
+					// сайте у обычного посетителя. Но без записи в debug.log причину
+					// такого отката было бы невозможно найти — фактическая ошибка
+					// молча проглатывалась, а на фронте была видна только "не та"
+					// карточка (запасной рендер вместо разметки темы), без объяснения
+					// почему. Пишем только если WP_DEBUG_LOG включён — как и остальная
+					// диагностика плагина (см. PF_Diagnostics::check_environment()).
+					if ( $debug_log ) {
+						error_log( sprintf( 'PF Filter: извлечённый шаблон карточки упал во время выполнения (%s:%d): %s', $e->getFile(), $e->getLine(), $e->getMessage() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+					}
 					$query->rewind_posts();
 				}
+			} elseif ( $debug_log ) {
+				error_log( sprintf( 'PF Filter: извлечь шаблон карточки не удалось для %s — используется запасной рендер.', $page_url ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			}
+		} elseif ( $debug_log ) {
+			error_log( 'PF Filter: render() вызван без page_url — используется запасной рендер.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 		}
 
 		return $this->render_default( $query );
