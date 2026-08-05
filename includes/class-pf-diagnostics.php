@@ -28,6 +28,39 @@ class PF_Diagnostics {
 	}
 
 	/**
+	 * Аргументы для wp_remote_get() к собственному сайту (сканирование
+	 * разметки для диагностики/пагинации/списка вариантов шаблона) — с
+	 * куками текущего администратора. Без них запрос выглядит анонимным
+	 * посетителем и упирается в любой гейт, который сайт показывает только
+	 * неавторизованным — например, "Coming soon" режим WooCommerce (до
+	 * "запуска" магазина): администратор/менеджер магазина обходит его
+	 * автоматически при обычном заходе в браузере, а анонимный
+	 * wp_remote_get — нет, см.
+	 * https://developer.woocommerce.com/docs/extensions/extension-onboarding/integrating-coming-soon-mode/.
+	 * Здесь всегда доступен $_COOKIE текущего запроса — все места, где это
+	 * используется, уже находятся за проверкой current_user_can( 'manage_options' )
+	 * (сама страница настроек либо AJAX-обработчик диагностики).
+	 *
+	 * @param array $extra Дополнительные/переопределяющие аргументы (например, timeout).
+	 * @return array
+	 */
+	public static function self_request_args( array $extra = array() ) {
+		$cookies = array();
+		foreach ( $_COOKIE as $name => $value ) {
+			if ( is_scalar( $value ) ) {
+				$cookies[] = new WP_Http_Cookie(
+					array(
+						'name'  => $name,
+						'value' => $value,
+					)
+				);
+			}
+		}
+
+		return array_merge( array( 'cookies' => $cookies ), $extra );
+	}
+
+	/**
 	 * Секция 1 — серверные проверки окружения, URL не требуется.
 	 *
 	 * @return array Список проверок [ { key, label, status, message }, ... ].
@@ -145,7 +178,7 @@ class PF_Diagnostics {
 	 * @return array {checks, found_templates, auto_hooks}
 	 */
 	public function analyze_markup( $url ) {
-		$response = wp_remote_get( $url, array( 'timeout' => 10 ) );
+		$response = wp_remote_get( $url, self::self_request_args( array( 'timeout' => 10 ) ) );
 
 		if ( is_wp_error( $response ) ) {
 			return array(
@@ -459,9 +492,9 @@ class PF_Diagnostics {
 		$checks = array();
 
 		// [pf-filter-row] / [pf-filter-value] — общая зацепка только для этих
-		// шаблонов. У range и category-tree — свои обязательные зацепки
-		// (pf-filter-range-slider и pf-filter-list-1 соответственно), проверять
-		// их по общему правилу неверно — это всегда давало бы ложную ошибку.
+		// шаблонов. У range и category-tree — свои зацепки (pf-filter-range-slider/
+		// pf-filter-range-value и pf-filter-list-1 соответственно), проверять их
+		// по общему правилу неверно — это всегда давало бы ложную ошибку.
 		$row_value_templates = array( 'checkbox', 'radio', 'tags' );
 
 		foreach ( $found_templates as $template ) {
@@ -490,12 +523,30 @@ class PF_Diagnostics {
 					: sprintf( '[pf-template="%s"]', $template );
 
 				if ( 'range' === $template ) {
+					// [pf-filter-range-slider] нужен только для перетаскивания/
+					// визуального трека — сам range-фильтр работает и без него,
+					// пока в разметке есть хотя бы [pf-filter-range-value]
+					// (прямой ввод числом, см. bindNumberInput() в pf-filter.js).
+					// Обязательна ровно одна из двух зацепок; отсутствие обеих —
+					// единственный случай, когда шаблон реально не работает.
 					$has_slider = $xpath->query( './/*[@pf-filter-range-slider]', $node )->length > 0;
-					$checks[]   = $this->result(
-						$has_slider ? 'ok' : 'error',
-						$template_label . ' → [pf-filter-range-slider]',
-						$has_slider ? __( 'найден', 'pf-filter' ) : __( 'Шаблон `range` не будет работать', 'pf-filter' )
-					);
+					$has_value  = $xpath->query( './/*[@pf-filter-range-value]', $node )->length > 0;
+
+					if ( $has_slider ) {
+						$checks[] = $this->result( 'ok', $template_label . ' → [pf-filter-range-slider]', __( 'найден', 'pf-filter' ) );
+					} elseif ( $has_value ) {
+						$checks[] = $this->result(
+							'warning',
+							$template_label . ' → [pf-filter-range-slider]',
+							__( 'Не найден — перетаскивание недоступно, работает только прямой ввод через [pf-filter-range-value].', 'pf-filter' )
+						);
+					} else {
+						$checks[] = $this->result(
+							'error',
+							$template_label . ' → [pf-filter-range-slider]',
+							__( 'Ни [pf-filter-range-slider], ни [pf-filter-range-value] не найдены — шаблон `range` не будет работать.', 'pf-filter' )
+						);
+					}
 					continue;
 				}
 
@@ -756,7 +807,7 @@ class PF_Diagnostics {
 			return null;
 		}
 
-		$response = wp_remote_get( $url, array( 'timeout' => 8 ) );
+		$response = wp_remote_get( $url, self::self_request_args( array( 'timeout' => 8 ) ) );
 		if ( is_wp_error( $response ) ) {
 			return null;
 		}

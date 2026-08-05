@@ -729,7 +729,7 @@ class PF_Admin {
 			return self::DEFAULT_TEMPLATES;
 		}
 
-		$response = wp_remote_get( $scan_url, array( 'timeout' => 8 ) );
+		$response = wp_remote_get( $scan_url, PF_Diagnostics::self_request_args( array( 'timeout' => 8 ) ) );
 		if ( is_wp_error( $response ) ) {
 			return self::DEFAULT_TEMPLATES;
 		}

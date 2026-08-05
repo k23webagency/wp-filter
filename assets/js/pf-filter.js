@@ -792,10 +792,16 @@
 			nameEl.textContent = groupConfig.label;
 		}
 
+		// [pf-filter-range-slider] нужен только для drag/визуального трека —
+		// без него range всё равно работает через прямой ввод в
+		// [pf-filter-range-value] (см. bindNumberInput() ниже), поэтому не
+		// прерываем инициализацию группы, а просто держим состояние диапазона
+		// (min/max/currentMin/currentMax/userMin/userMax) на корневом узле
+		// группы вместо отсутствующего слайдера.
 		var slider = qs( clone, '[pf-filter-range-slider]' );
 		if ( ! slider ) {
-			console.warn( 'PF Filter: [pf-filter-range-slider] не найден для группы "' + groupConfig.field + '", range недоступен.' );
-			return clone;
+			console.warn( 'PF Filter: [pf-filter-range-slider] не найден для группы "' + groupConfig.field + '" — перетаскивание недоступно, работает только прямой ввод через [pf-filter-range-value].' );
+			slider = clone;
 		}
 
 		var min = parseFloat( groupConfig.min ) || 0;
@@ -1073,10 +1079,9 @@
 			return;
 		}
 
-		var slider = qs( group.el, '[pf-filter-range-slider]' );
-		if ( ! slider ) {
-			return;
-		}
+		// См. buildRangeGroup(): при отсутствии визуального слайдера состояние
+		// диапазона хранится на корневом узле группы.
+		var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
 
 		var newMin = parseFloat( bounds.min );
 		var newMax = parseFloat( bounds.max );
@@ -1228,9 +1233,11 @@
 			var template = group.config.template;
 
 			if ( 'range' === template ) {
-				var slider = qs( group.el, '[pf-filter-range-slider]' );
-				var hasUserMin = slider && undefined !== slider.dataset.userMin;
-				var hasUserMax = slider && undefined !== slider.dataset.userMax;
+				// См. buildRangeGroup(): при отсутствии визуального слайдера
+				// состояние диапазона хранится на корневом узле группы.
+				var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
+				var hasUserMin = undefined !== slider.dataset.userMin;
+				var hasUserMax = undefined !== slider.dataset.userMax;
 				// Отправляется "замороженное" абсолютное значение выбора
 				// пользователя (data-user-min/data-user-max — только реальным
 				// действием, см. buildRangeGroup()), а НЕ отображаемое
@@ -1907,24 +1914,24 @@
 		} );
 
 		if ( 'range' === group.config.template ) {
-			var slider = qs( group.el, '[pf-filter-range-slider]' );
-			if ( slider ) {
-				var rangeMin = parseFloat( slider.dataset.min );
-				var rangeMax = parseFloat( slider.dataset.max );
-				slider.dataset.currentMin = slider.dataset.min;
-				slider.dataset.currentMax = slider.dataset.max;
-				// Сброс — это тоже способ "перестать быть тронутым пользователем":
-				// иначе после ручного выбора и последующего сброса цена продолжала
-				// бы слаться как активный фильтр (полный диапазон, но formально
-				// "тронутый"), пока сервер не подтвердит это следующим ответом.
-				delete slider.dataset.userMin;
-				delete slider.dataset.userMax;
-				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
-				positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
-				setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min, false );
-				setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max, false );
-				positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), rangeMin, rangeMax, rangeMin, rangeMax );
-			}
+			// См. buildRangeGroup(): при отсутствии визуального слайдера
+			// состояние диапазона хранится на корневом узле группы.
+			var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
+			var rangeMin = parseFloat( slider.dataset.min );
+			var rangeMax = parseFloat( slider.dataset.max );
+			slider.dataset.currentMin = slider.dataset.min;
+			slider.dataset.currentMax = slider.dataset.max;
+			// Сброс — это тоже способ "перестать быть тронутым пользователем":
+			// иначе после ручного выбора и последующего сброса цена продолжала
+			// бы слаться как активный фильтр (полный диапазон, но formально
+			// "тронутый"), пока сервер не подтвердит это следующим ответом.
+			delete slider.dataset.userMin;
+			delete slider.dataset.userMax;
+			positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
+			positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min, false );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max, false );
+			positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), rangeMin, rangeMax, rangeMin, rangeMax );
 		}
 	};
 
@@ -2237,10 +2244,9 @@
 	 * @param {string} rawValue      Значение параметра из URL.
 	 */
 	PFForm.prototype.restoreRangeFromUrl = function ( group, minOrMax, rawValue ) {
-		var slider = qs( group.el, '[pf-filter-range-slider]' );
-		if ( ! slider ) {
-			return;
-		}
+		// См. buildRangeGroup(): при отсутствии визуального слайдера состояние
+		// диапазона хранится на корневом узле группы.
+		var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
 		var value = parseFloat( rawValue );
 		if ( isNaN( value ) ) {
 			return;
