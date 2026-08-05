@@ -602,6 +602,38 @@
 		} ) );
 	};
 
+	/**
+	 * Событие "список карточек обновлён" — тот же хук, что и
+	 * pf-filter:groups-built выше, только для [pf-list]. Карточки, которые
+	 * плагин подставляет через AJAX, не проходят через обычную загрузку
+	 * страницы — поэтому любая интерактивность темы внутри карточки,
+	 * инициализируемая один раз на DOMContentLoaded и привязанная к
+	 * конкретным DOM-узлам (слайдеры/галереи, тултипы, лениво
+	 * подгружаемые изображения и т.п.), для новых карточек не сработает
+	 * сама по себе — её нужно переинициализировать по этому событию.
+	 * Всплывает до document, слушать можно и там, и на самом [pf-list].
+	 *
+	 * @param {boolean} appended true — новые карточки ДОБАВЛЕНЫ к уже
+	 *   существующим (пагинация load-more/infinite), false — список
+	 *   заменён целиком (обычная фильтрация/пагинация постранично).
+	 *
+	 * @example
+	 * document.addEventListener('pf-filter:list-updated', function (e) {
+	 *   // e.detail.list     — элемент [pf-list]
+	 *   // e.detail.appended — true, если карточки добавлены, а не заменили список
+	 *   // здесь безопасно (пере)инициализировать интерактивность внутри карточек
+	 * });
+	 */
+	PFForm.prototype.dispatchListUpdatedEvent = function ( appended ) {
+		if ( ! this.listEl ) {
+			return;
+		}
+		this.listEl.dispatchEvent( new CustomEvent( 'pf-filter:list-updated', {
+			bubbles: true,
+			detail: { list: this.listEl, appended: !! appended },
+		} ) );
+	};
+
 	/** checkbox / radio / tags — общий алгоритм строк (для любого варианта оформления). */
 	PFForm.prototype.buildListGroup = function ( groupConfig, groupNode ) {
 		var self = this;
@@ -1489,11 +1521,13 @@
 
 				if ( this.listEl ) {
 					var appendModes = [ 'load-more', 'both', 'infinite' ];
-					if ( appendModes.includes( this.paginationMode ) && ! forceReplace ) {
+					var appended = appendModes.includes( this.paginationMode ) && ! forceReplace;
+					if ( appended ) {
 						this.listEl.insertAdjacentHTML( 'beforeend', data.html );
 					} else {
 						this.listEl.innerHTML = data.html;
 					}
+					this.dispatchListUpdatedEvent( appended );
 				}
 			}
 		}
