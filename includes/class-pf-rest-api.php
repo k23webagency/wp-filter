@@ -116,10 +116,30 @@ class PF_REST_API {
 			return new WP_Error( 'pf_invalid_nonce', __( 'Недействительный nonce.', 'pf-filter' ), array( 'status' => 403 ) );
 		}
 
-		$category = sanitize_text_field( (string) $request->get_param( 'category' ) );
+		$category           = sanitize_text_field( (string) $request->get_param( 'category' ) );
+		$requested_profile  = sanitize_text_field( (string) $request->get_param( 'profile' ) );
 
-		$requested_profile = sanitize_text_field( (string) $request->get_param( 'profile' ) );
-		$resolved_profile  = PF_Config::resolve_profile_id( $requested_profile );
+		return new WP_REST_Response( $this->build_config_data( $category, $requested_profile ), 200 );
+	}
+
+	/**
+	 * Собрать тело ответа /config — общая логика для самого REST-эндпоинта
+	 * (get_config() выше) и для встраивания в разметку страницы при обычной
+	 * загрузке (PF_Plugin::enqueue_scripts(), см. её комментарий): без
+	 * этого встраивания самая первая инициализация формы всегда ждала бы
+	 * отдельный сетевой запрос браузера, прежде чем построить группы
+	 * фильтра — на нестабильном соединении посетителя (мобильная сеть,
+	 * VPN/прокси и т.п.) это и заметная задержка на «сырую» разметку
+	 * шаблонов, и лишняя точка отказа. Прямой PHP-вызов этого метода при
+	 * рендере страницы избегает и сетевого запроса, и танцев с nonce —
+	 * это тот же серверный процесс, а не отдельный HTTP-запрос.
+	 *
+	 * @param string $category          Slug текущей активной категории (обычно пусто при самой первой загрузке).
+	 * @param string $requested_profile Явно запрошенный id профиля (может быть пустым).
+	 * @return array
+	 */
+	public function build_config_data( $category, $requested_profile ) {
+		$resolved_profile = PF_Config::resolve_profile_id( $requested_profile );
 		PF_Config::use_profile( $resolved_profile['id'] );
 
 		$settings = PF_Config::get_settings();
@@ -131,7 +151,7 @@ class PF_REST_API {
 		// было жёстко захардкожено product_cat.
 		$category_taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
 
-		$response = array(
+		return array(
 			'profile'          => $resolved_profile['id'],
 			'ambiguous_profile' => $resolved_profile['ambiguous'],
 			'groups'           => $this->attributes->get_groups( $category_taxonomy, $category ),
@@ -146,8 +166,6 @@ class PF_REST_API {
 				'posts_per_page'      => (int) $settings['posts_per_page'],
 			),
 		);
-
-		return new WP_REST_Response( $response, 200 );
 	}
 
 	/**

@@ -424,8 +424,31 @@
 			} );
 	};
 
-	/** GET /wp-json/pf/v1/config, опционально с ?category=&profile=. */
+	/**
+	 * GET /wp-json/pf/v1/config, опционально с ?category=&profile=.
+	 *
+	 * От этого запроса зависит самая первая инициализация формы (buildGroups()
+	 * и всё, что после него в init()) — задержка тут заметна как вспышка
+	 * "сырой" разметки шаблонов до появления настоящих групп фильтра, а на
+	 * нестабильном соединении посетителя (мобильная сеть, VPN/прокси и т.п.)
+	 * ещё и лишняя точка отказа. Для самого первого вызова (без category, без
+	 * явного профиля формы) сервер уже мог встроить готовый ответ прямо в
+	 * разметку страницы — window.pfInitialConfig (см. PF_Plugin::enqueue_scripts()
+	 * / PF_REST_API::build_config_data()) — тогда сети вообще не нужно ждать.
+	 * Стираем сразу после использования: если на странице несколько [pf-form]
+	 * с разными профилями, второй и следующие не должны принять чужие данные
+	 * за свои. Если embed недоступен (страница не архив ни одного профиля,
+	 * либо это уже не первый вызов) — обычный сетевой запрос с повторными
+	 * попытками: кратковременный сбой тогда просто останется незаметным,
+	 * вместо того чтобы намертво сломать форму до ручной перезагрузки страницы.
+	 */
 	PFForm.prototype.fetchConfig = function ( category ) {
+		if ( window.pfInitialConfig && ! category && ! this.profileId ) {
+			var embedded = window.pfInitialConfig;
+			window.pfInitialConfig = null;
+			return Promise.resolve( embedded );
+		}
+
 		var params = [];
 		if ( category ) {
 			params.push( 'category=' + encodeURIComponent( category ) );
@@ -434,14 +457,28 @@
 			params.push( 'profile=' + encodeURIComponent( this.profileId ) );
 		}
 		var url = window.pfConfig.restUrl + 'config' + ( params.length ? '?' + params.join( '&' ) : '' );
-		return fetch( url, {
-			headers: { 'X-WP-Nonce': window.pfConfig.nonce },
-		} ).then( function ( res ) {
-			if ( ! res.ok ) {
-				throw new Error( 'HTTP ' + res.status );
-			}
-			return res.json();
-		} );
+
+		function attempt( retriesLeft, delay ) {
+			return fetch( url, {
+				headers: { 'X-WP-Nonce': window.pfConfig.nonce },
+			} ).then( function ( res ) {
+				if ( ! res.ok ) {
+					throw new Error( 'HTTP ' + res.status );
+				}
+				return res.json();
+			} ).catch( function ( err ) {
+				if ( retriesLeft <= 0 ) {
+					throw err;
+				}
+				return new Promise( function ( resolve ) {
+					setTimeout( resolve, delay );
+				} ).then( function () {
+					return attempt( retriesLeft - 1, delay * 2 );
+				} );
+			} );
+		}
+
+		return attempt( 2, 800 );
 	};
 
 	// -----------------------------------------------------------------

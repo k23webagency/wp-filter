@@ -185,5 +185,26 @@ final class PF_Plugin {
 				'isArchivePage' => $this->is_archive_page,
 			)
 		);
+
+		// Встраиваем ответ /config прямо в разметку страницы — та же самая
+		// первая загрузка, которую иначе PFForm.prototype.init() дожидался бы
+		// отдельным сетевым запросом (см. build_config_data()). Только для
+		// страницы, которую limit_main_query_posts_per_page() уже опознала
+		// как архив конкретного профиля ($is_archive_page — заодно и признак
+		// того, что вычислять это здесь не напрасно: на страницах без
+		// настроенного архива [pf-form], если он есть, всё равно всегда
+		// получает свой профиль явно через pf-profile, и под этот случай
+		// встраивание не подходит). Активный профиль уже выставлен тем же
+		// хуком (PF_Config::use_profile()) — используем именно его, а не
+		// заново резолвим "первый по порядку": для страницы, распознанной
+		// как архив ИМЕННО этого профиля, это точнее.
+		if ( $this->is_archive_page ) {
+			$initial_config = $this->rest_api->build_config_data( '', PF_Config::get_active_profile_id() );
+			wp_add_inline_script(
+				'pf-filter',
+				'window.pfInitialConfig = ' . wp_json_encode( $initial_config, JSON_HEX_TAG | JSON_HEX_AMP ) . ';',
+				'before'
+			);
+		}
 	}
 }
