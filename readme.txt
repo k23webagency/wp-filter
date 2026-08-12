@@ -3,8 +3,8 @@ Contributors: lucius_wd
 Tags: woocommerce, filter, ajax, catalog, facet, custom post type, multi-profile
 Requires at least: 6.0
 Tested up to: 6.5
-Requires PHP: 8.0
-Stable tag: 2.5.0
+Requires PHP: 7.4
+Stable tag: 2.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -46,6 +46,9 @@ PF Filter работает через контракт HTML-атрибутов `
 4. Разметьте страницу каталога атрибутами `pf-form`, `pf-target` (если форм/списков на странице несколько), `pf-list`, `pf-output`, `pf-templates`, `pf-profile` (если профилей на сайте несколько или блоков фильтрации на странице несколько) и т.д.
 
 == Changelog ==
+
+= 2.5.1 =
+* Снижено минимальное требование к PHP до 7.4 (было 8.0) — плагин проверен и полностью работает на этой версии, теперь его можно использовать на большем числе хостингов.
 
 = 2.5.0 =
 * Каталог теперь показывает готовый фильтр сразу при открытии страницы, без короткой заметной паузы, пока строятся его элементы.

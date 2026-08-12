@@ -73,9 +73,9 @@ class PF_Diagnostics {
 		$checks[] = $this->make_check(
 			'php_version',
 			__( 'Версия PHP', 'pf-filter' ),
-			version_compare( PHP_VERSION, '8.0', '>=' ),
+			version_compare( PHP_VERSION, '7.4', '>=' ),
 			'error',
-			sprintf( '%s (требуется 8.0+)', PHP_VERSION )
+			sprintf( '%s (требуется 7.4+)', PHP_VERSION )
 		);
 
 		$checks[] = $this->make_check(
