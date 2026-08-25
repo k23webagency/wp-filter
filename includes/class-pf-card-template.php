@@ -253,7 +253,7 @@ class PF_Card_Template {
 	 * (WooCommerce сводит к ним ВСЕ архивы товаров — магазин/категория/тег —
 	 * через собственный template_include, самый частый случай), затем
 	 * archive-{post_type}.php, таксономия-«категория» этого типа записи
-	 * (если настроена, см. PF_Attributes::get_configured_category_tree_taxonomy()),
+	 * (если настроена, см. PF_Attributes::get_configured_category_taxonomy()),
 	 * для post ещё и home.php, и в конце общие archive.php/index.php.
 	 *
 	 * @return string[] Абсолютные пути к существующим файлам, без дублей.
@@ -269,7 +269,7 @@ class PF_Card_Template {
 
 		$hierarchy[] = 'archive-' . $post_type . '.php';
 
-		$category_taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+		$category_taxonomy = $this->attributes->get_configured_category_taxonomy();
 		if ( $category_taxonomy ) {
 			$hierarchy[] = 'taxonomy-' . $category_taxonomy . '.php';
 		}

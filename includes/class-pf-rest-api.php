@@ -145,11 +145,12 @@ class PF_REST_API {
 		$settings = PF_Config::get_settings();
 
 		// Таксономия «категории» резолвится под активный профиль (первая
-		// сконфигурированная group с template=category-tree, иначе первая
-		// иерархическая публичная таксономия настроенного типа записи) — см.
-		// PF_Attributes::get_configured_category_tree_taxonomy(). Раньше здесь
+		// сконфигурированная группа на иерархической таксономии — независимо от
+		// того, каким шаблоном она отображается, — иначе первая иерархическая
+		// публичная таксономия настроенного типа записи) — см.
+		// PF_Attributes::get_configured_category_taxonomy(). Раньше здесь
 		// было жёстко захардкожено product_cat.
-		$category_taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+		$category_taxonomy = $this->attributes->get_configured_category_taxonomy();
 
 		return array(
 			'profile'          => $resolved_profile['id'],
@@ -206,9 +207,9 @@ class PF_REST_API {
 
 		// "Активная категория" (авто-сужение счётчиков/видимости остальных
 		// групп под текущий выбор в таксономии-«категории», см.
-		// PF_Attributes::get_configured_category_tree_taxonomy()) — работает для
+		// PF_Attributes::get_configured_category_taxonomy()) — работает для
 		// любой таксономии/типа записи, не только product_cat/product.
-		$category_taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+		$category_taxonomy = $this->attributes->get_configured_category_taxonomy();
 		$active_category   = ( $category_taxonomy && isset( $filters[ $category_taxonomy ][0] ) ) ? $filters[ $category_taxonomy ][0] : '';
 		$groups             = $this->attributes->get_groups( $category_taxonomy, $active_category );
 		$counts          = $this->renderer->get_counts( $groups, $filters, $logic, $this->query_builder );

@@ -950,7 +950,7 @@ class PF_Diagnostics {
 			return array();
 		}
 
-		$taxonomy = $this->attributes->get_configured_category_tree_taxonomy();
+		$taxonomy = $this->attributes->get_configured_category_taxonomy();
 		if ( '' === $taxonomy ) {
 			return array(
 				$this->result( 'warning', __( 'Глубина дерева категорий', 'pf-filter' ), __( 'Не удалось определить иерархическую таксономию для проверки — настройте группу с шаблоном category-tree.', 'pf-filter' ) ),
