@@ -230,6 +230,14 @@ class PF_Renderer {
 	 * Подсчёт количества товаров по каждому значению каждой активной группы
 	 * при текущих фильтрах, не учитывая фильтр самой этой группы (facet UX).
 	 *
+	 * $groups используется здесь только чтобы определить, какие ПОЛЯ вообще
+	 * релевантны текущей выбранной категории (присутствие поля среди ключей
+	 * ответа — то, чем клиент решает, скрыть ли группу целиком, см.
+	 * PF_Attributes::get_groups()); значения из $group['values'] НЕ
+	 * используются — список значений для подсчёта каждого поля берётся
+	 * отдельно, полным, без урезания по категории (см.
+	 * PF_Attributes::get_all_value_slugs() и её комментарий про то, почему).
+	 *
 	 * @param array    $groups        Группы из /config (с полем field/values, либо field/min/max для range).
 	 * @param array    $filters       Текущие активные фильтры (санированные).
 	 * @param string   $logic         Логика между группами.
@@ -256,7 +264,16 @@ class PF_Renderer {
 				continue;
 			}
 
-			$values = isset( $group['values'] ) ? $this->flatten_values( $group['values'] ) : array();
+			// Полный список значений поля — НЕ ограниченный текущей активной
+			// категорией (в отличие от $group['values'], которые build_group()
+			// урезает под авто-релевантность). Уже построенный на клиенте DOM
+			// не знает о категории, действующей ПРЯМО СЕЙЧАС — там могут быть
+			// строки для значений, которых в текущей категории вообще нет; им
+			// тоже нужен честный count:0 в ответе, а не отсутствие ключа (иначе
+			// клиент оставляет для них старую цифру и не применяет zero_values
+			// — обе завязаны на наличие значения среди ключей counts[field]).
+			// См. PF_Attributes::get_all_value_slugs().
+			$values = $this->attributes->get_all_value_slugs( $field );
 			if ( empty( $values ) ) {
 				continue;
 			}
@@ -265,23 +282,6 @@ class PF_Renderer {
 		}
 
 		return $counts;
-	}
-
-	/**
-	 * Свести дерево значений (в т.ч. вложенное дерево категорий) в плоский список slug'ов.
-	 *
-	 * @param array $values Значения группы (могут иметь children).
-	 * @return array
-	 */
-	private function flatten_values( array $values ) {
-		$flat = array();
-		foreach ( $values as $value ) {
-			$flat[] = $value['value'];
-			if ( ! empty( $value['children'] ) ) {
-				$flat = array_merge( $flat, $this->flatten_values( $value['children'] ) );
-			}
-		}
-		return $flat;
 	}
 
 	/**

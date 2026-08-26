@@ -480,6 +480,54 @@ class PF_Attributes {
 	}
 
 	/**
+	 * Полный список slug'ов возможных значений поля группы — БЕЗ ограничения
+	 * текущей активной категорией (в отличие от build_group()/get_groups(),
+	 * которые для авто-релевантности урезают список значений до тех, что
+	 * реально есть в категории). Нужен PF_Renderer::get_counts() для
+	 * facet-счётчиков: DOM на клиенте строится один раз из /config и не
+	 * перестраивается на каждый /products-ответ, поэтому список значений для
+	 * подсчёта обязан покрывать всё, что клиент мог отрендерить, — иначе
+	 * значение, отсутствующее в ТЕКУЩЕЙ выбранной категории, просто выпадает
+	 * из ответа counts вместо честного count:0 (баг 2.6.0 → 2.6.1: клиент
+	 * оставлял для такого значения старую, неактуальную цифру, а настройка
+	 * zero_values для него не срабатывала вовсе — обе завязаны на наличие
+	 * ключа в counts).
+	 *
+	 * @param string $field Field-идентификатор группы (таксономия, custom_*, stock_status).
+	 * @return string[]
+	 */
+	public function get_all_value_slugs( $field ) {
+		if ( 'stock_status' === $field ) {
+			return array_keys( $this->get_stock_status_labels() );
+		}
+
+		if ( taxonomy_exists( $field ) ) {
+			$slugs = get_terms(
+				array(
+					'taxonomy'   => $field,
+					'hide_empty' => true,
+					'fields'     => 'slugs',
+				)
+			);
+			return is_wp_error( $slugs ) ? array() : $slugs;
+		}
+
+		if ( 0 === strpos( $field, 'custom_' ) ) {
+			$raw_name = $this->resolve_custom_attribute_name( $field );
+			if ( null === $raw_name ) {
+				return array();
+			}
+			$attributes = $this->scan_custom_attributes();
+			if ( ! isset( $attributes[ $raw_name ] ) ) {
+				return array();
+			}
+			return array_map( 'sanitize_title', array_keys( $attributes[ $raw_name ] ) );
+		}
+
+		return array();
+	}
+
+	/**
 	 * ID опубликованных записей настроенного типа записи (см.
 	 * PF_Config::get_post_type()) в заданных значениях заданной таксономии
 	 * (для авто-релевантности групп — см. get_groups()). Несколько значений —
