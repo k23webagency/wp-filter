@@ -240,14 +240,7 @@ defined( 'ABSPATH' ) || exit;
 							<th><?php esc_html_e( 'Поле', 'pf-filter' ); ?></th>
 							<th><?php esc_html_e( 'Название', 'pf-filter' ); ?></th>
 							<th><?php esc_html_e( 'Шаблон', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Вариант оформления', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Логика в группе', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Поиск', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Range: шаг / ед.', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Глубина вложенности', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Сортировка значений', 'pf-filter' ); ?></th>
-							<th><?php esc_html_e( 'Нулевые значения', 'pf-filter' ); ?></th>
+							<th><?php esc_html_e( 'Настройки', 'pf-filter' ); ?></th>
 							<th></th>
 						</tr>
 					</thead>

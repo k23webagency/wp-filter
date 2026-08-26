@@ -23,6 +23,37 @@
 		initAddSort( root );
 		initRemoveRow( root );
 		initAcfColorFieldFilter( root );
+		initGroupSettingsToggle( root );
+	}
+
+	// ---- Пара строк группы: основная + раскрывающаяся с доп. настройками ---
+	// (см. PF_Admin::render_group_row() — каждая группа таблицы pf-groups-table
+	// это ДВЕ соседние <tr>, не одна: tr.pf-group-row всегда видна и несёт
+	// drag-and-drop, следом за ней — tr.pf-group-detail-row со свёрнутыми по
+	// умолчанию настройками. Все операции над строками группы (реордер,
+	// переиндексация, добавление, удаление, поиск полей внутри группы) должны
+	// учитывать обе строки как одно целое — иначе detail-строка отвяжется от
+	// своей главной строки или получит чужой индекс. У pf-sort-table (опции
+	// сортировки) такой пары нет — detailOf()/queryInPair() для неё просто
+	// всегда возвращают null/ищут только в самой строке, поведение как раньше.
+
+	/** Detail-строка, следующая сразу за главной строкой группы, или null. */
+	function detailOf( row ) {
+		var next = row ? row.nextElementSibling : null;
+		return ( next && next.classList.contains( 'pf-group-detail-row' ) ) ? next : null;
+	}
+
+	/** Найти элемент по селектору в главной строке ИЛИ в её detail-строке. */
+	function queryInPair( row, selector ) {
+		if ( ! row ) {
+			return null;
+		}
+		var found = row.querySelector( selector );
+		if ( found ) {
+			return found;
+		}
+		var detail = detailOf( row );
+		return detail ? detail.querySelector( selector ) : null;
 	}
 
 	// ---- Табы -----------------------------------------------------------
@@ -161,7 +192,9 @@
 
 		function applyFilter( templateSelect ) {
 			var row           = templateSelect.closest( 'tr' );
-			var variantSelect = row ? row.querySelector( '.pf-template-variant-select' ) : null;
+			// .pf-template-variant-select теперь живёт в раскрывающейся detail-строке
+			// этой же группы, не в главной — см. queryInPair().
+			var variantSelect = queryInPair( row, '.pf-template-variant-select' );
 			if ( ! variantSelect ) {
 				return;
 			}
@@ -256,10 +289,22 @@
 			var draggingIndex = rows.indexOf( dragging );
 			var targetIndex = rows.indexOf( target );
 
+			// dragging/target — главные строки (только они draggable="true"); если
+			// у любой из них есть detail-строка (см. detailOf()), та должна
+			// переехать вместе со своей главной, иначе отвяжется от неё.
+			var draggingDetail = detailOf( dragging );
+			var targetDetail   = detailOf( target );
+
 			if ( draggingIndex < targetIndex ) {
-				target.after( dragging );
+				// Вставить ПОСЛЕ target — а если у target есть своя detail-строка,
+				// то после неё, иначе dragging окажется между главной target-строкой
+				// и её собственной detail-строкой.
+				( targetDetail || target ).after( dragging );
 			} else {
 				target.before( dragging );
+			}
+			if ( draggingDetail ) {
+				dragging.after( draggingDetail );
 			}
 
 			reindexTable( body.closest( 'table' ) );
@@ -269,6 +314,14 @@
 	/**
 	 * После реордера/добавления/удаления строк — переиндексировать имена
 	 * input/select полей внутри таблицы, чтобы индексы шли подряд с 0.
+	 *
+	 * У pf-groups-table строка группы — это ДВЕ соседние <tr> (главная +
+	 * detail, см. queryInPair() выше): обе должны получить ОДИН и тот же
+	 * индекс, иначе поля detail-строки попадут в чужой (соседний) элемент
+	 * массива groups при сохранении настроек. detail-строки сами по себе не
+	 * считаются — индекс им проставляется вместе с предшествующей главной.
+	 * У pf-sort-table такой пары нет — там каждая <tr> просто по порядку
+	 * получает свой индекс, как и раньше.
 	 */
 	function reindexTable( table ) {
 		if ( ! table ) {
@@ -279,14 +332,27 @@
 			return;
 		}
 
-		var rows = table.querySelectorAll( 'tbody > tr' );
-		rows.forEach( function ( row, index ) {
+		function applyIndex( row, index ) {
 			row.setAttribute( 'data-index', index );
 			row.querySelectorAll( '[name]' ).forEach( function ( field ) {
 				var name = field.getAttribute( 'name' );
 				var re = new RegExp( '^' + escapeRegExp( prefix ) + '\\[[^\\]]*\\]' );
 				field.setAttribute( 'name', name.replace( re, prefix + '[' + index + ']' ) );
 			} );
+		}
+
+		var rows  = table.querySelectorAll( 'tbody > tr' );
+		var index = 0;
+		rows.forEach( function ( row ) {
+			if ( row.classList.contains( 'pf-group-detail-row' ) ) {
+				return; // переиндексируется вместе с предшествующей главной строкой ниже.
+			}
+			applyIndex( row, index );
+			var detail = detailOf( row );
+			if ( detail ) {
+				applyIndex( detail, index );
+			}
+			index++;
 		} );
 	}
 
@@ -307,23 +373,36 @@
 				}
 
 				var body = table.querySelector( 'tbody.pf-groups-body' );
-				var newRow = tpl.content.querySelector( 'tr' ).cloneNode( true );
-				var index = body.children.length;
+				// Шаблон содержит ДВЕ <tr> на группу (главная + detail, см.
+				// PF_Admin::render_group_row()) — клонировать нужно обе, иначе у новой
+				// группы не будет раскрывающейся панели настроек вообще.
+				var newRows = Array.prototype.map.call( tpl.content.querySelectorAll( 'tr' ), function ( tr ) {
+					return tr.cloneNode( true );
+				} );
+				// Индекс — по числу уже существующих ГЛАВНЫХ строк, не всех <tr>
+				// (иначе detail-строки задвоили бы счёт и новой группе достался бы
+				// вдвое больший индекс, чем реальное число групп).
+				var index = body.querySelectorAll( 'tr.pf-group-row' ).length;
 
-				newRow.querySelectorAll( '[name]' ).forEach( function ( field ) {
-					field.setAttribute( 'name', field.getAttribute( 'name' ).replace( /__INDEX__/g, index ) );
+				newRows.forEach( function ( newRow ) {
+					newRow.querySelectorAll( '[name]' ).forEach( function ( field ) {
+						field.setAttribute( 'name', field.getAttribute( 'name' ).replace( /__INDEX__/g, index ) );
+					} );
+
+					var customPrefix = table.getAttribute( 'data-name-prefix' );
+					if ( customPrefix ) {
+						newRow.querySelectorAll( '[name]' ).forEach( function ( field ) {
+							var name = field.getAttribute( 'name' );
+							field.setAttribute( 'name', name.replace( /^pf_filter_settings\[groups\]/, customPrefix ) );
+						} );
+					}
+
+					body.appendChild( newRow );
 				} );
 
-				var customPrefix = table.getAttribute( 'data-name-prefix' );
-				if ( customPrefix ) {
-					newRow.querySelectorAll( '[name]' ).forEach( function ( field ) {
-						var name = field.getAttribute( 'name' );
-						field.setAttribute( 'name', name.replace( /^pf_filter_settings\[groups\]/, customPrefix ) );
-					} );
-				}
-
-				body.appendChild( newRow );
 				initTemplateDataAttr( root );
+
+				var newRow = newRows[ 0 ]; // главная строка новой группы.
 
 				// Список шаблонов новой строки сразу сузить до совместимых с её
 				// полем по умолчанию (тот же делегированный обработчик change).
@@ -377,6 +456,13 @@
 			var row = btn.closest( 'tr' );
 			var table = row ? row.closest( 'table' ) : null;
 			if ( row ) {
+				// У pf-groups-table удаление главной строки должно забрать с собой и
+				// её detail-строку (см. detailOf()) — иначе она осиротеет в DOM и
+				// займёт чужой индекс при следующей reindexTable().
+				var detail = detailOf( row );
+				if ( detail ) {
+					detail.remove();
+				}
 				row.remove();
 			}
 			if ( table && table.classList.contains( 'pf-groups-table' ) ) {
@@ -385,6 +471,31 @@
 			if ( table && table.classList.contains( 'pf-sort-table' ) ) {
 				reindexTable( table );
 			}
+		} );
+	}
+
+	// ---- Раскрывающаяся панель настроек группы (аккордеон) -----------------
+
+	/**
+	 * Кнопка "Настройки" в главной строке группы разворачивает/сворачивает её
+	 * detail-строку (см. detailOf()). Свёрнута по умолчанию — так задано в
+	 * самой разметке (PF_Admin::render_group_row(): без класса is-open и с
+	 * aria-expanded="false"), здесь только переключение состояния по клику.
+	 */
+	function initGroupSettingsToggle( root ) {
+		root.addEventListener( 'click', function ( e ) {
+			var btn = e.target.closest( '.pf-group-settings-toggle' );
+			if ( ! btn ) {
+				return;
+			}
+			var row = btn.closest( 'tr' );
+			var detail = detailOf( row );
+			if ( ! detail ) {
+				return;
+			}
+			var expanded = detail.classList.toggle( 'is-open' );
+			btn.classList.toggle( 'is-open', expanded );
+			btn.setAttribute( 'aria-expanded', expanded ? 'true' : 'false' );
 		} );
 	}
 
@@ -405,7 +516,9 @@
 				return;
 			}
 			var row = fieldSelect.closest( 'tr' );
-			var metaSelect = row ? row.querySelector( '.pf-color-meta-select' ) : null;
+			// .pf-color-meta-select теперь живёт в раскрывающейся detail-строке этой
+			// же группы, не в главной — см. queryInPair().
+			var metaSelect = queryInPair( row, '.pf-color-meta-select' );
 			if ( ! metaSelect ) {
 				return;
 			}

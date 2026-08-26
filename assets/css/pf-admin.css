@@ -17,12 +17,10 @@
 }
 
 /*
- * У таблицы групп фильтра много колонок (доп. настройки под каждый шаблон
- * — range/tree/colors/value_sort/zero_values — показаны/скрыты через
- * visibility, см. ниже, поэтому зарезервированы ВСЕ сразу). Без своего
- * scroll-контейнера широкая таблица распирала всю страницу настроек
- * (горизонтальный скролл у всего окна, съезжающее меню админки) — теперь
- * скроллится только сама таблица, макет страницы вокруг не меняется.
+ * Подстраховка на узких экранах/при свёрнутом меню админки — теперь, когда
+ * большая часть настроек группы ушла в раскрывающуюся панель (см. ниже),
+ * основная таблица всего 7 колонок и обычно не переполняется, но полосу
+ * прокрутки лучше держать на самой таблице, а не на всей странице.
  */
 .pf-filter-admin .pf-groups-table-wrap {
 	overflow-x: auto;
@@ -44,24 +42,88 @@
 	box-shadow: inset 0 2px 0 #2271b1;
 }
 
-/*
- * visibility, не display: none — у <td> с display:none ячейка полностью
- * выпадает из раскладки СТРОКИ, а разные строки скрывают разный набор из
- * этих трёх ячеек (у каждой видна только одна, применимая к её шаблону).
- * Из-за этого оставшиеся видимые ячейки в разных строках съезжали на разное
- * число столбцов влево и оказывались под чужими заголовками таблицы.
- * visibility:hidden сохраняет ячейку как зарезервированный столбец —
- * выравнивание со строкой заголовков не ломается, а содержимое всё равно
- * не видно, когда неприменимо к текущему шаблону строки.
- */
-.pf-filter-admin .pf-extra-range,
-.pf-filter-admin .pf-extra-tree,
-.pf-filter-admin .pf-extra-colors {
-	visibility: hidden;
+.pf-filter-admin template {
+	display: none;
 }
 
-.pf-filter-admin tr[data-template="range"] .pf-extra-range {
-	visibility: visible;
+/* ---- Раскрывающаяся панель настроек группы (аккордеон) ------------------
+ * Каждая группа в pf-groups-table — ДВЕ соседние <tr> (см.
+ * PF_Admin::render_group_row() и detailOf() в pf-admin.js): главная всегда
+ * видна, следом за ней detail-строка с менее востребованными настройками,
+ * свёрнута по умолчанию, открывается кнопкой "Настройки" (pf-admin.js,
+ * initGroupSettingsToggle()). Здесь (в отличие от старой раскладки, где эти
+ * же поля были ячейками ОДНОЙ общей строки) каждая деталь-панель независима
+ * от соседних групп, поэтому можно просто display:none то, что не относится
+ * к шаблону этой группы, а не резервировать место через visibility.
+ */
+.pf-filter-admin tr.pf-group-detail-row {
+	display: none;
+}
+
+.pf-filter-admin tr.pf-group-detail-row.is-open {
+	display: table-row;
+}
+
+.pf-filter-admin table.widefat.pf-groups-table tr.pf-group-detail-row > td {
+	/* Перебивает базовый padding:8px у всех td таблицы (см. правило выше) —
+	   у своей собственной панели ниже есть свой отступ, дублировать не нужно. */
+	padding: 0;
+}
+
+.pf-filter-admin .pf-group-detail-panel {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px 28px;
+	padding: 14px 16px;
+	background: #f6f7f7;
+	border-top: 1px solid #dcdcde;
+	border-bottom: 1px solid #dcdcde;
+}
+
+.pf-filter-admin .pf-detail-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 150px;
+}
+
+.pf-filter-admin .pf-detail-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.pf-filter-admin .pf-group-settings-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.pf-filter-admin .pf-group-settings-warning {
+	color: #b32d2e;
+}
+
+.pf-filter-admin .pf-group-settings-chevron {
+	display: inline-block;
+	transition: transform .15s ease;
+}
+
+.pf-filter-admin .pf-group-settings-toggle.is-open .pf-group-settings-chevron {
+	transform: rotate(180deg);
+}
+
+/* Скрыть по умолчанию доп.-поля, не относящиеся к любому шаблону (Range/
+ * Глубина/Цвета) — специфичность .pf-detail-field.pf-extra-X (0,2,0) выше
+ * общего .pf-detail-field (0,1,0), поэтому этот блок гарантированно
+ * побеждает независимо от порядка объявления в файле. */
+.pf-filter-admin .pf-detail-field.pf-extra-range,
+.pf-filter-admin .pf-detail-field.pf-extra-tree,
+.pf-filter-admin .pf-detail-field.pf-extra-colors {
+	display: none;
+}
+
+.pf-filter-admin tr.pf-group-row[data-template="range"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-range {
+	display: flex;
 }
 
 /* Глубина дерева применима к category-tree и к любому плоскому шаблону
@@ -70,47 +132,22 @@
    таксономии/кастомного атрибута/диапазона ограничение по глубине не имеет
    смысла и в списке шаблонов такого поля category-tree не предлагается
    вовсе. */
-.pf-filter-admin tr[data-hierarchical="1"] .pf-extra-tree {
-	visibility: visible;
+.pf-filter-admin tr.pf-group-row[data-hierarchical="1"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-tree {
+	display: flex;
 }
 
-.pf-filter-admin tr[data-template="checkbox"] .pf-extra-colors,
-.pf-filter-admin tr[data-template="radio"] .pf-extra-colors,
-.pf-filter-admin tr[data-template="tags"] .pf-extra-colors {
-	visibility: visible;
+.pf-filter-admin tr.pf-group-row[data-template="checkbox"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors,
+.pf-filter-admin tr.pf-group-row[data-template="radio"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors,
+.pf-filter-admin tr.pf-group-row[data-template="tags"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors {
+	display: flex;
 }
 
-/* Сортировка значений применима ко всем шаблонам со списком значений —
-   у range (диапазон/слайдер) списка значений нет, там скрываем. */
-.pf-filter-admin .pf-extra-value-sort {
-	visibility: visible;
-}
-
-.pf-filter-admin tr[data-template="range"] .pf-extra-value-sort {
-	visibility: hidden;
-}
-
-/* Поведение нулевых значений (см. pf-extra-value-sort выше) — та же логика,
-   у range нет дискретных значений, скрывать нечего. */
-.pf-filter-admin .pf-extra-zero-values {
-	visibility: visible;
-}
-
-.pf-filter-admin tr[data-template="range"] .pf-extra-zero-values {
-	visibility: hidden;
-}
-
-/* Поиск применим к любому шаблону со списком значений — у range (диапазон/
-   слайдер) искать нечего, поле поиска там в принципе не появляется. */
-.pf-filter-admin .pf-extra-search {
-	visibility: visible;
-}
-
-.pf-filter-admin tr[data-template="range"] .pf-extra-search {
-	visibility: hidden;
-}
-
-.pf-filter-admin template {
+/* Поиск / сортировка значений / нулевые значения — видны по умолчанию
+   (.pf-detail-field), скрываются только для range (диапазон/слайдер): там
+   нет ни списка дискретных значений, ни поля поиска. */
+.pf-filter-admin tr.pf-group-row[data-template="range"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-search,
+.pf-filter-admin tr.pf-group-row[data-template="range"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-value-sort,
+.pf-filter-admin tr.pf-group-row[data-template="range"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-zero-values {
 	display: none;
 }
 

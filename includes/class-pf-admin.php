@@ -566,8 +566,16 @@ class PF_Admin {
 	}
 
 	/**
-	 * Отрендерить одну строку группы фильтра (используется и для существующих
-	 * групп, и как HTML-шаблон для JS при добавлении новой строки).
+	 * Отрендерить ОДНУ группу фильтра — используется и для существующих
+	 * групп, и как HTML-шаблон для JS при добавлении новой строки. На выходе
+	 * ДВЕ строки таблицы, не одна: основная (`tr.pf-group-row`, всегда видна,
+	 * несёт drag-and-drop) и следом за ней раскрывающаяся `tr.pf-group-detail-row`
+	 * с менее востребованными настройками (свёрнута по умолчанию, открывается
+	 * кнопкой "Настройки" — см. initGroupSettingsToggle() в pf-admin.js). Обе
+	 * строки всегда идут парой и должны оставаться соседними в DOM — реордер
+	 * (initDragAndDrop()), переиндексация (reindexTable()), добавление
+	 * (initAddGroup()) и удаление (initRemoveRow()) строк в pf-admin.js это
+	 * учитывают.
 	 *
 	 * @param string $name_prefix         Префикс имени поля, напр. "pf_filter_settings[groups]".
 	 * @param string $index               Индекс строки (число либо "__INDEX__" для JS-шаблона).
@@ -623,6 +631,13 @@ class PF_Admin {
 				);
 			}
 		}
+		// Настройки, вынесенные ниже в раскрывающуюся панель (tr.pf-group-detail-row),
+		// не относящиеся к текущему шаблону всё равно предупреждают о нехватке
+		// разметки — если панель свёрнута, админ может это не увидеть, поэтому
+		// предупреждение дублируется маркером прямо на кнопке "Настройки".
+		$has_warning = ( $search && false === $search_available )
+			|| null !== $tree_depth_warning
+			|| ( $color_meta_key && false === $colors_available );
 		?>
 		<tr class="pf-group-row" draggable="true" data-index="<?php echo esc_attr( $index ); ?>">
 			<td class="pf-drag-handle" title="<?php esc_attr_e( 'Перетащить для изменения порядка', 'pf-filter' ); ?>">☰</td>
@@ -647,80 +662,100 @@ class PF_Admin {
 				</select>
 			</td>
 			<td>
-				<?php
-				/*
-				 * Подпись варианта — сам его слаг из разметки (pf-template-variant),
-				 * человекочитаемой подписи не существует: верстальщик придумывает
-				 * это имя сам, плагину неоткуда взять для него перевод. Список
-				 * options — ВСЕ найденные варианты всех шаблонов сразу (не только
-				 * текущего $template) с data-template на каждом — JS (initTemplateVariantFilter
-				 * в pf-admin.js) сужает видимые опции до совместимых с выбранным в
-				 * этой же строке [template] при загрузке страницы и при его смене,
-				 * тем же приёмом, что и pf-field-select сужает список [template].
-				 */
-				?>
-				<select name="<?php echo esc_attr( $n ); ?>[template_variant]" class="pf-template-variant-select">
-					<option value=""><?php esc_html_e( '— по умолчанию —', 'pf-filter' ); ?></option>
-					<?php foreach ( $template_variants as $tpl => $variants ) : ?>
-						<?php foreach ( $variants as $variant ) : ?>
-							<option value="<?php echo esc_attr( $variant ); ?>" data-template="<?php echo esc_attr( $tpl ); ?>" <?php selected( $tpl === $template && $variant === $template_variant ); ?>><?php echo esc_html( $variant ); ?></option>
-						<?php endforeach; ?>
-					<?php endforeach; ?>
-				</select>
-			</td>
-			<td>
-				<select name="<?php echo esc_attr( $n ); ?>[logic]">
-					<option value="or" <?php selected( $logic, 'or' ); ?>><?php esc_html_e( 'OR', 'pf-filter' ); ?></option>
-					<option value="and" <?php selected( $logic, 'and' ); ?>><?php esc_html_e( 'AND', 'pf-filter' ); ?></option>
-				</select>
-			</td>
-			<td class="pf-extra-search">
-				<label title="<?php esc_attr_e( 'Если выключено — поле поиска в этой группе не показывается никогда, независимо от порога', 'pf-filter' ); ?>">
-					<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[search]" value="1" <?php checked( $search ); ?> />
-					<?php esc_html_e( 'Поиск', 'pf-filter' ); ?>
-				</label>
-				<?php if ( $search && false === $search_available ) : ?>
-					<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден input[type=text] — поле поиска показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет поля в шаблоне', 'pf-filter' ); ?></span>
-				<?php endif; ?>
-			</td>
-			<td class="pf-extra-range">
-				<input type="number" step="any" name="<?php echo esc_attr( $n ); ?>[step]" value="<?php echo esc_attr( $step ); ?>" placeholder="<?php esc_attr_e( 'Шаг', 'pf-filter' ); ?>" style="width:70px" />
-				<input type="text" name="<?php echo esc_attr( $n ); ?>[unit]" value="<?php echo esc_attr( $unit ); ?>" placeholder="<?php esc_attr_e( 'Ед.', 'pf-filter' ); ?>" style="width:50px" />
-			</td>
-			<td class="pf-extra-tree">
-				<input type="number" min="1" name="<?php echo esc_attr( $n ); ?>[tree_depth]" value="<?php echo esc_attr( $tree_d ); ?>" placeholder="<?php esc_attr_e( 'Глубина', 'pf-filter' ); ?>" style="width:70px" />
-				<?php if ( $tree_depth_warning ) : ?>
-					<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'Значения глубже настроенного уровня не будут показаны в этой группе.', 'pf-filter' ); ?>">⚠ <?php echo esc_html( $tree_depth_warning ); ?></span>
-				<?php endif; ?>
-			</td>
-			<td class="pf-extra-colors">
-				<select name="<?php echo esc_attr( $n ); ?>[color_meta_key]" class="pf-color-meta-select" title="<?php esc_attr_e( 'Поле ACF/term meta термина, где хранится его цвет.', 'pf-filter' ); ?>">
-					<option value=""><?php esc_html_e( '— нет —', 'pf-filter' ); ?></option>
-					<?php foreach ( $acf_fields as $af ) : ?>
-						<option value="<?php echo esc_attr( $af['name'] ); ?>" <?php selected( $color_meta_key, $af['name'] ); ?>><?php echo esc_html( $af['label'] . ' (' . $af['name'] . ')' ); ?></option>
-					<?php endforeach; ?>
-				</select>
-				<?php if ( $color_meta_key && false === $colors_available ) : ?>
-					<p style="color:#b32d2e;font-size:11px;margin:4px 0 0;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден [pf-filter-swatch] — цвета показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет pf-filter-swatch в шаблоне', 'pf-filter' ); ?></p>
-				<?php endif; ?>
-			</td>
-			<td class="pf-extra-value-sort">
-				<select name="<?php echo esc_attr( $n ); ?>[value_sort]">
-					<option value="name_asc" <?php selected( $value_sort, 'name_asc' ); ?>><?php esc_html_e( 'По алфавиту (А→Я)', 'pf-filter' ); ?></option>
-					<option value="name_desc" <?php selected( $value_sort, 'name_desc' ); ?>><?php esc_html_e( 'По алфавиту (Я→А)', 'pf-filter' ); ?></option>
-					<option value="count_desc" <?php selected( $value_sort, 'count_desc' ); ?>><?php esc_html_e( 'По кол-ву (сначала больше)', 'pf-filter' ); ?></option>
-					<option value="count_asc" <?php selected( $value_sort, 'count_asc' ); ?>><?php esc_html_e( 'По кол-ву (сначала меньше)', 'pf-filter' ); ?></option>
-				</select>
-			</td>
-			<td class="pf-extra-zero-values">
-				<select name="<?php echo esc_attr( $n ); ?>[zero_values]" title="<?php esc_attr_e( 'Что делать со значением, у которого 0 подходящих записей под текущий выбор остальных фильтров.', 'pf-filter' ); ?>">
-					<option value="none" <?php selected( $zero_values, 'none' ); ?>><?php esc_html_e( 'Не менять', 'pf-filter' ); ?></option>
-					<option value="hide" <?php selected( $zero_values, 'hide' ); ?>><?php esc_html_e( 'Скрывать', 'pf-filter' ); ?></option>
-					<option value="disable" <?php selected( $zero_values, 'disable' ); ?>><?php esc_html_e( 'Деактивировать', 'pf-filter' ); ?></option>
-				</select>
+				<button type="button" class="button pf-group-settings-toggle" aria-expanded="false" title="<?php esc_attr_e( 'Вариант оформления, логика, поиск, диапазон, глубина вложенности, цвета, сортировка и обработка нулевых значений', 'pf-filter' ); ?>">
+					<?php if ( $has_warning ) : ?><span class="pf-group-settings-warning" title="<?php esc_attr_e( 'В свёрнутых настройках есть предупреждение — разверните, чтобы увидеть', 'pf-filter' ); ?>">⚠</span><?php endif; ?>
+					<?php esc_html_e( 'Настройки', 'pf-filter' ); ?>
+					<span class="pf-group-settings-chevron">▾</span>
+				</button>
 			</td>
 			<td>
 				<button type="button" class="button-link-delete pf-remove-row"><?php esc_html_e( 'Удалить', 'pf-filter' ); ?></button>
+			</td>
+		</tr>
+		<tr class="pf-group-detail-row">
+			<td colspan="7">
+				<div class="pf-group-detail-panel">
+					<div class="pf-detail-field">
+						<label class="pf-detail-label"><?php esc_html_e( 'Вариант оформления', 'pf-filter' ); ?></label>
+						<?php
+						/*
+						 * Подпись варианта — сам его слаг из разметки (pf-template-variant),
+						 * человекочитаемой подписи не существует: верстальщик придумывает
+						 * это имя сам, плагину неоткуда взять для него перевод. Список
+						 * options — ВСЕ найденные варианты всех шаблонов сразу (не только
+						 * текущего $template) с data-template на каждом — JS (initTemplateVariantFilter
+						 * в pf-admin.js) сужает видимые опции до совместимых с выбранным в
+						 * этой же строке [template] при загрузке страницы и при его смене,
+						 * тем же приёмом, что и pf-field-select сужает список [template].
+						 */
+						?>
+						<select name="<?php echo esc_attr( $n ); ?>[template_variant]" class="pf-template-variant-select">
+							<option value=""><?php esc_html_e( '— по умолчанию —', 'pf-filter' ); ?></option>
+							<?php foreach ( $template_variants as $tpl => $variants ) : ?>
+								<?php foreach ( $variants as $variant ) : ?>
+									<option value="<?php echo esc_attr( $variant ); ?>" data-template="<?php echo esc_attr( $tpl ); ?>" <?php selected( $tpl === $template && $variant === $template_variant ); ?>><?php echo esc_html( $variant ); ?></option>
+								<?php endforeach; ?>
+							<?php endforeach; ?>
+						</select>
+					</div>
+					<div class="pf-detail-field">
+						<label class="pf-detail-label"><?php esc_html_e( 'Логика в группе', 'pf-filter' ); ?></label>
+						<select name="<?php echo esc_attr( $n ); ?>[logic]">
+							<option value="or" <?php selected( $logic, 'or' ); ?>><?php esc_html_e( 'OR', 'pf-filter' ); ?></option>
+							<option value="and" <?php selected( $logic, 'and' ); ?>><?php esc_html_e( 'AND', 'pf-filter' ); ?></option>
+						</select>
+					</div>
+					<div class="pf-detail-field pf-extra-search">
+						<label class="pf-detail-label" title="<?php esc_attr_e( 'Если выключено — поле поиска в этой группе не показывается никогда, независимо от порога', 'pf-filter' ); ?>">
+							<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[search]" value="1" <?php checked( $search ); ?> />
+							<?php esc_html_e( 'Поиск', 'pf-filter' ); ?>
+						</label>
+						<?php if ( $search && false === $search_available ) : ?>
+							<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден input[type=text] — поле поиска показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет поля в шаблоне', 'pf-filter' ); ?></span>
+						<?php endif; ?>
+					</div>
+					<div class="pf-detail-field pf-extra-range">
+						<label class="pf-detail-label"><?php esc_html_e( 'Range: шаг / ед.', 'pf-filter' ); ?></label>
+						<input type="number" step="any" name="<?php echo esc_attr( $n ); ?>[step]" value="<?php echo esc_attr( $step ); ?>" placeholder="<?php esc_attr_e( 'Шаг', 'pf-filter' ); ?>" style="width:70px" />
+						<input type="text" name="<?php echo esc_attr( $n ); ?>[unit]" value="<?php echo esc_attr( $unit ); ?>" placeholder="<?php esc_attr_e( 'Ед.', 'pf-filter' ); ?>" style="width:50px" />
+					</div>
+					<div class="pf-detail-field pf-extra-tree">
+						<label class="pf-detail-label"><?php esc_html_e( 'Глубина вложенности', 'pf-filter' ); ?></label>
+						<input type="number" min="1" name="<?php echo esc_attr( $n ); ?>[tree_depth]" value="<?php echo esc_attr( $tree_d ); ?>" placeholder="<?php esc_attr_e( 'Глубина', 'pf-filter' ); ?>" style="width:70px" />
+						<?php if ( $tree_depth_warning ) : ?>
+							<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'Значения глубже настроенного уровня не будут показаны в этой группе.', 'pf-filter' ); ?>">⚠ <?php echo esc_html( $tree_depth_warning ); ?></span>
+						<?php endif; ?>
+					</div>
+					<div class="pf-detail-field pf-extra-colors">
+						<label class="pf-detail-label"><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></label>
+						<select name="<?php echo esc_attr( $n ); ?>[color_meta_key]" class="pf-color-meta-select" title="<?php esc_attr_e( 'Поле ACF/term meta термина, где хранится его цвет.', 'pf-filter' ); ?>">
+							<option value=""><?php esc_html_e( '— нет —', 'pf-filter' ); ?></option>
+							<?php foreach ( $acf_fields as $af ) : ?>
+								<option value="<?php echo esc_attr( $af['name'] ); ?>" <?php selected( $color_meta_key, $af['name'] ); ?>><?php echo esc_html( $af['label'] . ' (' . $af['name'] . ')' ); ?></option>
+							<?php endforeach; ?>
+						</select>
+						<?php if ( $color_meta_key && false === $colors_available ) : ?>
+							<p style="color:#b32d2e;font-size:11px;margin:4px 0 0;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден [pf-filter-swatch] — цвета показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет pf-filter-swatch в шаблоне', 'pf-filter' ); ?></p>
+						<?php endif; ?>
+					</div>
+					<div class="pf-detail-field pf-extra-value-sort">
+						<label class="pf-detail-label"><?php esc_html_e( 'Сортировка значений', 'pf-filter' ); ?></label>
+						<select name="<?php echo esc_attr( $n ); ?>[value_sort]">
+							<option value="name_asc" <?php selected( $value_sort, 'name_asc' ); ?>><?php esc_html_e( 'По алфавиту (А→Я)', 'pf-filter' ); ?></option>
+							<option value="name_desc" <?php selected( $value_sort, 'name_desc' ); ?>><?php esc_html_e( 'По алфавиту (Я→А)', 'pf-filter' ); ?></option>
+							<option value="count_desc" <?php selected( $value_sort, 'count_desc' ); ?>><?php esc_html_e( 'По кол-ву (сначала больше)', 'pf-filter' ); ?></option>
+							<option value="count_asc" <?php selected( $value_sort, 'count_asc' ); ?>><?php esc_html_e( 'По кол-ву (сначала меньше)', 'pf-filter' ); ?></option>
+						</select>
+					</div>
+					<div class="pf-detail-field">
+						<label class="pf-detail-label"><?php esc_html_e( 'Нулевые значения', 'pf-filter' ); ?></label>
+						<select name="<?php echo esc_attr( $n ); ?>[zero_values]" title="<?php esc_attr_e( 'Что делать со значением, у которого 0 подходящих записей под текущий выбор остальных фильтров.', 'pf-filter' ); ?>">
+							<option value="none" <?php selected( $zero_values, 'none' ); ?>><?php esc_html_e( 'Не менять', 'pf-filter' ); ?></option>
+							<option value="hide" <?php selected( $zero_values, 'hide' ); ?>><?php esc_html_e( 'Скрывать', 'pf-filter' ); ?></option>
+							<option value="disable" <?php selected( $zero_values, 'disable' ); ?>><?php esc_html_e( 'Деактивировать', 'pf-filter' ); ?></option>
+						</select>
+					</div>
+				</div>
 			</td>
 		</tr>
 		<?php
