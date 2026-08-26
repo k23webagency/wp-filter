@@ -24,6 +24,21 @@ class PF_Attributes {
 	const VALUE_SORT_OPTIONS = array( 'name_asc', 'name_desc', 'count_desc', 'count_asc' );
 
 	/**
+	 * Что делать со значением группы, у которого facet-счётчик под текущий
+	 * набор активных фильтров равен нулю (см. PF_Renderer::get_counts(),
+	 * применяется на клиенте в PFForm.prototype.updateGroupCounts()):
+	 * - 'none'    — ничего не делать, значение остаётся как есть;
+	 * - 'hide'    — динамически скрывать (pf-hidden);
+	 * - 'disable' — помечать неактивным (полупрозрачным, некликабельным) и
+	 *               переносить в конец списка значений группы.
+	 * Применяется единообразно к любому шаблону со списком значений, кроме
+	 * range (там нет дискретных значений, см. get_compatible_templates()).
+	 *
+	 * @var string[]
+	 */
+	const ZERO_VALUES_OPTIONS = array( 'none', 'hide', 'disable' );
+
+	/**
 	 * Глубина дерева категорий, если группа с шаблоном category-tree (или
 	 * депth-ограничение для плоского шаблона на иерархической таксономии, см.
 	 * build_taxonomy_group()) не задала свою явно. Раньше была отдельной
@@ -81,25 +96,36 @@ class PF_Attributes {
 	 * админки) — ручного переопределения по категориям больше нет. Вместо этого
 	 * при указанной категории каждая группа автоматически показывается только
 	 * если среди записей этой категории есть хотя бы одно её значение; если нет —
-	 * группа тихо пропускается.
+	 * группа тихо пропускается. Если выбрано несколько значений категории
+	 * одновременно (мультивыбор в самой группе категорий) — релевантность
+	 * считается по ОБЪЕДИНЕНИЮ записей всех выбранных категорий (группа
+	 * показывается, если хотя бы у одной из выбранных категорий есть значение),
+	 * а не только по первой — см. get_ids_in_category().
 	 *
-	 * @param string $category_taxonomy Таксономия «категории» (см.
-	 *                                  get_configured_category_taxonomy()),
-	 *                                  может быть пустой — тогда авто-релевантность
-	 *                                  не применяется вообще.
-	 * @param string $category_slug     Slug выбранного значения этой таксономии,
-	 *                                  может быть пустым.
+	 * @param string          $category_taxonomy Таксономия «категории» (см.
+	 *                                            get_configured_category_taxonomy()),
+	 *                                            может быть пустой — тогда авто-релевантность
+	 *                                            не применяется вообще.
+	 * @param string|string[] $category_slugs     Slug(и) выбранных значений этой
+	 *                                            таксономии, может быть пустым.
 	 * @return array Список групп в формате ответа REST API.
 	 */
-	public function get_groups( $category_taxonomy = '', $category_slug = '' ) {
+	public function get_groups( $category_taxonomy = '', $category_slugs = array() ) {
 		$configs = PF_Config::get( 'groups', array() );
 
 		if ( empty( $configs ) ) {
 			$configs = $this->build_default_group_configs();
 		}
 
-		$category_product_ids = ( '' !== $category_taxonomy && '' !== $category_slug )
-			? $this->get_ids_in_category( $category_taxonomy, $category_slug )
+		$category_slugs = array_filter(
+			(array) $category_slugs,
+			static function ( $slug ) {
+				return '' !== $slug;
+			}
+		);
+
+		$category_product_ids = ( '' !== $category_taxonomy && ! empty( $category_slugs ) )
+			? $this->get_ids_in_category( $category_taxonomy, $category_slugs )
 			: null;
 
 		$groups = array();
@@ -354,6 +380,7 @@ class PF_Attributes {
 			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
 			'values'           => $values,
 		);
 	}
@@ -454,16 +481,31 @@ class PF_Attributes {
 
 	/**
 	 * ID опубликованных записей настроенного типа записи (см.
-	 * PF_Config::get_post_type()) в заданном значении заданной таксономии
-	 * (для авто-релевантности групп — см. get_groups()). Работает для любой
-	 * таксономии/типа записи — раньше было жёстко захардкожено на
+	 * PF_Config::get_post_type()) в заданных значениях заданной таксономии
+	 * (для авто-релевантности групп — см. get_groups()). Несколько значений —
+	 * объединение (OR, штатный оператор tax_query 'IN'): запись попадает в
+	 * результат, если состоит хотя бы в одном из переданных значений. Работает
+	 * для любой таксономии/типа записи — раньше было жёстко захардкожено на
 	 * product_cat/post_type=product.
 	 *
-	 * @param string $taxonomy      Слаг таксономии.
-	 * @param string $category_slug Slug значения этой таксономии.
+	 * @param string          $taxonomy       Слаг таксономии.
+	 * @param string|string[] $category_slugs Slug(и) значений этой таксономии.
 	 * @return int[]
 	 */
-	public function get_ids_in_category( $taxonomy, $category_slug ) {
+	public function get_ids_in_category( $taxonomy, $category_slugs ) {
+		$category_slugs = array_values(
+			array_filter(
+				(array) $category_slugs,
+				static function ( $slug ) {
+					return '' !== $slug;
+				}
+			)
+		);
+
+		if ( empty( $category_slugs ) ) {
+			return array();
+		}
+
 		$query = new WP_Query(
 			array(
 				'post_type'           => PF_Config::get_post_type(),
@@ -475,7 +517,7 @@ class PF_Attributes {
 					array(
 						'taxonomy' => $taxonomy,
 						'field'    => 'slug',
-						'terms'    => array( $category_slug ),
+						'terms'    => $category_slugs,
 					),
 				),
 			)
@@ -732,6 +774,7 @@ class PF_Attributes {
 			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
 			'values'           => $values,
 		);
 	}
@@ -832,6 +875,7 @@ class PF_Attributes {
 			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
 			'values'           => $values,
 		);
 	}
@@ -991,6 +1035,7 @@ class PF_Attributes {
 			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
+			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
 			'tree_depth'       => $depth,
 			'values'           => $tree,
 		);

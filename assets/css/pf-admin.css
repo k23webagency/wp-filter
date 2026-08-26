@@ -77,6 +77,16 @@
 	visibility: hidden;
 }
 
+/* Поведение нулевых значений (см. pf-extra-value-sort выше) — та же логика,
+   у range нет дискретных значений, скрывать нечего. */
+.pf-filter-admin .pf-extra-zero-values {
+	visibility: visible;
+}
+
+.pf-filter-admin tr[data-template="range"] .pf-extra-zero-values {
+	visibility: hidden;
+}
+
 /* Поиск применим к любому шаблону со списком значений — у range (диапазон/
    слайдер) искать нечего, поле поиска там в принципе не появляется. */
 .pf-filter-admin .pf-extra-search {

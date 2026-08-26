@@ -713,9 +713,9 @@
 		var isRadio = 'radio' === groupConfig.template;
 		var values = groupConfig.values || [];
 
-		values.forEach( function ( value ) {
+		values.forEach( function ( value, index ) {
 			var rowClone = rowTpl.cloneNode( true );
-			self.fillRow( rowClone, value );
+			self.fillRow( rowClone, value, index );
 
 			var input = qs( rowClone, 'input' );
 			if ( input ) {
@@ -742,6 +742,12 @@
 				// служебный "Ошибка отправки / Формы не настроены".
 				rowClone.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
+					// zero_values:'disable' (см. updateGroupCounts()) помечает строку
+					// is-disabled вместо настоящего disabled у input — у tags нет
+					// input, поэтому клик по такой строке просто игнорируется здесь.
+					if ( rowClone.classList.contains( 'is-disabled' ) ) {
+						return;
+					}
 					rowClone.classList.toggle( 'is-active' );
 					self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
 				} );
@@ -759,9 +765,24 @@
 		return clone;
 	};
 
-	/** Наполнить одну строку значения: value/count/swatch, пометить data-pf-value. */
-	PFForm.prototype.fillRow = function ( rowClone, value ) {
+	/**
+	 * Наполнить одну строку значения: value/count/swatch, пометить data-pf-value.
+	 *
+	 * @param {Element} rowClone Строка значения.
+	 * @param {Object}  value    Данные значения ({value,label,count,color,...}).
+	 * @param {number}  [order]  Позиция значения среди «соседей» — детей одного
+	 *                           родителя в разметке (порядок, в котором сервер уже
+	 *                           отсортировал values согласно value_sort группы).
+	 *                           Используется только настройкой zero_values:'disable'
+	 *                           (см. reorderDisabledRows()), чтобы после переноса
+	 *                           неактивных значений в конец списка знать, куда
+	 *                           вернуть значение, когда оно снова станет активным.
+	 */
+	PFForm.prototype.fillRow = function ( rowClone, value, order ) {
 		rowClone.setAttribute( 'data-pf-value', value.value );
+		if ( 'number' === typeof order ) {
+			rowClone.setAttribute( 'data-pf-order', order );
+		}
 
 		var valueEl = qs( rowClone, '[pf-filter-value]' );
 		if ( valueEl ) {
@@ -1255,7 +1276,7 @@
 		// контейнера реальными данными эти узлы — лишние, их нужно убрать.
 		var staleTemplateNodes = qsa( container, '[pf-filter-parent-' + level + '], [pf-filter-row-' + level + ']' );
 
-		items.forEach( function ( item ) {
+		items.forEach( function ( item, index ) {
 			if ( item.children && item.children.length > 0 ) {
 				var parentTpl = qs( templateRoot, '[pf-filter-parent-' + level + ']' );
 				if ( ! parentTpl ) {
@@ -1264,7 +1285,7 @@
 					return;
 				}
 				var parentClone = parentTpl.cloneNode( true );
-				self.fillRow( parentClone, item );
+				self.fillRow( parentClone, item, index );
 				self.wireTreeInputs( parentClone, item.value );
 
 				var childContainer = qs( parentClone, '[pf-filter-list-' + ( level + 1 ) + ']' );
@@ -1277,7 +1298,7 @@
 					return;
 				}
 				var rowClone = rowTpl.cloneNode( true );
-				self.fillRow( rowClone, item );
+				self.fillRow( rowClone, item, index );
 				self.wireTreeInputs( rowClone, item.value );
 
 				container.appendChild( rowClone );
@@ -1630,17 +1651,96 @@
 				return;
 			}
 
-			var fieldCounts = counts[ field ];
+			var fieldCounts  = counts[ field ];
+			// zero_values (настройка группы, см. PF_Attributes::ZERO_VALUES_OPTIONS):
+			// что делать со значением, у которого 0 совпадений под остальные активные
+			// фильтры — 'none' (по умолчанию, ничего), 'hide' (pf-hidden) или 'disable'
+			// (is-disabled + перенос в конец списка внутри своего уровня, см.
+			// reorderDisabledRows() — для дерева категорий это отдельный уровень на
+			// каждую вложенность, не всё дерево целиком).
+			var zeroBehavior   = group.config.zero_values || 'none';
+			var touchedParents = [];
+
 			qsa( group.el, '[data-pf-value]' ).forEach( function ( row ) {
 				var value = row.getAttribute( 'data-pf-value' );
 				if ( ! ( value in fieldCounts ) ) {
 					return;
 				}
+				var count   = fieldCounts[ value ];
 				var countEl = qs( row, '[pf-filter-count]' );
 				if ( countEl && self.showCounts ) {
-					countEl.textContent = fieldCounts[ value ];
+					countEl.textContent = count;
+				}
+
+				if ( 'none' === zeroBehavior ) {
+					return;
+				}
+
+				// Уже выбранное пользователем значение не скрывается и не деактивируется
+				// своим же нулевым счётчиком — иначе снять с него галочку было бы нечем.
+				var isZero = 0 === count && ! row.classList.contains( 'is-active' );
+
+				if ( 'hide' === zeroBehavior ) {
+					row.classList.toggle( 'pf-hidden', isZero );
+					return;
+				}
+
+				// 'disable' — у is-disabled есть предустановленный вид от плагина
+				// (opacity/pointer-events, см. :where(.is-disabled) в pf-filter.css) —
+				// нулевая специфичность :where() гарантирует, что любой стиль темы
+				// для этого же класса побеждает независимо от порядка подключения
+				// стилей. Некликабельность при этом обеспечивается не через
+				// pointer-events (тема может его перебить), а здесь напрямую: у
+				// checkbox/radio — нативный input.disabled, у tags (нет input) —
+				// проверка класса в обработчике клика, см. buildListGroup().
+				row.classList.toggle( 'is-disabled', isZero );
+				var input = qs( row, 'input' );
+				if ( input ) {
+					input.disabled = isZero;
+				}
+				if ( row.parentNode && touchedParents.indexOf( row.parentNode ) === -1 ) {
+					touchedParents.push( row.parentNode );
 				}
 			} );
+
+			if ( 'disable' === zeroBehavior ) {
+				touchedParents.forEach( function ( parent ) {
+					self.reorderDisabledRows( parent );
+				} );
+			}
+		} );
+	};
+
+	/**
+	 * Для zero_values:'disable' — переместить is-disabled строки в конец списка,
+	 * а остальные вернуть на своё место по исходному порядку (data-pf-order,
+	 * см. fillRow()). Работает на одном уровне вложенности (прямые дети parent) —
+	 * для дерева категорий вызывается отдельно на каждом таком уровне
+	 * (см. touchedParents в updateGroupCounts()), поэтому узел с детьми
+	 * перемещается только среди своих братьев, не «проваливаясь» на другой уровень.
+	 *
+	 * @param {Element} parent Общий родитель строк одного уровня.
+	 */
+	PFForm.prototype.reorderDisabledRows = function ( parent ) {
+		var rows = Array.prototype.filter.call( parent.children, function ( el ) {
+			return el.hasAttribute( 'data-pf-value' );
+		} );
+
+		if ( rows.length < 2 ) {
+			return;
+		}
+
+		rows.sort( function ( a, b ) {
+			var aDisabled = a.classList.contains( 'is-disabled' ) ? 1 : 0;
+			var bDisabled = b.classList.contains( 'is-disabled' ) ? 1 : 0;
+			if ( aDisabled !== bDisabled ) {
+				return aDisabled - bDisabled;
+			}
+			return ( parseInt( a.getAttribute( 'data-pf-order' ), 10 ) || 0 ) - ( parseInt( b.getAttribute( 'data-pf-order' ), 10 ) || 0 );
+		} );
+
+		rows.forEach( function ( row ) {
+			parent.appendChild( row );
 		} );
 	};
 

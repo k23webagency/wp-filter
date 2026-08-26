@@ -205,13 +205,18 @@ class PF_REST_API {
 		$page_url = isset( $body['page_url'] ) ? esc_url_raw( (string) $body['page_url'] ) : '';
 		$html     = $this->render_in_page_context( $query, $page_url, $resolved_profile['id'] );
 
-		// "Активная категория" (авто-сужение счётчиков/видимости остальных
+		// "Активные категории" (авто-сужение счётчиков/видимости остальных
 		// групп под текущий выбор в таксономии-«категории», см.
 		// PF_Attributes::get_configured_category_taxonomy()) — работает для
-		// любой таксономии/типа записи, не только product_cat/product.
+		// любой таксономии/типа записи, не только product_cat/product. Берём
+		// ВСЕ выбранные значения, а не только первое: при мультивыборе
+		// категорий группа релевантна, если её значение есть хотя бы у одной
+		// из выбранных категорий (объединение, не первая по списку).
 		$category_taxonomy = $this->attributes->get_configured_category_taxonomy();
-		$active_category   = ( $category_taxonomy && isset( $filters[ $category_taxonomy ][0] ) ) ? $filters[ $category_taxonomy ][0] : '';
-		$groups             = $this->attributes->get_groups( $category_taxonomy, $active_category );
+		$active_categories  = ( $category_taxonomy && isset( $filters[ $category_taxonomy ] ) && is_array( $filters[ $category_taxonomy ] ) )
+			? $filters[ $category_taxonomy ]
+			: array();
+		$groups             = $this->attributes->get_groups( $category_taxonomy, $active_categories );
 		$counts          = $this->renderer->get_counts( $groups, $filters, $logic, $this->query_builder );
 
 		$response = array(

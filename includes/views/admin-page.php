@@ -246,6 +246,7 @@ defined( 'ABSPATH' ) || exit;
 						<th><?php esc_html_e( 'Глубина вложенности', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></th>
 						<th><?php esc_html_e( 'Сортировка значений', 'pf-filter' ); ?></th>
+						<th><?php esc_html_e( 'Нулевые значения', 'pf-filter' ); ?></th>
 						<th></th>
 					</tr>
 				</thead>

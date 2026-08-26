@@ -373,6 +373,7 @@ class PF_Admin {
 				'enabled'    => ! empty( $group['enabled'] ),
 				'search'     => ! empty( $group['search'] ),
 				'value_sort' => in_array( $group['value_sort'] ?? '', PF_Attributes::VALUE_SORT_OPTIONS, true ) ? $group['value_sort'] : 'name_asc',
+				'zero_values' => in_array( $group['zero_values'] ?? '', PF_Attributes::ZERO_VALUES_OPTIONS, true ) ? $group['zero_values'] : 'none',
 			);
 
 			if ( isset( $group['step'] ) && '' !== $group['step'] ) {
@@ -593,6 +594,7 @@ class PF_Admin {
 		$unit     = $group['unit'] ?? '';
 		$tree_d   = $group['tree_depth'] ?? '';
 		$value_sort = $group['value_sort'] ?? 'name_asc';
+		$zero_values = $group['zero_values'] ?? 'none';
 		$color_meta_key = $group['color_meta_key'] ?? '';
 		// Поля ACF термина ЭТОГО поля группы (если оно вообще таксономия) —
 		// список для выпадашки «поле с цветом». У кастомных атрибутов и цены
@@ -708,6 +710,13 @@ class PF_Admin {
 					<option value="name_desc" <?php selected( $value_sort, 'name_desc' ); ?>><?php esc_html_e( 'По алфавиту (Я→А)', 'pf-filter' ); ?></option>
 					<option value="count_desc" <?php selected( $value_sort, 'count_desc' ); ?>><?php esc_html_e( 'По кол-ву (сначала больше)', 'pf-filter' ); ?></option>
 					<option value="count_asc" <?php selected( $value_sort, 'count_asc' ); ?>><?php esc_html_e( 'По кол-ву (сначала меньше)', 'pf-filter' ); ?></option>
+				</select>
+			</td>
+			<td class="pf-extra-zero-values">
+				<select name="<?php echo esc_attr( $n ); ?>[zero_values]" title="<?php esc_attr_e( 'Что делать со значением, у которого 0 подходящих записей под текущий выбор остальных фильтров.', 'pf-filter' ); ?>">
+					<option value="none" <?php selected( $zero_values, 'none' ); ?>><?php esc_html_e( 'Не менять', 'pf-filter' ); ?></option>
+					<option value="hide" <?php selected( $zero_values, 'hide' ); ?>><?php esc_html_e( 'Скрывать', 'pf-filter' ); ?></option>
+					<option value="disable" <?php selected( $zero_values, 'disable' ); ?>><?php esc_html_e( 'Деактивировать', 'pf-filter' ); ?></option>
 				</select>
 			</td>
 			<td>
