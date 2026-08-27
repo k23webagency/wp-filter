@@ -142,9 +142,15 @@ class PF_Query {
 		// (например, прогрев кэша метаданных) их не заденет.
 		add_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10, 2 );
 		add_filter( 'posts_clauses', array( $this, 'filter_discount_orderby_clauses' ), 10, 2 );
+		// Регистрируется ПОСЛЕДНИМ (см. filter_out_of_stock_last_clauses()) —
+		// должен видеть уже полностью собранный $clauses['orderby'] от двух
+		// фильтров выше и просто добавить свой ключ сортировки первым, не
+		// отменяя остальные.
+		add_filter( 'posts_clauses', array( $this, 'filter_out_of_stock_last_clauses' ), 10, 2 );
 		$query = new WP_Query( $args );
 		remove_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10 );
 		remove_filter( 'posts_clauses', array( $this, 'filter_discount_orderby_clauses' ), 10 );
+		remove_filter( 'posts_clauses', array( $this, 'filter_out_of_stock_last_clauses' ), 10 );
 
 		return $query;
 	}
@@ -511,6 +517,52 @@ class PF_Query {
 		$direction = 'DESC' === strtoupper( (string) $query->get( 'order' ) ) ? 'DESC' : 'ASC';
 
 		$clauses['orderby'] = "{$discount} IS NULL, {$discount} {$direction}"
+			. ( $clauses['orderby'] ? ', ' . $clauses['orderby'] : '' );
+
+		return $clauses;
+	}
+
+	/**
+	 * Товары не в наличии (WooCommerce _stock_status = outofstock) — всегда в
+	 * конец списка, независимо от выбранной сортировки (по цене, дате,
+	 * популярности, названию атрибута и т.д.). Жёстко зашитое поведение по
+	 * решению пользователя, НЕ настройка админки — применяется ко всем
+	 * запросам товаров одинаково, без возможности отключить в интерфейсе.
+	 *
+	 * Работает добавлением ключа сортировки ПЕРЕД уже собранным orderby, а не
+	 * заменой — регистрируется последним из posts_clauses-фильтров build()
+	 * (см. её комментарий), поэтому не отменяет apply_taxonomy_orderby()/
+	 * apply_discount_orderby() выше, только предшествует им. Только для
+	 * настоящих товаров (post_type=product) — у любого другого типа записи
+	 * такого meta-поля нет вообще.
+	 *
+	 * @param array    $clauses Части SQL-запроса (join/orderby/...).
+	 * @param WP_Query $query   Текущий запрос.
+	 * @return array
+	 */
+	public function filter_out_of_stock_last_clauses( $clauses, $query ) {
+		if ( 'product' !== PF_Config::get_post_type() ) {
+			return $clauses;
+		}
+
+		global $wpdb;
+
+		$clauses['join'] .= " LEFT JOIN {$wpdb->postmeta} pf_sort_stock ON pf_sort_stock.post_id = {$wpdb->posts}.ID AND pf_sort_stock.meta_key = '_stock_status'";
+
+		// Если этот же запрос уже сгруппирован по wp_posts.ID (сортировка по
+		// названию термина таксономии — см. filter_taxonomy_orderby_clauses(),
+		// она регистрируется раньше и сама добавляет эту GROUP BY из-за
+		// потенциально многозначного JOIN на термины) — колонку из другой,
+		// негруппированной таблицы нужно завернуть в агрегатную функцию,
+		// иначе в режиме ONLY_FULL_GROUP_BY MySQL выдаст ошибку. Без GROUP BY
+		// заворачивать нельзя — тогда MIN() схлопнул бы весь результат в одну
+		// строку. _stock_status у товара однозначен (не многозначная meta),
+		// поэтому MIN() по группе из одного значения просто возвращает его же.
+		$expr = ! empty( $clauses['groupby'] )
+			? "MIN( pf_sort_stock.meta_value = 'outofstock' )"
+			: "( pf_sort_stock.meta_value = 'outofstock' )";
+
+		$clauses['orderby'] = "{$expr} ASC"
 			. ( $clauses['orderby'] ? ', ' . $clauses['orderby'] : '' );
 
 		return $clauses;
