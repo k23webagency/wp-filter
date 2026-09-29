@@ -344,20 +344,50 @@ class PF_Card_Template {
 			}
 		}
 
-		if ( ! preg_match( '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*\bpf-list\b[^>]*>/i', $search_in, $open_match, PREG_OFFSET_CAPTURE ) ) {
+		$list_inner = $this->find_element_inner( $search_in, '\bpf-list\b' );
+		if ( null === $list_inner ) {
 			return null;
 		}
 
-		$tag           = $open_match[1][0];
-		$open_tag_end  = $open_match[0][1] + strlen( $open_match[0][0] );
-		$close_pos     = $this->find_matching_close_tag( $search_in, $tag, $open_tag_end );
+		return $this->extract_loop_from_inner( $list_inner );
+	}
+
+	/**
+	 * Содержимое ПЕРВОГО элемента, в открывающем теге которого есть
+	 * фрагмент атрибута $attr_pattern (часть регулярного выражения,
+	 * например '\bpf-list\b'), с учётом вложенности одноимённых тегов.
+	 * Общий инструмент и для [pf-list] фильтра, и для блоков модуля поиска
+	 * (PF_Search_Template).
+	 *
+	 * @param string $source       Текст, в котором ищем.
+	 * @param string $attr_pattern Фрагмент регулярного выражения (разделитель — /).
+	 * @return string|null Внутреннее содержимое элемента, либо null.
+	 */
+	public function find_element_inner( $source, $attr_pattern ) {
+		if ( ! preg_match( '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*' . $attr_pattern . '[^>]*>/i', $source, $open_match, PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+
+		$tag          = $open_match[1][0];
+		$open_tag_end = $open_match[0][1] + strlen( $open_match[0][0] );
+		$close_pos    = $this->find_matching_close_tag( $source, $tag, $open_tag_end );
 
 		if ( null === $close_pos ) {
 			return null;
 		}
 
-		$list_inner = substr( $search_in, $open_tag_end, $close_pos - $open_tag_end );
+		return substr( $source, $open_tag_end, $close_pos - $open_tag_end );
+	}
 
+	/**
+	 * Тело цикла записей (между the_post() и endwhile) внутри уже
+	 * вырезанного содержимого контейнера — готовый к include PHP-снипет,
+	 * либо null.
+	 *
+	 * @param string $list_inner Содержимое контейнера со списком.
+	 * @return string|null
+	 */
+	public function extract_loop_from_inner( $list_inner ) {
 		if ( ! preg_match( '/the_post\s*\(\s*\)\s*;/i', $list_inner, $post_match, PREG_OFFSET_CAPTURE ) ) {
 			return null;
 		}
@@ -401,7 +431,7 @@ class PF_Card_Template {
 	 * @param int    $start  Позиция сразу после открывающего тега.
 	 * @return int|null Позиция начала соответствующего закрывающего тега, либо null.
 	 */
-	private function find_matching_close_tag( $source, $tag, $start ) {
+	public function find_matching_close_tag( $source, $tag, $start ) {
 		$open_re  = '/<' . preg_quote( $tag, '/' ) . '\b/i';
 		$close_re = '/<\/' . preg_quote( $tag, '/' ) . '\s*>/i';
 
@@ -438,7 +468,7 @@ class PF_Card_Template {
 	 *
 	 * @return string|null
 	 */
-	private function get_cache_dir() {
+	public function get_cache_dir() {
 		$upload_dir = wp_upload_dir();
 		if ( ! empty( $upload_dir['error'] ) ) {
 			return null;

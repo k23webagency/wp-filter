@@ -3,7 +3,7 @@
  * Разметка страницы настроек модуля поиска (Настройки → PF Search).
  * Переменные приходят из PF_Search_Admin::render_page(): $enabled,
  * $environment_ok, $profiles, $profile_id, $profile, $post_types,
- * $acf_by_type, $state, $summary, $has_wc.
+ * $acf_by_type, $state, $summary, $has_wc, $template_info.
  *
  * @package PF_Filter
  */
@@ -241,6 +241,55 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 								</fieldset>
 							<?php endforeach; ?>
 							<p class="description"><?php esc_html_e( 'Отметьте поля с текстом, по которым имеет смысл искать (бренд, модель, характеристики). Картинки, файлы и связи не индексируются, даже если отмечены. Показаны поля только тех типов записей, по которым ищет профиль.', 'pf-filter' ); ?></p>
+						<?php endif; ?>
+					</td>
+				</tr>
+				<tr>
+					<th><?php esc_html_e( 'Карточки выпадающего окна', 'pf-filter' ); ?></th>
+					<td>
+						<?php if ( $template_info ) : ?>
+							<p>
+								<span class="pfs-ok">✓</span>
+								<?php
+								printf(
+									/* translators: 1: ID профиля, 2: файл темы */
+									esc_html__( 'Блок [pfs="%1$s"] с циклом карточек найден в файле темы %2$s.', 'pf-filter' ),
+									esc_html( $profile_id ),
+									'<code>' . esc_html( $template_info['file'] ) . '</code>'
+								);
+								?>
+							</p>
+							<?php if ( $template_info['groups'] ) : ?>
+								<table class="widefat striped pfs-types-table">
+									<thead><tr><th><?php esc_html_e( 'Тип записей', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Вариант карточек (pfs-group)', 'pf-filter' ); ?></th></tr></thead>
+									<tbody>
+										<?php foreach ( $post_types as $pfs_slug => $pfs_label ) : ?>
+											<tr data-pfs-for-type="<?php echo esc_attr( $pfs_slug ); ?>">
+												<td><?php echo esc_html( $pfs_label ); ?></td>
+												<td>
+													<select name="pfs[group_variants][<?php echo esc_attr( $pfs_slug ); ?>]">
+														<option value=""><?php esc_html_e( '— первый по порядку —', 'pf-filter' ); ?></option>
+														<?php foreach ( $template_info['groups'] as $pfs_group ) : ?>
+															<option value="<?php echo esc_attr( $pfs_group ); ?>" <?php selected( $profile['group_variants'][ $pfs_slug ] ?? '', $pfs_group ); ?>><?php echo esc_html( $pfs_group ); ?></option>
+														<?php endforeach; ?>
+													</select>
+												</td>
+											</tr>
+										<?php endforeach; ?>
+									</tbody>
+								</table>
+								<p class="description"><?php esc_html_e( 'В вёрстке окна несколько вариантов карточек [pfs-group] — выберите, каким рисовать каждый тип записей.', 'pf-filter' ); ?></p>
+							<?php endif; ?>
+						<?php else : ?>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: ID профиля */
+									esc_html__( 'В PHP-файлах темы не найден блок [pfs="%s"] с циклом записей внутри [pfs-results]. Без него выпадающее окно не работает; поиск по Enter и страница результатов работают. Если окно в вёрстке не нужно — всё в порядке.', 'pf-filter' ),
+									esc_html( $profile_id )
+								);
+								?>
+							</p>
 						<?php endif; ?>
 					</td>
 				</tr>

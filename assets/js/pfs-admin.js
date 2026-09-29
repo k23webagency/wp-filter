@@ -62,6 +62,9 @@
 			document.querySelectorAll( '[data-pfs-acf-type]' ).forEach( function ( fs ) {
 				fs.hidden = types.indexOf( fs.getAttribute( 'data-pfs-acf-type' ) ) === -1;
 			} );
+			document.querySelectorAll( '[data-pfs-for-type]' ).forEach( function ( row ) {
+				row.hidden = types.indexOf( row.getAttribute( 'data-pfs-for-type' ) ) === -1;
+			} );
 		}
 
 		radios.forEach( function ( r ) { r.addEventListener( 'change', update ); } );

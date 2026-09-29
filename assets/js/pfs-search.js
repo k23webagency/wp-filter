@@ -1,0 +1,811 @@
+/**
+ * PF Search — живой поиск по атрибутам pfs-* в разметке темы.
+ *
+ * Контракт разметки — pfs-search-docs.html (справочник для верстальщика)
+ * и REFERENCE.md. Работает то, что есть в вёрстке: нет элемента — нет
+ * функции, без ошибок. Обязателен только [pfs-input].
+ */
+( function () {
+	'use strict';
+
+	var cfg = window.pfsConfig;
+	if ( ! cfg || ! cfg.profiles ) {
+		return;
+	}
+
+	var MIN_CHARS = cfg.minChars || 3;
+	var DEBOUNCE = cfg.debounce || 300;
+
+	// Кэш ответов на страницу: ключ — профиль|тип|запрос.
+	var responseCache = {};
+	var uid = 0;
+
+	function hide( el ) {
+		if ( el ) {
+			el.classList.add( 'is-hidden' );
+		}
+	}
+
+	function show( el ) {
+		if ( el ) {
+			el.classList.remove( 'is-hidden' );
+		}
+	}
+
+	function toArray( list ) {
+		return Array.prototype.slice.call( list || [] );
+	}
+
+	function buildUrl( base, params ) {
+		var query = Object.keys( params ).filter( function ( k ) {
+			return '' !== params[ k ] && null != params[ k ];
+		} ).map( function ( k ) {
+			return encodeURIComponent( k ) + '=' + encodeURIComponent( params[ k ] );
+		} ).join( '&' );
+		if ( ! query ) {
+			return base;
+		}
+		return base + ( base.indexOf( '?' ) === -1 ? '?' : '&' ) + query;
+	}
+
+	/**
+	 * Точечная переинициализация Webflow после вставки карточек — как
+	 * PFForm.prototype.reinitWebflow() фильтра (дропдауны + interactions,
+	 * без общего Webflow.destroy()).
+	 */
+	function reinitWebflow() {
+		if ( ! window.Webflow || ! window.Webflow.require ) {
+			return;
+		}
+		try {
+			var dropdown = window.Webflow.require( 'dropdown' );
+			if ( dropdown && dropdown.ready ) {
+				dropdown.ready();
+			}
+			var ix2 = window.Webflow.require( 'ix2' );
+			if ( ix2 && ix2.init ) {
+				ix2.init();
+			}
+		} catch ( err ) {
+			console.warn( 'PF Search: не удалось переинициализировать Webflow.', err );
+		}
+	}
+
+	/**
+	 * Подсветка слов, начинающихся с одного из terms, внутри el (<mark>).
+	 */
+	function highlight( el, terms ) {
+		if ( ! terms || ! terms.length ) {
+			return;
+		}
+		var parts = terms.map( function ( t ) {
+			return t.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ).replace( /е/g, '[её]' );
+		} );
+		var re;
+		try {
+			re = new RegExp( '(^|[^\\p{L}\\p{N}])((?:' + parts.join( '|' ) + ')[\\p{L}\\p{N}]*)', 'giu' );
+		} catch ( e ) {
+			return; // браузер без Unicode property escapes — просто без подсветки.
+		}
+
+		var walker = document.createTreeWalker( el, NodeFilter.SHOW_TEXT, null );
+		var nodes = [];
+		while ( walker.nextNode() ) {
+			if ( walker.currentNode.parentNode && 'MARK' !== walker.currentNode.parentNode.nodeName ) {
+				nodes.push( walker.currentNode );
+			}
+		}
+
+		nodes.forEach( function ( node ) {
+			var text = node.nodeValue;
+			re.lastIndex = 0;
+			if ( ! re.test( text ) ) {
+				return;
+			}
+			re.lastIndex = 0;
+			var frag = document.createDocumentFragment();
+			var last = 0;
+			var m;
+			while ( ( m = re.exec( text ) ) !== null ) {
+				var start = m.index + m[ 1 ].length;
+				frag.appendChild( document.createTextNode( text.slice( last, start ) ) );
+				var mark = document.createElement( 'mark' );
+				mark.textContent = m[ 2 ];
+				frag.appendChild( mark );
+				last = start + m[ 2 ].length;
+				if ( m[ 0 ].length === 0 ) {
+					re.lastIndex++;
+				}
+			}
+			frag.appendChild( document.createTextNode( text.slice( last ) ) );
+			node.parentNode.replaceChild( frag, node );
+		} );
+	}
+
+	// -----------------------------------------------------------------
+	// Блок поиска
+	// -----------------------------------------------------------------
+
+	function PFSearch( root ) {
+		this.root = root;
+		this.id = ++uid;
+		this.timer = null;
+		this.controller = null;
+		this.currentQuery = '';
+		this.lastData = null;
+		this.isOpen = false;
+		this.lastToggleAt = 0;
+		this.live = false;
+		this.escPressed = false;
+	}
+
+	PFSearch.prototype.init = function () {
+		var root = this.root;
+
+		this.profileId = root.getAttribute( 'pfs' ) || cfg.firstProfile;
+		this.profile = cfg.profiles[ this.profileId ];
+		if ( ! this.profile ) {
+			console.error( 'PF Search: профиль поиска «' + this.profileId + '» не найден (Настройки → PF Search).', root );
+			return false;
+		}
+
+		this.input = root.querySelector( '[pfs-input]' );
+		if ( ! this.input ) {
+			console.error( 'PF Search: внутри [pfs] нет поля [pfs-input] — блок поиска не запущен.', root );
+			return false;
+		}
+
+		this.input.setAttribute( 'autocomplete', 'off' );
+		this.input.setAttribute( 'role', 'combobox' );
+		this.input.setAttribute( 'aria-autocomplete', 'list' );
+		this.input.setAttribute( 'aria-expanded', 'false' );
+
+		// Внутри блока фильтра тип задан самим блоком.
+		this.filterBlock = root.closest( '[pf-profile]' );
+		this.lockedType = '';
+		if ( this.filterBlock ) {
+			var filterProfile = this.filterBlock.getAttribute( 'pf-profile' ) || cfg.firstFilterProfile;
+			this.lockedType = cfg.filterProfiles[ filterProfile ] || '';
+		}
+		this.type = this.lockedType || this.profile.defaultType;
+
+		this.list = root.querySelector( '[pfs-dropdown-list]' );
+		this.toggle = root.querySelector( '[pfs-dropdown-toggle]' );
+		if ( this.toggle && this.toggle.contains( this.input ) ) {
+			console.warn( 'PF Search: поле [pfs-input] лежит внутри [pfs-dropdown-toggle] — так делать не нужно, переключатель должен быть отдельным элементом.', root );
+		}
+
+		this.loading = toArray( root.querySelectorAll( '[pfs-loading]' ) );
+		this.clearBtns = toArray( root.querySelectorAll( '[pfs-clear]' ) );
+		this.submitBtns = toArray( root.querySelectorAll( '[pfs-submit]' ) );
+		this.empties = toArray( root.querySelectorAll( '[pfs-empty]' ) );
+		this.suggests = toArray( root.querySelectorAll( '[pfs-suggest]' ) );
+		this.alls = toArray( root.querySelectorAll( '[pfs-all]' ) );
+		this.counts = toArray( root.querySelectorAll( '[pfs-count]' ) );
+		this.queries = toArray( root.querySelectorAll( '[pfs-query]' ) );
+		this.groups = this.list ? toArray( this.list.querySelectorAll( '[pfs-group]' ) ) : [];
+
+		this.loading.forEach( hide );
+		this.empties.forEach( hide );
+		this.suggests.forEach( hide );
+		this.alls.forEach( hide );
+
+		this.initLive();
+		this.initTypes();
+		this.bind();
+		this.updateClear();
+
+		return true;
+	};
+
+	/**
+	 * Живой поиск возможен, если есть окно и в нём [pfs-results].
+	 */
+	PFSearch.prototype.initLive = function () {
+		if ( ! this.list ) {
+			return; // Окна нет — живой поиск не нужен, это не ошибка.
+		}
+
+		var containers = toArray( this.list.querySelectorAll( '[pfs-results]' ) );
+		if ( ! containers.length ) {
+			console.warn( 'PF Search: в [pfs-dropdown-list] нет [pfs-results] — выпадающее окно отключено, поиск работает по Enter.', this.root );
+			return;
+		}
+
+		// Стартовое содержимое цикла темы убираем: окно показывает только
+		// результаты поиска.
+		containers.forEach( function ( c ) {
+			c.innerHTML = '';
+		} );
+
+		this.list.setAttribute( 'id', this.list.id || 'pfs-list-' + this.id );
+		this.input.setAttribute( 'aria-controls', this.list.id );
+
+		if ( ! this.toggle ) {
+			hide( this.list );
+		}
+		this.live = true;
+	};
+
+	/**
+	 * Кнопки выбора типа: одна кнопка-образец → по кнопке на тип профиля.
+	 */
+	PFSearch.prototype.initTypes = function () {
+		var self = this;
+		var sample = this.root.querySelector( '[pfs-type]' );
+		if ( ! sample ) {
+			return;
+		}
+
+		if ( this.lockedType ) {
+			sample.classList.add( 'pf-hidden' );
+			console.warn( 'PF Search: кнопка [pfs-type] внутри блока фильтра [pf-profile] не нужна — тип записей задан блоком фильтра. Кнопка скрыта.', sample );
+			return;
+		}
+		if ( 'visitor' !== this.profile.typeMode || ! this.profile.types.length ) {
+			sample.classList.add( 'pf-hidden' );
+			return;
+		}
+
+		this.typeButtons = [];
+		var prev = sample;
+		var radioName = 'pfs-type-' + this.id;
+
+		this.profile.types.forEach( function ( type, i ) {
+			var btn = 0 === i ? sample : sample.cloneNode( true );
+			btn.setAttribute( 'pfs-type', type.slug );
+
+			var label = btn.querySelector( '[pfs-type-label]' ) || btn;
+			label.textContent = type.label;
+
+			var radio = btn.querySelector( 'input[type="radio"]' );
+			if ( radio ) {
+				var radioId = radioName + '-' + type.slug;
+				var labelFor = btn.querySelector( 'label[for]' );
+				radio.name = radioName;
+				radio.value = type.slug;
+				radio.id = radioId;
+				if ( labelFor ) {
+					labelFor.setAttribute( 'for', radioId );
+				}
+			}
+
+			if ( i > 0 ) {
+				prev.parentNode.insertBefore( btn, prev.nextSibling );
+			}
+			prev = btn;
+
+			btn.addEventListener( 'click', function ( e ) {
+				if ( 'A' === btn.tagName || 'BUTTON' === btn.tagName ) {
+					e.preventDefault();
+				}
+				self.selectType( type.slug );
+			} );
+			self.typeButtons.push( btn );
+		} );
+
+		this.markType();
+	};
+
+	PFSearch.prototype.markType = function () {
+		var type = this.type;
+		( this.typeButtons || [] ).forEach( function ( btn ) {
+			var active = btn.getAttribute( 'pfs-type' ) === type;
+			btn.classList.toggle( 'is-active', active );
+			var radio = btn.querySelector( 'input[type="radio"]' );
+			if ( radio ) {
+				radio.checked = active;
+			}
+		} );
+	};
+
+	PFSearch.prototype.selectType = function ( slug ) {
+		if ( slug === this.type ) {
+			return;
+		}
+		this.type = slug;
+		this.markType();
+		if ( this.query().length >= MIN_CHARS ) {
+			this.search( true );
+		}
+	};
+
+	PFSearch.prototype.query = function () {
+		return ( this.input.value || '' ).trim();
+	};
+
+	PFSearch.prototype.bind = function () {
+		var self = this;
+		var input = this.input;
+
+		input.addEventListener( 'input', function () {
+			self.escPressed = false;
+			self.updateClear();
+			self.schedule();
+		} );
+
+		input.addEventListener( 'keydown', function ( e ) {
+			if ( 'ArrowDown' === e.key ) {
+				if ( self.focusCard( 0 ) ) {
+					e.preventDefault();
+				}
+			} else if ( 'Escape' === e.key ) {
+				e.preventDefault();
+				if ( self.isOpenNow() ) {
+					self.close();
+				} else if ( self.escPressed || ! self.isOpenNow() ) {
+					self.clear( false );
+				}
+				self.escPressed = true;
+			} else if ( 'Enter' === e.key ) {
+				e.preventDefault();
+				self.fullSearch();
+			}
+		} );
+
+		var reopen = function () {
+			// Уже есть ответ на текущий запрос — открыть без нового запроса.
+			if ( self.live && self.lastData && self.lastData.query === self.query() && self.hasContent( self.lastData ) ) {
+				self.open();
+			}
+		};
+		input.addEventListener( 'focus', reopen );
+		// Компонент Webflow Dropdown сам закрывается по клику вне себя, а
+		// поле лежит вне дропдауна — клик в поле его закрыл бы. Проверяем
+		// после того, как отработают обработчики клика темы.
+		input.addEventListener( 'click', function () {
+			setTimeout( reopen, 0 );
+		} );
+
+		if ( 'FORM' === this.root.tagName ) {
+			this.root.addEventListener( 'submit', function ( e ) {
+				e.preventDefault();
+				self.fullSearch();
+			} );
+		}
+
+		this.submitBtns.forEach( function ( btn ) {
+			btn.addEventListener( 'click', function ( e ) {
+				e.preventDefault();
+				self.fullSearch();
+			} );
+		} );
+
+		this.clearBtns.forEach( function ( btn ) {
+			btn.addEventListener( 'click', function ( e ) {
+				e.preventDefault();
+				self.clear( true );
+			} );
+		} );
+
+		this.suggests.forEach( function ( box ) {
+			toArray( box.querySelectorAll( '[pfs-suggest-query]' ) ).forEach( function ( el ) {
+				el.addEventListener( 'click', function ( e ) {
+					e.preventDefault();
+					var text = el.textContent.trim();
+					if ( text ) {
+						self.input.value = text;
+						self.updateClear();
+						self.input.focus();
+						self.search( true );
+					}
+				} );
+			} );
+		} );
+
+		if ( this.list ) {
+			this.list.addEventListener( 'keydown', function ( e ) {
+				var links = self.cardLinks();
+				var index = links.indexOf( document.activeElement );
+				if ( -1 === index ) {
+					return;
+				}
+				if ( 'ArrowDown' === e.key ) {
+					e.preventDefault();
+					if ( index < links.length - 1 ) {
+						links[ index + 1 ].focus();
+					}
+				} else if ( 'ArrowUp' === e.key ) {
+					e.preventDefault();
+					if ( index > 0 ) {
+						links[ index - 1 ].focus();
+					} else {
+						self.input.focus();
+					}
+				} else if ( 'Escape' === e.key ) {
+					e.preventDefault();
+					self.close();
+					self.input.focus();
+				}
+			} );
+		}
+
+		document.addEventListener( 'click', function ( e ) {
+			if ( ! self.root.contains( e.target ) ) {
+				self.close();
+			}
+		} );
+	};
+
+	PFSearch.prototype.updateClear = function () {
+		var empty = '' === ( this.input.value || '' );
+		this.clearBtns.forEach( function ( btn ) {
+			btn.classList.toggle( 'is-hidden', empty );
+		} );
+	};
+
+	PFSearch.prototype.schedule = function () {
+		var self = this;
+		clearTimeout( this.timer );
+
+		if ( ! this.live ) {
+			return; // Нет окна — нет запросов при наборе.
+		}
+
+		if ( this.query().length < MIN_CHARS ) {
+			this.abort();
+			this.setLoading( false );
+			this.close();
+			this.lastData = null;
+			return;
+		}
+
+		this.timer = setTimeout( function () {
+			self.search( false );
+		}, DEBOUNCE );
+	};
+
+	PFSearch.prototype.abort = function () {
+		if ( this.controller ) {
+			this.controller.abort();
+			this.controller = null;
+		}
+	};
+
+	PFSearch.prototype.setLoading = function ( on ) {
+		this.root.classList.toggle( 'is-loading', on );
+		this.loading.forEach( on ? show : hide );
+	};
+
+	PFSearch.prototype.search = function ( force ) {
+		var self = this;
+		var q = this.query();
+
+		if ( ! this.live || q.length < MIN_CHARS ) {
+			return;
+		}
+		if ( ! force && this.lastData && this.lastData.query === q && this.lastData.type === this.type ) {
+			return;
+		}
+
+		var key = this.profileId + '|' + this.type + '|' + q;
+		this.currentQuery = q;
+
+		if ( responseCache[ key ] ) {
+			this.abort();
+			this.setLoading( false );
+			this.render( responseCache[ key ] );
+			return;
+		}
+
+		this.abort();
+		var controller = window.AbortController ? new AbortController() : null;
+		this.controller = controller;
+		this.setLoading( true );
+
+		var url = buildUrl( cfg.restUrl, {
+			q: q,
+			profile: this.profileId,
+			type: this.type,
+			per_page: this.profile.limit,
+			render: 1,
+		} );
+
+		fetch( url, { credentials: 'same-origin', signal: controller ? controller.signal : undefined } )
+			.then( function ( r ) {
+				if ( ! r.ok ) {
+					throw new Error( 'HTTP ' + r.status );
+				}
+				return r.json();
+			} )
+			.then( function ( data ) {
+				data.query = q;
+				responseCache[ key ] = data;
+				if ( self.controller === controller ) {
+					self.controller = null;
+					self.setLoading( false );
+				}
+				// Пока шёл запрос, посетитель мог напечатать дальше.
+				if ( self.query() === q && self.type === data.type ) {
+					self.render( data );
+				}
+			} )
+			.catch( function ( err ) {
+				if ( err && 'AbortError' === err.name ) {
+					return;
+				}
+				if ( self.controller === controller ) {
+					self.controller = null;
+					self.setLoading( false );
+				}
+				console.warn( 'PF Search: запрос не удался.', err );
+			} );
+	};
+
+	PFSearch.prototype.hasContent = function ( data ) {
+		return data.total > 0 || this.empties.length > 0 || ( data.suggest && this.suggests.length > 0 );
+	};
+
+	/**
+	 * Контейнер карточек под вариант, который вернул сервер: группа с этим
+	 * именем, иначе первая группа, иначе единственный [pfs-results].
+	 */
+	PFSearch.prototype.resultsTarget = function ( groupName ) {
+		if ( ! this.groups.length ) {
+			return this.list.querySelector( '[pfs-results]' );
+		}
+		var target = null;
+		this.groups.forEach( function ( g ) {
+			if ( ! target && groupName && g.getAttribute( 'pfs-group' ) === groupName ) {
+				target = g;
+			}
+		} );
+		target = target || this.groups[ 0 ];
+		this.groups.forEach( function ( g ) {
+			g.classList.toggle( 'is-hidden', g !== target );
+		} );
+		return target.querySelector( '[pfs-results]' );
+	};
+
+	PFSearch.prototype.render = function ( data ) {
+		var self = this;
+		this.lastData = data;
+
+		if ( false === data.template ) {
+			if ( ! this.templateWarned ) {
+				this.templateWarned = true;
+				console.warn( 'PF Search: не найден цикл карточек внутри [pfs-results] в PHP-файлах темы для профиля «' + this.profileId + '» — выпадающее окно отключено, поиск работает по Enter.', this.root );
+			}
+			this.live = false;
+			this.close();
+			return;
+		}
+
+		var container = this.resultsTarget( data.group );
+		if ( container ) {
+			container.innerHTML = data.html || '';
+			toArray( container.querySelectorAll( '[pfs-highlight]' ) ).forEach( function ( el ) {
+				highlight( el, data.highlight );
+			} );
+			reinitWebflow();
+			container.dispatchEvent( new CustomEvent( 'pfs:results-updated', {
+				bubbles: true,
+				detail: { results: container, query: data.query, type: data.type, total: data.total },
+			} ) );
+		}
+		this.container = container;
+
+		this.counts.forEach( function ( el ) {
+			el.textContent = String( data.total );
+		} );
+		this.queries.forEach( function ( el ) {
+			el.textContent = data.query;
+		} );
+
+		var found = data.total > 0;
+		this.empties.forEach( found ? hide : show );
+		this.alls.forEach( function ( el ) {
+			if ( found ) {
+				show( el );
+				if ( 'A' === el.tagName ) {
+					el.setAttribute( 'href', self.fullSearchUrl( data.query ) );
+				}
+			} else {
+				hide( el );
+			}
+		} );
+
+		this.suggests.forEach( function ( box ) {
+			if ( data.suggest ) {
+				toArray( box.querySelectorAll( '[pfs-suggest-query]' ) ).forEach( function ( el ) {
+					el.textContent = data.suggest;
+				} );
+				show( box );
+			} else {
+				hide( box );
+			}
+		} );
+
+		if ( this.hasContent( data ) && document.activeElement === this.input ) {
+			this.open();
+		} else if ( ! this.hasContent( data ) ) {
+			this.close();
+		}
+	};
+
+	PFSearch.prototype.cardLinks = function () {
+		if ( ! this.container ) {
+			return [];
+		}
+		var links = [];
+		toArray( this.container.children ).forEach( function ( card ) {
+			var link = card.matches( 'a[href]' ) ? card : card.querySelector( 'a[href]' );
+			if ( link ) {
+				links.push( link );
+			}
+		} );
+		return links;
+	};
+
+	PFSearch.prototype.focusCard = function ( index ) {
+		if ( ! this.isOpenNow() ) {
+			return false;
+		}
+		var links = this.cardLinks();
+		if ( links[ index ] ) {
+			links[ index ].focus();
+			return true;
+		}
+		return false;
+	};
+
+	// -----------------------------------------------------------------
+	// Открытие/закрытие окна: переключатель темы или is-hidden
+	// -----------------------------------------------------------------
+
+	PFSearch.prototype.isListVisible = function () {
+		var list = this.list;
+		if ( ! list || ! list.getClientRects().length ) {
+			return false;
+		}
+		var style = window.getComputedStyle( list );
+		return 'hidden' !== style.visibility && '0' !== style.opacity;
+	};
+
+	PFSearch.prototype.isOpenNow = function () {
+		if ( ! this.list ) {
+			return false;
+		}
+		if ( ! this.toggle ) {
+			return ! this.list.classList.contains( 'is-hidden' );
+		}
+		// Компонент Webflow Dropdown: состояние синхронно в классе w--open.
+		if ( this.toggle.classList.contains( 'w-dropdown-toggle' ) ) {
+			return this.toggle.classList.contains( 'w--open' );
+		}
+		// Только что нажимали переключатель — анимация ещё идёт, видимость
+		// ненадёжна: верим своему состоянию.
+		if ( Date.now() - this.lastToggleAt < 700 ) {
+			return this.isOpen;
+		}
+		return this.isListVisible();
+	};
+
+	PFSearch.prototype.pressToggle = function () {
+		this.lastToggleAt = Date.now();
+		this.toggle.click();
+	};
+
+	PFSearch.prototype.open = function () {
+		if ( ! this.live ) {
+			return;
+		}
+		if ( ! this.isOpenNow() ) {
+			if ( this.toggle ) {
+				this.pressToggle();
+			} else {
+				show( this.list );
+			}
+		}
+		this.isOpen = true;
+		this.input.setAttribute( 'aria-expanded', 'true' );
+	};
+
+	PFSearch.prototype.close = function () {
+		if ( ! this.list ) {
+			return;
+		}
+		if ( this.isOpenNow() ) {
+			if ( this.toggle ) {
+				this.pressToggle();
+			} else {
+				hide( this.list );
+			}
+		}
+		this.isOpen = false;
+		this.input.setAttribute( 'aria-expanded', 'false' );
+	};
+
+	PFSearch.prototype.clear = function ( focus ) {
+		clearTimeout( this.timer );
+		this.abort();
+		this.setLoading( false );
+		this.input.value = '';
+		this.lastData = null;
+		this.updateClear();
+		this.close();
+		if ( focus ) {
+			this.input.focus();
+		}
+	};
+
+	// -----------------------------------------------------------------
+	// Полная выдача
+	// -----------------------------------------------------------------
+
+	PFSearch.prototype.fullSearchUrl = function ( q ) {
+		if ( this.profile.resultsUrl ) {
+			return buildUrl( this.profile.resultsUrl, { q: q, q_type: this.type } );
+		}
+		return buildUrl( cfg.homeUrl, { s: q, post_type: this.type } );
+	};
+
+	PFSearch.prototype.fullSearch = function () {
+		var q = this.query();
+		if ( ! q ) {
+			return;
+		}
+
+		// Внутри блока фильтра — выдача в его [pf-list] (обработчик ставит
+		// pf-filter.js; если его нет — переход, как вне блока).
+		if ( this.filterBlock ) {
+			var handled = ! this.filterBlock.dispatchEvent( new CustomEvent( 'pfs:submit', {
+				bubbles: false,
+				cancelable: true,
+				detail: { query: q, type: this.type, search: this },
+			} ) );
+			if ( handled ) {
+				this.close();
+				return;
+			}
+		}
+
+		window.location.href = this.fullSearchUrl( q );
+	};
+
+	// -----------------------------------------------------------------
+	// Запуск
+	// -----------------------------------------------------------------
+
+	/**
+	 * [pfs-query] вне любого [pfs] — запрос из адреса страницы (заголовок
+	 * страницы результатов).
+	 */
+	function fillPageQuery() {
+		var q;
+		try {
+			q = new URLSearchParams( window.location.search ).get( 'q' );
+		} catch ( e ) {
+			return;
+		}
+		if ( ! q ) {
+			return;
+		}
+		toArray( document.querySelectorAll( '[pfs-query]' ) ).forEach( function ( el ) {
+			if ( ! el.closest( '[pfs]' ) ) {
+				el.textContent = q;
+			}
+		} );
+	}
+
+	function init() {
+		window.pfsInstances = window.pfsInstances || [];
+		toArray( document.querySelectorAll( '[pfs]' ) ).forEach( function ( root ) {
+			if ( root.pfsInstance ) {
+				return;
+			}
+			var instance = new PFSearch( root );
+			if ( instance.init() ) {
+				root.pfsInstance = instance;
+				window.pfsInstances.push( instance );
+			}
+		} );
+		fillPageQuery();
+	}
+
+	if ( 'loading' === document.readyState ) {
+		document.addEventListener( 'DOMContentLoaded', init );
+	} else {
+		init();
+	}
+}() );

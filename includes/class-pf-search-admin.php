@@ -118,6 +118,11 @@ class PF_Search_Admin {
 		$summary        = PF_Search_Index::get_summary();
 		$has_wc         = class_exists( 'WooCommerce' );
 
+		// Страница настроек — момент, когда верстальщик проверяет результат
+		// своей вёрстки: список файлов темы пересканировать заново.
+		PF_Search_Template::flush_files_cache();
+		$template_info = ( $enabled && $profile_id ) ? ( new PF_Search_Template() )->describe( $profile_id ) : null;
+
 		require PF_FILTER_PATH . 'includes/views/search-admin-page.php';
 	}
 
@@ -426,8 +431,15 @@ class PF_Search_Admin {
 		$page                  = isset( $input['results_page'] ) ? absint( $input['results_page'] ) : 0;
 		$clean['results_page'] = ( $page && 'page' === get_post_type( $page ) ) ? $page : 0;
 
-		// Настраивается на следующем этапе (вёрстка выпадашки) — не теряем.
-		$clean['group_variants'] = is_array( $current['group_variants'] ?? null ) ? $current['group_variants'] : array();
+		// Вариант вёрстки карточек окна (pfs-group) по типам записей.
+		$clean['group_variants'] = array();
+		foreach ( (array) ( $input['group_variants'] ?? array() ) as $type => $variant ) {
+			$type    = sanitize_key( (string) $type );
+			$variant = sanitize_text_field( (string) $variant );
+			if ( isset( $searchable[ $type ] ) && '' !== $variant ) {
+				$clean['group_variants'][ $type ] = $variant;
+			}
+		}
 
 		return $clean;
 	}

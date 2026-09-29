@@ -116,7 +116,7 @@ class PF_Renderer {
 	 * @param string   $cache_file Путь к закэшированному извлечённому шаблону.
 	 * @return string
 	 */
-	private function render_with_extracted_template( WP_Query $query, $cache_file ) {
+	public function render_with_extracted_template( WP_Query $query, $cache_file ) {
 		// Настоящая тема подключает свой файл через load_template()/WordPress
 		// template loader — это происходит в ГЛОБАЛЬНОЙ области видимости, где
 		// $post/$product (последний ставит WooCommerce на хук the_post) доступны

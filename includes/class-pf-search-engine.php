@@ -306,6 +306,36 @@ class PF_Search_Engine {
 	}
 
 	/**
+	 * Что подсвечивать в карточках ([pfs-highlight]): стемы слов запроса,
+	 * их варианты с беглой гласной и само последнее слово как введено
+	 * (для дописывания). Фронт подсвечивает слова текста, начинающиеся с
+	 * любой из этих строк.
+	 *
+	 * @param string $query Запрос.
+	 * @return array
+	 */
+	public static function highlight_terms( $query ) {
+		$out = array();
+		foreach ( self::parse_words( $query ) as $w ) {
+			$out[] = $w['term'];
+			foreach ( $w['alts'] as $alt ) {
+				$out[] = $alt;
+			}
+			if ( mb_strlen( $w['word'] ) >= 2 ) {
+				$out[] = $w['word'];
+			}
+		}
+		$out = array_values( array_unique( array_filter( $out, static function ( $t ) {
+			return mb_strlen( $t ) >= 2;
+		} ) ) );
+		// Длинные первыми — чтобы регулярка на фронте брала самое длинное совпадение.
+		usort( $out, static function ( $a, $b ) {
+			return mb_strlen( $b ) - mb_strlen( $a );
+		} );
+		return $out;
+	}
+
+	/**
 	 * Варианты стема с беглой гласной. Snowball Russian её не обрабатывает:
 	 * «кроссовок» → «кроссовок», но «кроссовки» → «кроссовк» (так же
 	 * носок/носки, подарок/подарки, кружек/кружки, конец/концы). Индекс

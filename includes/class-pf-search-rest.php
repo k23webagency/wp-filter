@@ -62,6 +62,10 @@ class PF_Search_REST {
 						'type'              => 'integer',
 						'sanitize_callback' => 'absint',
 					),
+					'render'   => array(
+						'type'    => 'boolean',
+						'default' => false,
+					),
 				),
 			)
 		);
@@ -85,6 +89,7 @@ class PF_Search_REST {
 		$page     = max( 1, (int) $request->get_param( 'page' ) );
 		$per_page = (int) $request->get_param( 'per_page' );
 		$per_page = $per_page > 0 ? min( self::MAX_PER_PAGE, $per_page ) : max( 1, (int) $profile['dropdown_limit'] );
+		$render   = (bool) $request->get_param( 'render' );
 
 		// Серверный кэш — только при постоянном объектном кэше (Redis,
 		// Memcached): без него wp_cache живёт в рамках одного запроса, а
@@ -93,7 +98,7 @@ class PF_Search_REST {
 		$cache_key = '';
 		if ( wp_using_ext_object_cache() ) {
 			$state     = PF_Search_Index::get_state();
-			$cache_key = md5( wp_json_encode( array( $resolved['id'], $type, $query, $page, $per_page, $state['gen'], wp_cache_get_last_changed( 'posts' ) ) ) );
+			$cache_key = md5( wp_json_encode( array( $resolved['id'], $type, $query, $page, $per_page, $render, $state['gen'], wp_cache_get_last_changed( 'posts' ) ) ) );
 			$cached    = wp_cache_get( $cache_key, 'pf_search' );
 			if ( false !== $cached ) {
 				return new WP_REST_Response( $cached, 200 );
@@ -130,11 +135,61 @@ class PF_Search_REST {
 			'took_ms'  => $result['took_ms'],
 		);
 
+		if ( $render ) {
+			$data += self::render_cards( $resolved['id'], $profile, $type, $result['ids'], $query );
+		}
+
 		if ( $cache_key ) {
 			wp_cache_set( $cache_key, $data, 'pf_search', self::CACHE_TTL );
 		}
 
 		return new WP_REST_Response( $data, 200 );
+	}
+
+	/**
+	 * Карточки выпадающего окна: цикл темы из [pfs-results] (см.
+	 * PF_Search_Template), по одному include на запись — тем же кодом, что
+	 * карточки [pf-list] фильтра (PF_Renderer).
+	 *
+	 * @param string $profile_id ID профиля.
+	 * @param array  $profile    Профиль.
+	 * @param string $type       Тип записей.
+	 * @param array  $ids        Найденные ID в порядке выдачи.
+	 * @param string $query      Запрос (для слов подсветки).
+	 * @return array html, group, template (найден ли шаблон), highlight, suggest.
+	 */
+	private static function render_cards( $profile_id, array $profile, $type, array $ids, $query ) {
+		$group    = (string) ( $profile['group_variants'][ $type ] ?? '' );
+		$template = ( new PF_Search_Template() )->get_cached_template( $profile_id, $group );
+		$html     = '';
+
+		if ( $template && $ids ) {
+			$cards = new WP_Query(
+				array(
+					'post_type'           => $type,
+					'post_status'         => 'publish',
+					'post__in'            => $ids,
+					'orderby'             => 'post__in',
+					'posts_per_page'      => count( $ids ),
+					'ignore_sticky_posts' => true,
+					'no_found_rows'       => true,
+				)
+			);
+			try {
+				$html = ( new PF_Renderer() )->render_with_extracted_template( $cards, $template['file'] );
+			} catch ( \Throwable $e ) {
+				$html     = '';
+				$template = null;
+			}
+		}
+
+		return array(
+			'html'      => $html,
+			'group'     => $template ? $template['group'] : '',
+			'template'  => (bool) $template,
+			'highlight' => PF_Search_Engine::highlight_terms( $query ),
+			'suggest'   => null,
+		);
 	}
 
 	/**
