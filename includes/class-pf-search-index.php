@@ -27,14 +27,14 @@ class PF_Search_Index {
 	 * Версия схемы таблиц — при изменении CREATE TABLE ниже увеличить,
 	 * тогда maybe_install() прогонит dbDelta заново.
 	 */
-	const DB_VERSION = '1';
+	const DB_VERSION = '2';
 
 	/**
 	 * Версия формата содержимого индекса (что и как пишется в постинги) —
 	 * при изменении увеличить: входит в отпечаток спецификации индекса,
 	 * поэтому смена сама запустит полную переиндексацию.
 	 */
-	const INDEX_FORMAT = '1';
+	const INDEX_FORMAT = '2';
 
 	const DB_VERSION_OPTION = 'pf_search_db_version';
 	const STATE_OPTION      = 'pf_search_reindex_state';
@@ -105,6 +105,7 @@ class PF_Search_Index {
 			'terms'    => $wpdb->prefix . 'pf_search_terms',
 			'postings' => $wpdb->prefix . 'pf_search_postings',
 			'docs'     => $wpdb->prefix . 'pf_search_docs',
+			'words'    => $wpdb->prefix . 'pf_search_words',
 		);
 	}
 
@@ -160,6 +161,19 @@ popularity int(10) unsigned NOT NULL DEFAULT 0,
 gen int(10) unsigned NOT NULL DEFAULT 0,
 PRIMARY KEY  (post_id),
 KEY post_type (post_type)
+) {$collate};"
+		);
+
+		// Словарь исходных (не стеммированных) слов заголовков, таксономий и
+		// ACF-полей — для исправления опечаток и подсказки «Возможно, вы
+		// искали…» читаемыми словами (стемы для подсказки не годятся).
+		dbDelta(
+			"CREATE TABLE {$t['words']} (
+word varchar(64){$bin} NOT NULL,
+len tinyint(3) unsigned NOT NULL,
+freq int(10) unsigned NOT NULL DEFAULT 1,
+PRIMARY KEY  (word),
+KEY len (len)
 ) {$collate};"
 		);
 
@@ -404,6 +418,8 @@ KEY post_type (post_type)
 			$wpdb->query( "INSERT IGNORE INTO {$t['postings']} (term_id,post_id,field,type_id,tf,flen) VALUES " . implode( ',', $chunk ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		}
 
+		self::add_words( $fields );
+
 		$state = self::get_state();
 		$wpdb->replace(
 			$t['docs'],
@@ -420,6 +436,46 @@ KEY post_type (post_type)
 		);
 
 		return true;
+	}
+
+	/**
+	 * Пополнить словарь исправлений словами заголовка, таксономий и
+	 * ACF-полей записи (только буквенные слова от 3 символов, без
+	 * стоп-слов). Частота — сколько раз слово попадало в индексируемые
+	 * записи; удалённые записи её не уменьшают (при полной переиндексации
+	 * словарь строится заново) — она нужна только как подсказка при выборе
+	 * между равноудалёнными исправлениями, а само исправление применяется,
+	 * только если по нему реально что-то находится.
+	 *
+	 * @param array $fields field_id => текст.
+	 */
+	private static function add_words( array $fields ) {
+		$words = array();
+		foreach ( $fields as $field_id => $text ) {
+			if ( self::FIELD_TITLE !== $field_id && self::FIELD_TERMS !== $field_id && $field_id < self::ACF_FIELD_BASE ) {
+				continue;
+			}
+			foreach ( PF_Search_Tokenizer::words( $text ) as $word ) {
+				$len = mb_strlen( $word );
+				if ( $len < 3 || $len > PF_Search_Tokenizer::MAX_TERM_LENGTH || ! preg_match( '/^\p{L}+$/u', $word ) || in_array( $word, PF_Search_Tokenizer::STOP_WORDS, true ) ) {
+					continue;
+				}
+				$words[ $word ] = $len;
+			}
+		}
+		if ( ! $words ) {
+			return;
+		}
+
+		global $wpdb;
+		$t    = self::tables();
+		$rows = array();
+		foreach ( $words as $word => $len ) {
+			$rows[] = $wpdb->prepare( '(%s,%d,1)', $word, min( 255, $len ) );
+		}
+		foreach ( array_chunk( $rows, 300 ) as $chunk ) {
+			$wpdb->query( "INSERT INTO {$t['words']} (word,len,freq) VALUES " . implode( ',', $chunk ) . ' ON DUPLICATE KEY UPDATE freq = freq + 1' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
 	}
 
 	/**
@@ -857,6 +913,10 @@ KEY post_type (post_type)
 		$state['started']  = time();
 		$state['finished'] = 0;
 		self::save_state( $state );
+
+		global $wpdb;
+		$t = self::tables();
+		$wpdb->query( "TRUNCATE TABLE {$t['words']}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		update_option( self::SIGNATURE_OPTION, PF_Search_Config::get_index_signature(), false );
 		self::schedule_batch();

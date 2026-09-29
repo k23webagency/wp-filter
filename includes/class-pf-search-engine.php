@@ -78,6 +78,7 @@ class PF_Search_Engine {
 				'per_page' => 10,
 				'prefix'   => true,
 				'debug'    => false,
+				'correct'  => true,
 			)
 		);
 
@@ -87,6 +88,7 @@ class PF_Search_Engine {
 			'took_ms' => 0.0,
 			'mode'    => 'empty',
 			'debug'   => array(),
+			'suggest' => null,
 		);
 
 		$query = trim( (string) $query );
@@ -95,8 +97,19 @@ class PF_Search_Engine {
 		}
 		$query = mb_substr( $query, 0, 200 );
 
+		$suggest = null;
 		try {
 			$ranked = self::rank( $profile, $query, $type, (bool) $opts['prefix'] );
+
+			// Запасной путь: ничего или только частично — пробуем исправить
+			// раскладку/опечатки/транслит (PF_Search_Corrector).
+			if ( $opts['correct'] && ( 0 === $ranked['total'] || 'partial' === $ranked['mode'] ) ) {
+				$fixed = self::try_corrections( $profile, $query, $type, (bool) $opts['prefix'], $ranked );
+				if ( $fixed ) {
+					$ranked  = $fixed['ranked'];
+					$suggest = $fixed['query'];
+				}
+			}
 		} catch ( \Throwable $e ) {
 			return $empty;
 		}
@@ -116,9 +129,66 @@ class PF_Search_Engine {
 			'ids'     => array_map( 'intval', $ids ),
 			'total'   => $ranked['total'],
 			'took_ms' => round( ( microtime( true ) - $started ) * 1000, 1 ),
-			'mode'    => $ranked['mode'],
+			'mode'    => null !== $suggest ? 'corrected' : $ranked['mode'],
 			'debug'   => $debug,
+			'suggest' => $suggest,
 		);
+	}
+
+	/**
+	 * Исправленные варианты запроса по очереди: раскладка всего запроса,
+	 * затем замена незнакомых слов (опечатки, транслит). Берётся первый,
+	 * который находит что-то там, где исходный не нашёл ничего, или
+	 * находит все слова там, где исходный — только часть.
+	 *
+	 * @param array  $profile  Профиль.
+	 * @param string $query    Исходный запрос.
+	 * @param string $type     Тип записей.
+	 * @param bool   $prefix   Дописывать последнее слово.
+	 * @param array  $original Результат rank() исходного запроса.
+	 * @return array{query:string,ranked:array}|null
+	 */
+	private static function try_corrections( array $profile, $query, $type, $prefix, array $original ) {
+		$candidates = array();
+
+		$swapped = PF_Search_Corrector::layout_swap( $query );
+		if ( null !== $swapped ) {
+			$candidates[] = $swapped;
+		}
+
+		$words = array_slice( PF_Search_Tokenizer::words( $query ), 0, self::MAX_WORDS );
+		if ( $words ) {
+			$terms = array();
+			foreach ( $words as $word ) {
+				$term = PF_Search_Tokenizer::term( $word );
+				if ( null !== $term ) {
+					$terms[] = $term;
+					foreach ( self::fleeting_vowel_variants( $term ) as $alt ) {
+						$terms[] = $alt;
+					}
+				}
+			}
+			$known     = $terms ? array_fill_keys( array_keys( PF_Search_Index::lookup_terms( array_unique( $terms ) ) ), true ) : array();
+			$corrected = PF_Search_Corrector::correct_words( $words, $known );
+			if ( null !== $corrected ) {
+				$candidates[] = $corrected;
+			}
+		}
+
+		foreach ( array_unique( $candidates ) as $candidate ) {
+			if ( PF_Search_Tokenizer::normalize( $candidate ) === PF_Search_Tokenizer::normalize( $query ) ) {
+				continue;
+			}
+			$ranked = self::rank( $profile, $candidate, $type, $prefix );
+			if ( $ranked['total'] > 0 && ( 0 === $original['total'] || 'and' === $ranked['mode'] ) ) {
+				return array(
+					'query'  => $candidate,
+					'ranked' => $ranked,
+				);
+			}
+		}
+
+		return null;
 	}
 
 	/**

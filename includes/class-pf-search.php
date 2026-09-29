@@ -109,6 +109,11 @@ final class PF_Search {
 		if ( ! wp_next_scheduled( PF_Search_Index::CRON_MAINTENANCE ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'twicedaily', PF_Search_Index::CRON_MAINTENANCE );
 		}
+		// После обновления плагина с новым форматом индекса (INDEX_FORMAT
+		// входит в отпечаток) — переиндексация запускается сама.
+		if ( 'running' !== PF_Search_Index::get_state()['status'] ) {
+			PF_Search_Index::maybe_reindex_on_spec_change();
+		}
 	}
 
 	/**

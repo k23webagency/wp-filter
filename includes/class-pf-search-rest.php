@@ -132,11 +132,13 @@ class PF_Search_REST {
 			'profile'  => $resolved['id'],
 			'type'     => $type,
 			'mode'     => $result['mode'],
+			'suggest'  => $result['suggest'],
 			'took_ms'  => $result['took_ms'],
 		);
 
 		if ( $render ) {
-			$data += self::render_cards( $resolved['id'], $profile, $type, $result['ids'], $query );
+			$data += self::render_cards( $resolved['id'], $profile, $type, $result['ids'], null !== $result['suggest'] ? $result['suggest'] : $query );
+			$data['suggest'] = $result['suggest'];
 		}
 
 		if ( $cache_key ) {
