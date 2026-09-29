@@ -1360,6 +1360,16 @@ class PF_Attributes {
 			),
 		);
 
+		// Модуль поиска: при активном поисковом запросе список по умолчанию
+		// и так идёт по релевантности; вариант нужен, чтобы посетитель мог
+		// вернуться к ней после другой сортировки. Без запроса — как по умолчанию.
+		if ( class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() ) {
+			$options[] = array(
+				'value' => 'relevance',
+				'label' => __( 'По релевантности (при поиске)', 'pf-filter' ),
+			);
+		}
+
 		if ( 'product' === $post_type ) {
 			$options[] = array(
 				'value' => 'price',

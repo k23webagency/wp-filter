@@ -165,6 +165,7 @@ class PF_REST_API {
 				'pagination_strategy' => $settings['pagination_strategy'],
 				'filter_mode'         => isset( $settings['filter_mode'] ) ? $settings['filter_mode'] : 'auto',
 				'posts_per_page'      => (int) $settings['posts_per_page'],
+				'post_type'           => PF_Config::get_post_type(),
 			),
 		);
 	}
@@ -200,6 +201,19 @@ class PF_REST_API {
 		$paged    = $paged > 0 ? $paged : 1;
 		$per_page = $per_page > 0 ? $per_page : 12;
 
+		// Поисковый запрос модуля PF Search ([pfs] внутри блока фильтра или
+		// страница результатов): сужает и список, и facet-счётчики.
+		$search             = trim( sanitize_text_field( (string) ( $body['search'] ?? '' ) ) );
+		$search_unavailable = false;
+		if ( '' !== $search && class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() ) {
+			$search_ids = $this->search_ids_for( $search, sanitize_key( (string) ( $body['search_profile'] ?? '' ) ) );
+			if ( null === $search_ids ) {
+				$search_unavailable = true;
+				$search_ids         = array();
+			}
+			$this->query_builder->set_search_restriction( $search_ids );
+		}
+
 		$query = $this->query_builder->build( $filters, $logic, $orderby, $order, $paged, $per_page );
 
 		$page_url = isset( $body['page_url'] ) ? esc_url_raw( (string) $body['page_url'] ) : '';
@@ -227,7 +241,58 @@ class PF_REST_API {
 			'counts'       => $counts,
 		);
 
+		if ( '' !== $search ) {
+			$response['search'] = $search;
+			if ( $search_unavailable ) {
+				$response['search_unavailable'] = true;
+			}
+		}
+
 		return new WP_REST_Response( $response, 200 );
+	}
+
+	/**
+	 * ID результатов поиска для типа записей текущего профиля фильтра, в
+	 * порядке релевантности (не больше PF_Search_Engine::MAX_CANDIDATES).
+	 * Профиль поиска — запрошенный ([pfs] внутри блока), если он ищет по
+	 * этому типу, иначе первый профиль с этим типом.
+	 *
+	 * @param string $search            Запрос.
+	 * @param string $requested_profile ID профиля поиска (может быть пустым).
+	 * @return int[]|null null — ни один профиль поиска не ищет по этому типу
+	 *                    (его нет в индексе).
+	 */
+	private function search_ids_for( $search, $requested_profile ) {
+		$type    = PF_Config::get_post_type();
+		$profile = null;
+
+		$requested = $requested_profile ? PF_Search_Config::get_profile( $requested_profile ) : null;
+		if ( $requested && in_array( $type, PF_Search_Config::get_profile_types( $requested ), true ) ) {
+			$profile = $requested;
+		} else {
+			foreach ( PF_Search_Config::get_profiles() as $candidate ) {
+				if ( in_array( $type, PF_Search_Config::get_profile_types( $candidate ), true ) ) {
+					$profile = $candidate;
+					break;
+				}
+			}
+		}
+
+		if ( ! $profile ) {
+			return null;
+		}
+
+		$result = PF_Search_Engine::search(
+			$profile,
+			$search,
+			$type,
+			array(
+				'page'     => 1,
+				'per_page' => PF_Search_Engine::MAX_CANDIDATES,
+			)
+		);
+
+		return $result['ids'];
 	}
 
 	/**

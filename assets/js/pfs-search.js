@@ -193,9 +193,52 @@
 		this.initLive();
 		this.initTypes();
 		this.bind();
+		this.prefillFromUrl();
 		this.updateClear();
 
 		return true;
+	};
+
+	/**
+	 * ?q= в адресе: поле внутри блока фильтра (его список уже показывает
+	 * этот запрос) и поле на странице результатов своего профиля (в т.ч. в
+	 * шапке) заполняются запросом; на странице результатов — ещё и тип.
+	 */
+	PFSearch.prototype.prefillFromUrl = function () {
+		var params;
+		try {
+			params = new URLSearchParams( window.location.search );
+		} catch ( e ) {
+			return;
+		}
+		var q = ( params.get( 'q' ) || '' ).trim();
+		if ( ! q || this.input.value ) {
+			return;
+		}
+
+		var onResultsPage = false;
+		if ( this.profile.resultsUrl ) {
+			try {
+				onResultsPage = new URL( this.profile.resultsUrl, window.location.href ).pathname.replace( /\/+$/, '' ) === window.location.pathname.replace( /\/+$/, '' );
+			} catch ( e ) {
+				onResultsPage = false;
+			}
+		}
+		if ( ! this.filterBlock && ! onResultsPage ) {
+			return;
+		}
+
+		this.input.value = q;
+		var type = params.get( 'q_type' );
+		if ( onResultsPage && ! this.lockedType && type && this.typeButtons ) {
+			var allowed = this.profile.types.some( function ( t ) {
+				return t.slug === type;
+			} );
+			if ( allowed ) {
+				this.type = type;
+				this.markType();
+			}
+		}
 	};
 
 	/**
@@ -375,6 +418,18 @@
 			btn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
 				self.clear( true );
+			} );
+		} );
+
+		this.alls.forEach( function ( el ) {
+			el.addEventListener( 'click', function ( e ) {
+				// Ссылка вне блока фильтра — обычный переход по href (можно
+				// открыть в новой вкладке); всё остальное — полная выдача.
+				if ( 'A' === el.tagName && ! self.filterBlock && el.getAttribute( 'href' ) && '#' !== el.getAttribute( 'href' ) ) {
+					return;
+				}
+				e.preventDefault();
+				self.fullSearch();
 			} );
 		} );
 
@@ -724,6 +779,9 @@
 		this.lastData = null;
 		this.updateClear();
 		this.close();
+		if ( this.filterBlock ) {
+			this.submitToBlock( '' );
+		}
 		if ( focus ) {
 			this.input.focus();
 		}
@@ -740,24 +798,37 @@
 		return buildUrl( cfg.homeUrl, { s: q, post_type: this.type } );
 	};
 
+	/**
+	 * Передать запрос блоку фильтра (pf-filter.js). Пустой запрос — снять
+	 * поиск со списка.
+	 *
+	 * @return {boolean} true — блок фильтра обработал запрос.
+	 */
+	PFSearch.prototype.submitToBlock = function ( q ) {
+		return ! this.filterBlock.dispatchEvent( new CustomEvent( 'pfs:submit', {
+			bubbles: false,
+			cancelable: true,
+			detail: { query: q, type: this.type, profile: this.profileId, search: this },
+		} ) );
+	};
+
 	PFSearch.prototype.fullSearch = function () {
 		var q = this.query();
-		if ( ! q ) {
-			return;
-		}
 
 		// Внутри блока фильтра — выдача в его [pf-list] (обработчик ставит
-		// pf-filter.js; если его нет — переход, как вне блока).
+		// pf-filter.js; если его нет — переход, как вне блока). Пустое поле +
+		// Enter — показать список без поиска.
 		if ( this.filterBlock ) {
-			var handled = ! this.filterBlock.dispatchEvent( new CustomEvent( 'pfs:submit', {
-				bubbles: false,
-				cancelable: true,
-				detail: { query: q, type: this.type, search: this },
-			} ) );
-			if ( handled ) {
-				this.close();
-				return;
+			if ( ! q || q.length >= MIN_CHARS ) {
+				if ( this.submitToBlock( q ) ) {
+					this.close();
+					return;
+				}
 			}
+		}
+
+		if ( q.length < MIN_CHARS ) {
+			return;
 		}
 
 		window.location.href = this.fullSearchUrl( q );

@@ -20,12 +20,32 @@ class PF_Query {
 	private $attributes;
 
 	/**
+	 * Ограничение выборки результатами поиска модуля PF Search: ID в
+	 * порядке релевантности, либо null — поиска нет. Действует на ВСЕ
+	 * запросы этого построителя за REST-вызов — и на список, и на
+	 * facet-счётчики (PF_Renderer::matching_post_ids() строит свою выборку
+	 * тем же build()), поэтому фасеты считаются по найденному.
+	 *
+	 * @var int[]|null
+	 */
+	private $search_ids = null;
+
+	/**
 	 * Конструктор.
 	 *
 	 * @param PF_Attributes|null $attributes Опционально — для переиспользования уже созданного экземпляра.
 	 */
 	public function __construct( ?PF_Attributes $attributes = null ) {
 		$this->attributes = $attributes ?: new PF_Attributes();
+	}
+
+	/**
+	 * Задать (или снять — null) ограничение выборки результатами поиска.
+	 *
+	 * @param int[]|null $ids ID в порядке релевантности.
+	 */
+	public function set_search_restriction( $ids ) {
+		$this->search_ids = null === $ids ? null : array_values( array_map( 'intval', (array) $ids ) );
 	}
 
 	/**
@@ -128,6 +148,24 @@ class PF_Query {
 				$post_in = ( null === $post_in ) ? $ids : array_intersect( $post_in, $ids );
 			}
 			$args['post__in'] = empty( $post_in ) ? array( 0 ) : array_values( $post_in );
+		}
+
+		// Поиск всегда сужает выборку (AND с фильтрами при любой логике между
+		// группами) — порядок ID сохраняется для сортировки по релевантности.
+		if ( null !== $this->search_ids ) {
+			$restricted = $this->search_ids;
+			if ( isset( $args['post__in'] ) ) {
+				$allowed    = array_flip( array_map( 'intval', (array) $args['post__in'] ) );
+				$restricted = array_values(
+					array_filter(
+						$restricted,
+						static function ( $id ) use ( $allowed ) {
+							return isset( $allowed[ $id ] );
+						}
+					)
+				);
+			}
+			$args['post__in'] = $restricted ? $restricted : array( 0 );
 		}
 
 		$this->apply_orderby( $args, $orderby, $order );
@@ -314,6 +352,16 @@ class PF_Query {
 	 */
 	private function apply_orderby( array &$args, $orderby, $order ) {
 		$orderby = (string) $orderby;
+
+		// По релевантности — порядок, в котором движок поиска вернул ID
+		// (post__in уже выставлен в build()). Без поиска — как по умолчанию.
+		if ( 'relevance' === $orderby ) {
+			if ( null !== $this->search_ids ) {
+				$args['orderby'] = 'post__in';
+				return;
+			}
+			$orderby = 'menu_order';
+		}
 
 		// JS уже разделяет "-desc"-суффикс на orderby+order отдельно (см.
 		// PFForm.prototype.applyOrderby()) до отправки запроса — эта проверка

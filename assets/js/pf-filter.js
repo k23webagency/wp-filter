@@ -241,6 +241,12 @@
 			orderby: 'menu_order',
 			order: 'ASC',
 			paged: 1,
+			// Поиск модуля PF Search: запрос из [pfs] внутри блока или ?q= на
+			// странице результатов. sortChosen — посетитель сам выбрал
+			// сортировку; пока нет — при поиске сортировка по релевантности.
+			search: '',
+			searchProfile: '',
+			sortChosen: false,
 		};
 
 		this.totalPages = 1;
@@ -331,19 +337,26 @@
 		} );
 
 		this.outputEl = qs( this.formEl, '[pf-output]' );
-		if ( ! this.outputEl ) {
+		this.templatesEl = qs( this.formEl, '[pf-templates]' );
+		// Пустая <form pf-form></form> (ни [pf-output], ни [pf-templates]) —
+		// осознанный блок без групп фильтра (например, страница результатов
+		// поиска): список, сортировка, пагинация работают, ошибок нет.
+		// Ошибка — только если в форме есть одно без другого.
+		var formWithoutGroups = ! this.outputEl && ! this.templatesEl;
+		if ( ! this.outputEl && ! formWithoutGroups ) {
 			console.error( 'PF Filter: [pf-output] не найден, группы фильтров не будут рендериться.' );
 		}
 
-		this.templatesEl = qs( this.formEl, '[pf-templates]' );
 		if ( this.templatesEl ) {
 			// [pf-templates] — библиотека шаблонов для клонирования, на живой странице
 			// её саму видно быть не должно (иначе пользователь увидит сырую разметку
 			// верстальщика вместо реальных данных).
 			this.templatesEl.classList.add( 'pf-hidden' );
-		} else {
+		} else if ( ! formWithoutGroups ) {
 			console.error( 'PF Filter: [pf-templates] не найден, фильтр не будет построен.' );
 		}
+
+		this.initSearchBridge();
 
 		this.loadingEl = qs( this.scopeRoot, '[pf-loading]' );
 		this.emptyEl = qs( this.scopeRoot, '[pf-empty]' );
@@ -408,8 +421,18 @@
 				self.initActiveFilters();
 				self.initApplyButton();
 
+				// Страница результатов поиска: ?q= (и ?q_type= — какой из блоков
+				// показать). Работает и при выключенной синхронизации с URL —
+				// это адрес страницы, на которую привёл поиск.
+				var searchFromUrl = self.applySearchFromUrl( config );
+				if ( false === searchFromUrl ) {
+					return; // Блок другого типа записей — скрыт, не загружаем.
+				}
+
 				var restoredFromUrl = self.restoreFromUrl();
-				if ( ! restoredFromUrl ) {
+				if ( ! restoredFromUrl && searchFromUrl ) {
+					self.runFilter( { forceReplace: true } );
+				} else if ( ! restoredFromUrl ) {
 					// Первая загрузка страницы без фильтров в URL — обычно [pf-list]
 					// трогать не нужно (уже отрендерен обычным циклом WordPress с
 					// правильным posts_per_page, см. PF_Plugin::limit_main_query_posts_per_page()),
@@ -1453,12 +1476,16 @@
 		}
 		this.previewAbortController = new AbortController();
 
+		// Счётчики предпросмотра — тоже по результатам поиска, если он активен.
+		var byRelevance = !! this.state.search && ! this.state.sortChosen;
 		var body = {
 			profile: this.profileId || '',
 			filters: this.collectFilters(),
 			logic: this.logic,
-			orderby: this.state.orderby,
-			order: this.state.order,
+			orderby: byRelevance ? 'relevance' : this.state.orderby,
+			order: byRelevance ? 'ASC' : this.state.order,
+			search: this.state.search,
+			search_profile: this.state.searchProfile,
 			paged: 1,
 			posts_per_page: this.perPage,
 			page_url: window.location.href,
@@ -1519,12 +1546,16 @@
 			this.loadingEl.classList.remove( 'is-hidden' );
 		}
 
+		// Пока идёт поиск и посетитель не выбрал сортировку сам — по релевантности.
+		var byRelevance = !! this.state.search && ! this.state.sortChosen;
 		var body = {
 			profile: this.profileId || '',
 			filters: this.collectFilters(),
 			logic: this.logic,
-			orderby: this.state.orderby,
-			order: this.state.order,
+			orderby: byRelevance ? 'relevance' : this.state.orderby,
+			order: byRelevance ? 'ASC' : this.state.order,
+			search: this.state.search,
+			search_profile: this.state.searchProfile,
 			paged: this.state.paged,
 			posts_per_page: this.perPage,
 			// Тема часто строит ссылки карточки (например «В корзину») от текущего URL —
@@ -1569,6 +1600,11 @@
 
 		if ( this.loadingEl ) {
 			this.loadingEl.classList.add( 'is-hidden' );
+		}
+
+		if ( data.search_unavailable && ! this.searchUnavailableWarned ) {
+			this.searchUnavailableWarned = true;
+			console.warn( 'PF Filter: ни один профиль поиска (Настройки → PF Search) не ищет по типу записей этого блока фильтра — поиск здесь ничего не найдёт. Добавьте этот тип в профиль поиска.' );
 		}
 
 		this.totalPages = data.pages || 1;
@@ -1779,6 +1815,7 @@
 
 		this.sortList = list;
 		this.sortTriggerLabel = triggerLabel;
+		this.sortOptions = sortOptions;
 
 		sortOptions.forEach( function ( option, index ) {
 			var clone = optionTpl.cloneNode( true );
@@ -1789,6 +1826,8 @@
 			clone.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
 				self.activateSortOption( option );
+				// «По релевантности» — то же, что сортировка по умолчанию при поиске.
+				self.state.sortChosen = 'relevance' !== option.value;
 				self.runFilter( { resetPage: true, forceReplace: true } );
 			} );
 
@@ -2292,6 +2331,14 @@
 		if ( this.state.orderbyRaw ) {
 			params.set( 'orderby', this.state.orderbyRaw );
 		}
+		if ( this.state.search ) {
+			params.set( 'q', this.state.search );
+			// На странице результатов сохраняем выбор блока по типу записей.
+			var currentType = new URLSearchParams( window.location.search ).get( 'q_type' );
+			if ( currentType ) {
+				params.set( 'q_type', currentType );
+			}
+		}
 		// Номер страницы пишется в URL только на настоящих архивных страницах
 		// (см. pfConfig.isArchivePage, PF_Plugin::limit_main_query_posts_per_page()).
 		// На встроенном (не архивном) блоке плагин не ограничивает и не
@@ -2450,6 +2497,98 @@
 			slider.dataset.userMax = value;
 			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), value, true );
 		}
+	};
+
+	// -----------------------------------------------------------------
+	// Поиск (модуль PF Search)
+	// -----------------------------------------------------------------
+
+	/**
+	 * Приём полной выдачи от [pfs] внутри этого блока: pfs-search.js кидает
+	 * отменяемое событие pfs:submit на [pf-profile]; отмена = «обработано
+	 * здесь, переход на страницу результатов не нужен». Если форм на один
+	 * блок несколько, запрос применяют все, а фильтрацию запускает первая.
+	 */
+	PFForm.prototype.initSearchBridge = function () {
+		if ( this.scopeRoot === document ) {
+			return;
+		}
+		var self = this;
+		this.scopeRoot.addEventListener( 'pfs:submit', function ( e ) {
+			var detail = e.detail || {};
+			var query = ( detail.query || '' ).trim();
+			e.preventDefault();
+			// Пустой запрос, когда поиска и не было, — нечего делать.
+			if ( ! query && ! self.state.search ) {
+				return;
+			}
+			self.setSearch( query, detail.profile || '' );
+			if ( ! detail.pfFilterRun ) {
+				detail.pfFilterRun = true;
+				self.runFilter( { resetPage: true, forceReplace: true } );
+			}
+		} );
+	};
+
+	/**
+	 * Задать/снять поисковый запрос блока. Новый запрос сбрасывает выбор
+	 * сортировки посетителем (снова по релевантности) и подсвечивает вариант
+	 * «По релевантности» в [pf-sort], если он есть в списке.
+	 */
+	PFForm.prototype.setSearch = function ( query, profile ) {
+		this.state.search = query;
+		this.state.searchProfile = profile || this.state.searchProfile;
+		this.state.sortChosen = false;
+
+		var options = this.sortOptions || [];
+		var relevance = null;
+		var fallback = null;
+		options.forEach( function ( option ) {
+			if ( 'relevance' === option.value ) {
+				relevance = relevance || option;
+			} else {
+				fallback = fallback || option;
+			}
+		} );
+
+		if ( query && relevance ) {
+			this.activateSortOption( relevance );
+		} else if ( ! query && 'relevance' === this.state.orderbyRaw && fallback ) {
+			this.activateSortOption( fallback );
+		}
+	};
+
+	/**
+	 * ?q= / ?q_type= из адреса страницы (страница результатов поиска или
+	 * каталог с запросом в URL).
+	 *
+	 * @return {boolean|null} true — поиск применён; false — блок другого
+	 *                        типа записей, скрыт; null — запроса в адресе нет.
+	 */
+	PFForm.prototype.applySearchFromUrl = function ( config ) {
+		var params = new URLSearchParams( window.location.search );
+		var query = ( params.get( 'q' ) || '' ).trim();
+		if ( ! query ) {
+			return null;
+		}
+
+		var wantedType = params.get( 'q_type' );
+		var blockType = config && config.settings ? config.settings.post_type : '';
+		if ( wantedType && blockType && wantedType !== blockType && this.scopeRoot !== document ) {
+			this.scopeRoot.classList.add( 'pf-hidden' );
+			return false;
+		}
+
+		var inner = this.scopeRoot === document ? null : qs( this.scopeRoot, '[pfs]' );
+		this.setSearch( query, inner ? inner.getAttribute( 'pfs' ) || '' : '' );
+
+		// Явно выбранная сортировка в адресе (не первая по списку и не
+		// «по релевантности») — посетитель её выбирал сам.
+		var urlOrder = params.get( 'orderby' );
+		var first = ( this.sortOptions || [] )[ 0 ];
+		this.state.sortChosen = !! urlOrder && 'relevance' !== urlOrder && ( ! first || urlOrder !== first.value );
+
+		return true;
 	};
 
 	PFForm.prototype.selectSortOption = function ( value ) {
