@@ -93,6 +93,10 @@ final class PF_Plugin {
 		// изменения товара, который хуки выше не ловят (некоторые импортёры
 		// пишут в БД напрямую, минуя save_post).
 		add_action( 'pf_filter_refresh_custom_attributes_cache', array( 'PF_Attributes', 'rebuild_custom_attributes_cache' ) );
+
+		// Модуль поиска (pfs-*): сам решает, что подключать — выключенный
+		// в админке регистрирует только свою страницу настроек.
+		PF_Search::init();
 	}
 
 	/**

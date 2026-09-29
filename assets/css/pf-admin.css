@@ -177,3 +177,67 @@
 	float: none;
 	display: inline-block;
 }
+
+/*
+ * Страница модуля поиска (Настройки → PF Search).
+ */
+.pfs-admin .pfs-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	padding: 4px 20px 16px;
+	margin: 16px 0;
+	max-width: 1100px;
+}
+
+.pfs-admin .pfs-muted {
+	color: #646970;
+}
+
+.pfs-admin .pfs-ok {
+	color: #00a32a;
+}
+
+.pfs-admin .pfs-error,
+.pfs-admin .pfs-warning {
+	color: #b32d2e;
+}
+
+.pfs-admin .pfs-mode-panel {
+	margin-top: 10px;
+}
+
+.pfs-admin .pfs-types-table {
+	max-width: 760px;
+}
+
+.pfs-admin .pfs-acf-type {
+	margin-bottom: 10px;
+}
+
+.pfs-admin .pfs-progress-bar {
+	height: 8px;
+	background: #f0f0f1;
+	border-radius: 4px;
+	overflow: hidden;
+	max-width: 480px;
+}
+
+.pfs-admin .pfs-progress-bar span {
+	display: block;
+	height: 100%;
+	background: #2271b1;
+	transition: width 0.3s;
+}
+
+.pfs-admin .pfs-advanced summary {
+	cursor: pointer;
+	font-weight: 600;
+	margin: 8px 0;
+}
+
+.pfs-admin .pfs-test-form {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin: 8px 0 12px;
+}
