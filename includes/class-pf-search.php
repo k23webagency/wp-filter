@@ -90,6 +90,7 @@ final class PF_Search {
 
 		return array(
 			'restUrl'            => esc_url_raw( rest_url( 'pf/v1/search' ) ),
+			'logUrl'             => PF_Search_Analytics::is_enabled() ? esc_url_raw( rest_url( 'pf/v1/search/log' ) ) : '',
 			'homeUrl'            => esc_url_raw( home_url( '/' ) ),
 			'minChars'           => PF_Search_Engine::MIN_QUERY_LENGTH,
 			'debounce'           => 300,

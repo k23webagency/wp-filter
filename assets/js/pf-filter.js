@@ -1556,12 +1556,17 @@
 			order: byRelevance ? 'ASC' : this.state.order,
 			search: this.state.search,
 			search_profile: this.state.searchProfile,
+			// Аналитика поиска: учитывать только первый запрос после нового
+			// поискового запроса, а не каждое изменение фильтров поверх него.
+			log_search: this.logNextSearch ? 1 : 0,
 			paged: this.state.paged,
 			posts_per_page: this.perPage,
 			// Тема часто строит ссылки карточки (например «В корзину») от текущего URL —
 			// сервер подставляет этот URL на время рендера вместо адреса REST-эндпоинта.
 			page_url: window.location.href,
 		};
+
+		this.logNextSearch = false;
 
 		var self = this;
 		fetch( window.pfConfig.restUrl + 'products', {
@@ -2536,6 +2541,7 @@
 	 * «По релевантности» в [pf-sort], если он есть в списке.
 	 */
 	PFForm.prototype.setSearch = function ( query, profile ) {
+		this.logNextSearch = !! query;
 		this.state.search = query;
 		this.state.searchProfile = profile || this.state.searchProfile;
 		this.state.sortChosen = false;

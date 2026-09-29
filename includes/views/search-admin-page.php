@@ -3,7 +3,8 @@
  * Разметка страницы настроек модуля поиска (Настройки → PF Search).
  * Переменные приходят из PF_Search_Admin::render_page(): $enabled,
  * $environment_ok, $profiles, $profile_id, $profile, $post_types,
- * $acf_by_type, $state, $summary, $has_wc, $template_info.
+ * $acf_by_type, $state, $summary, $has_wc, $template_info, $analytics,
+ * $top_queries, $zero_queries.
  *
  * @package PF_Filter
  */
@@ -19,6 +20,9 @@ $pfs_notices = array(
 	'enabled'    => __( 'Модуль поиска включён, индексация запущена.', 'pf-filter' ),
 	'disabled'   => __( 'Модуль поиска выключен. Индекс сохранён в базе, при включении он обновится.', 'pf-filter' ),
 	'reindex'    => __( 'Запущена переиндексация. Поиск работает и во время неё.', 'pf-filter' ),
+	'analytics_on'      => __( 'Аналитика запросов включена.', 'pf-filter' ),
+	'analytics_off'     => __( 'Аналитика запросов выключена. Собранная статистика сохранена.', 'pf-filter' ),
+	'analytics_cleared' => __( 'Статистика запросов очищена.', 'pf-filter' ),
 );
 $pfs_errors  = array(
 	'not_found'    => __( 'Профиль не найден.', 'pf-filter' ),
@@ -356,6 +360,56 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 
 			<?php submit_button( __( 'Сохранить профиль', 'pf-filter' ) ); ?>
 		</form>
+
+		<div class="pfs-card">
+			<h2><?php esc_html_e( 'Аналитика запросов', 'pf-filter' ); ?></h2>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block">
+				<?php wp_nonce_field( 'pfs_toggle_analytics' ); ?>
+				<input type="hidden" name="action" value="pfs_toggle_analytics" />
+				<?php if ( $analytics ) : ?>
+					<p><strong class="pfs-ok"><?php esc_html_e( 'Включена.', 'pf-filter' ); ?></strong> <?php esc_html_e( 'Учитываются только итоговые запросы: полная выдача (Enter, страница результатов, выдача в блоке фильтра) и живой поиск, на котором посетитель остановился или кликнул по карточке. Хранится только «запрос → сколько раз искали, сколько нашлось».', 'pf-filter' ); ?></p>
+					<button type="submit" class="button"><?php esc_html_e( 'Выключить аналитику', 'pf-filter' ); ?></button>
+				<?php else : ?>
+					<p><?php esc_html_e( 'Выключена. Если включить — будет видно, что ищут на сайте и какие запросы ничего не находят (подсказка, каких товаров, слов в описаниях или ACF-полей не хватает). Небольшая дополнительная запись в базу на каждый итоговый запрос.', 'pf-filter' ); ?></p>
+					<input type="hidden" name="enable" value="1" />
+					<button type="submit" class="button"><?php esc_html_e( 'Включить аналитику', 'pf-filter' ); ?></button>
+				<?php endif; ?>
+			</form>
+			<?php if ( $analytics ) : ?>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block" onsubmit="return confirm('<?php echo esc_js( __( 'Очистить всю статистику запросов?', 'pf-filter' ) ); ?>');">
+					<?php wp_nonce_field( 'pfs_clear_analytics' ); ?>
+					<input type="hidden" name="action" value="pfs_clear_analytics" />
+					<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Очистить статистику', 'pf-filter' ); ?></button>
+				</form>
+				<?php
+				$pfs_tables = array(
+					__( 'Запросы без результатов', 'pf-filter' ) => $zero_queries,
+					__( 'Частые запросы', 'pf-filter' )          => $top_queries,
+				);
+				?>
+				<?php foreach ( $pfs_tables as $pfs_title => $pfs_rows ) : ?>
+					<h3><?php echo esc_html( $pfs_title ); ?></h3>
+					<?php if ( ! $pfs_rows ) : ?>
+						<p class="pfs-muted"><?php esc_html_e( 'Пока пусто.', 'pf-filter' ); ?></p>
+					<?php else : ?>
+						<table class="widefat striped" style="max-width:900px">
+							<thead><tr><th><?php esc_html_e( 'Запрос', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Раз искали', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Найдено (последний раз)', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Тип / профиль', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Последний раз', 'pf-filter' ); ?></th></tr></thead>
+							<tbody>
+								<?php foreach ( $pfs_rows as $pfs_row ) : ?>
+									<tr>
+										<td><?php echo esc_html( $pfs_row->query ); ?></td>
+										<td><?php echo esc_html( number_format_i18n( (int) $pfs_row->hits ) ); ?></td>
+										<td><?php echo esc_html( number_format_i18n( (int) $pfs_row->last_total ) ); ?></td>
+										<td><?php echo esc_html( ( $post_types[ $pfs_row->post_type ] ?? $pfs_row->post_type ) . ' / ' . $pfs_row->profile ); ?></td>
+										<td><?php echo esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), strtotime( $pfs_row->last_at . ' UTC' ) ) ); ?></td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					<?php endif; ?>
+				<?php endforeach; ?>
+			<?php endif; ?>
+		</div>
 
 		<div class="pfs-card">
 			<h2><?php esc_html_e( 'Проверка поиска', 'pf-filter' ); ?></h2>

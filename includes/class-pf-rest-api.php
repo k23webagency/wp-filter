@@ -41,6 +41,14 @@ class PF_REST_API {
 	private $renderer;
 
 	/**
+	 * ID профиля поиска, использованного в последнем search_ids_for() (для
+	 * аналитики).
+	 *
+	 * @var string
+	 */
+	private $last_search_profile = '';
+
+	/**
 	 * Конструктор.
 	 */
 	public function __construct() {
@@ -241,6 +249,10 @@ class PF_REST_API {
 			'counts'       => $counts,
 		);
 
+		if ( '' !== $search && ! empty( $body['log_search'] ) && class_exists( 'PF_Search_Analytics' ) ) {
+			PF_Search_Analytics::log( $search, $this->last_search_profile, PF_Config::get_post_type(), (int) $query->found_posts );
+		}
+
 		if ( '' !== $search ) {
 			$response['search'] = $search;
 			if ( $search_unavailable ) {
@@ -281,6 +293,7 @@ class PF_REST_API {
 		if ( ! $profile ) {
 			return null;
 		}
+		$this->last_search_profile = (string) array_search( $profile, PF_Search_Config::get_profiles(), true );
 
 		$result = PF_Search_Engine::search(
 			$profile,

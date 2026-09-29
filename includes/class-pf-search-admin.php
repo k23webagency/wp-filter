@@ -36,6 +36,8 @@ class PF_Search_Admin {
 		add_action( 'admin_post_pfs_duplicate_profile', array( $this, 'handle_duplicate_profile' ) );
 		add_action( 'admin_post_pfs_delete_profile', array( $this, 'handle_delete_profile' ) );
 		add_action( 'admin_post_pfs_reindex', array( $this, 'handle_reindex' ) );
+		add_action( 'admin_post_pfs_toggle_analytics', array( $this, 'handle_toggle_analytics' ) );
+		add_action( 'admin_post_pfs_clear_analytics', array( $this, 'handle_clear_analytics' ) );
 
 		add_action( 'wp_ajax_pfs_run_batch', array( $this, 'ajax_run_batch' ) );
 		add_action( 'wp_ajax_pfs_test_search', array( $this, 'ajax_test_search' ) );
@@ -117,6 +119,9 @@ class PF_Search_Admin {
 		$state          = PF_Search_Index::get_state();
 		$summary        = PF_Search_Index::get_summary();
 		$has_wc         = class_exists( 'WooCommerce' );
+		$analytics      = PF_Search_Analytics::is_enabled();
+		$top_queries    = $analytics ? PF_Search_Analytics::top( 30 ) : array();
+		$zero_queries   = $analytics ? PF_Search_Analytics::top( 30, true ) : array();
 
 		// Страница настроек — момент, когда верстальщик проверяет результат
 		// своей вёрстки: список файлов темы пересканировать заново.
@@ -244,6 +249,30 @@ class PF_Search_Admin {
 			PF_Search_Index::maybe_reindex_on_spec_change();
 		}
 		$this->redirect( '', array( 'deleted' => 1 ) );
+	}
+
+	/**
+	 * Включить/выключить аналитику запросов.
+	 */
+	public function handle_toggle_analytics() {
+		$this->require_manage_options( 'pfs_toggle_analytics' );
+
+		$enable = ! empty( $_POST['enable'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- проверено в require_manage_options().
+		if ( $enable ) {
+			PF_Search_Index::maybe_install();
+		}
+		PF_Search_Analytics::set_enabled( $enable );
+
+		$this->redirect( '', array( $enable ? 'analytics_on' : 'analytics_off' => 1 ) );
+	}
+
+	/**
+	 * Очистить статистику запросов.
+	 */
+	public function handle_clear_analytics() {
+		$this->require_manage_options( 'pfs_clear_analytics' );
+		PF_Search_Analytics::clear();
+		$this->redirect( '', array( 'analytics_cleared' => 1 ) );
 	}
 
 	/**

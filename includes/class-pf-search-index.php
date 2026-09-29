@@ -27,7 +27,7 @@ class PF_Search_Index {
 	 * Версия схемы таблиц — при изменении CREATE TABLE ниже увеличить,
 	 * тогда maybe_install() прогонит dbDelta заново.
 	 */
-	const DB_VERSION = '2';
+	const DB_VERSION = '3';
 
 	/**
 	 * Версия формата содержимого индекса (что и как пишется в постинги) —
@@ -177,6 +177,24 @@ KEY len (len)
 ) {$collate};"
 		);
 
+		// Необязательная аналитика запросов (PF_Search_Analytics) — агрегат,
+		// ключ — md5 запроса/профиля/типа (длинный составной ключ из строк не
+		// влез бы в лимит индекса старых MySQL).
+		$log = PF_Search_Analytics::table();
+		dbDelta(
+			"CREATE TABLE {$log} (
+qhash char(32) NOT NULL,
+query varchar(150) NOT NULL,
+profile varchar(64) NOT NULL DEFAULT '',
+post_type varchar(20) NOT NULL DEFAULT '',
+hits int(10) unsigned NOT NULL DEFAULT 1,
+last_total int(10) unsigned NOT NULL DEFAULT 0,
+last_at datetime NOT NULL,
+PRIMARY KEY  (qhash),
+KEY hits (hits)
+) {$collate};"
+		);
+
 		update_option( self::DB_VERSION_OPTION, self::DB_VERSION );
 	}
 
@@ -185,7 +203,7 @@ KEY len (len)
 	 */
 	public static function drop_all() {
 		global $wpdb;
-		foreach ( self::tables() as $table ) {
+		foreach ( array_merge( array_values( self::tables() ), array( PF_Search_Analytics::table() ) ) as $table ) {
 			$wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 		foreach ( array( self::DB_VERSION_OPTION, self::STATE_OPTION, self::QUEUE_OPTION, self::STATS_OPTION, self::SIGNATURE_OPTION, self::FIELD_IDS_OPTION, self::TYPE_IDS_OPTION, self::LOCK_OPTION ) as $option ) {
@@ -1077,6 +1095,7 @@ KEY len (len)
 			return;
 		}
 		self::refresh_stats();
+		PF_Search_Analytics::prune();
 		if ( 'running' !== self::get_state()['status'] ) {
 			self::maybe_reindex_on_spec_change();
 		}

@@ -18,6 +18,34 @@
 
 	// Кэш ответов на страницу: ключ — профиль|тип|запрос.
 	var responseCache = {};
+	// Аналитика (если включена): какие запросы уже учтены на этой странице.
+	var loggedQueries = {};
+	var LOG_IDLE = 2500;
+
+	/**
+	 * Учесть итоговый запрос живого поиска (один beacon на запрос за
+	 * страницу). Выключенная аналитика — logUrl пуст, ничего не шлём.
+	 */
+	function logQuery( profileId, type, q, total ) {
+		if ( ! cfg.logUrl || ! q ) {
+			return;
+		}
+		var key = profileId + '|' + type + '|' + q.toLowerCase();
+		if ( loggedQueries[ key ] ) {
+			return;
+		}
+		loggedQueries[ key ] = true;
+		var body = new FormData();
+		body.append( 'q', q );
+		body.append( 'profile', profileId );
+		body.append( 'type', type );
+		body.append( 'total', String( total ) );
+		if ( navigator.sendBeacon ) {
+			navigator.sendBeacon( cfg.logUrl, body );
+		} else {
+			fetch( cfg.logUrl, { method: 'POST', body: body, keepalive: true } ).catch( function () {} );
+		}
+	}
 	var uid = 0;
 
 	function hide( el ) {
@@ -449,6 +477,13 @@
 		} );
 
 		if ( this.list ) {
+			// Клик по карточке — запрос точно итоговый.
+			this.list.addEventListener( 'mousedown', function ( e ) {
+				if ( self.lastData && e.target.closest && e.target.closest( '[pfs-results] a[href]' ) ) {
+					logQuery( self.profileId, self.lastData.type, self.lastData.query, self.lastData.total );
+				}
+			} );
+
 			this.list.addEventListener( 'keydown', function ( e ) {
 				var links = self.cardLinks();
 				var index = links.indexOf( document.activeElement );
@@ -615,6 +650,16 @@
 	PFSearch.prototype.render = function ( data ) {
 		var self = this;
 		this.lastData = data;
+
+		// Посетитель остановился на этом запросе — учесть его в аналитике.
+		clearTimeout( this.logTimer );
+		if ( cfg.logUrl ) {
+			this.logTimer = setTimeout( function () {
+				if ( self.lastData === data && self.query() === data.query ) {
+					logQuery( self.profileId, data.type, data.query, data.total );
+				}
+			}, LOG_IDLE );
+		}
 
 		if ( false === data.template ) {
 			if ( ! this.templateWarned ) {

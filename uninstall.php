@@ -36,7 +36,7 @@ function pf_filter_uninstall_site() {
 		delete_option( $option );
 	}
 
-	foreach ( array( 'pf_search_terms', 'pf_search_postings', 'pf_search_docs', 'pf_search_words' ) as $table ) {
+	foreach ( array( 'pf_search_terms', 'pf_search_postings', 'pf_search_docs', 'pf_search_words', 'pf_search_log' ) as $table ) {
 		$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}{$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 

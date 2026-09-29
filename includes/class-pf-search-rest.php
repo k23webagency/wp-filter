@@ -69,6 +69,36 @@ class PF_Search_REST {
 				),
 			)
 		);
+
+		register_rest_route(
+			PF_REST_API::NAMESPACE_,
+			'/search/log',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'log' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	/**
+	 * POST /pf/v1/search/log — beacon живого поиска, на котором посетитель
+	 * остановился (см. pfs-search.js). Публичный, как и сам поиск; при
+	 * выключенной аналитике — ничего не делает. Размер агрегата ограничен
+	 * PF_Search_Analytics::prune().
+	 *
+	 * @param WP_REST_Request $request Запрос.
+	 * @return WP_REST_Response
+	 */
+	public static function log( WP_REST_Request $request ) {
+		if ( PF_Search_Analytics::is_enabled() ) {
+			$resolved = PF_Search_Config::resolve_profile( sanitize_key( (string) $request->get_param( 'profile' ) ) );
+			if ( $resolved ) {
+				$type = PF_Search_Config::resolve_type( $resolved['profile'], sanitize_key( (string) $request->get_param( 'type' ) ) );
+				PF_Search_Analytics::log( sanitize_text_field( (string) $request->get_param( 'q' ) ), $resolved['id'], $type, absint( $request->get_param( 'total' ) ) );
+			}
+		}
+		return new WP_REST_Response( null, 204 );
 	}
 
 	/**
