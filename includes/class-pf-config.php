@@ -98,6 +98,7 @@ class PF_Config {
 			'pagination_strategy' => 'pages',
 			'filter_mode'         => 'auto',
 			'posts_per_page'      => 12,
+			'out_of_stock_last'   => true,
 			'groups'              => array(),
 			'sort_options'        => array(
 				array(

@@ -525,9 +525,10 @@ class PF_Query {
 	/**
 	 * Товары не в наличии (WooCommerce _stock_status = outofstock) — всегда в
 	 * конец списка, независимо от выбранной сортировки (по цене, дате,
-	 * популярности, названию атрибута и т.д.). Жёстко зашитое поведение по
-	 * решению пользователя, НЕ настройка админки — применяется ко всем
-	 * запросам товаров одинаково, без возможности отключить в интерфейсе.
+	 * популярности, названию атрибута и т.д.). Настройка профиля
+	 * out_of_stock_last (чекбокс в админке, включён по умолчанию — в том
+	 * числе для профилей, сохранённых до появления настройки, через
+	 * wp_parse_args() с get_defaults()).
 	 *
 	 * Работает добавлением ключа сортировки ПЕРЕД уже собранным orderby, а не
 	 * заменой — регистрируется последним из posts_clauses-фильтров build()
@@ -541,7 +542,7 @@ class PF_Query {
 	 * @return array
 	 */
 	public function filter_out_of_stock_last_clauses( $clauses, $query ) {
-		if ( 'product' !== PF_Config::get_post_type() ) {
+		if ( 'product' !== PF_Config::get_post_type() || ! PF_Config::get( 'out_of_stock_last', true ) ) {
 			return $clauses;
 		}
 

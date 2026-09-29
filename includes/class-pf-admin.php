@@ -340,6 +340,7 @@ class PF_Admin {
 			? $input['filter_mode']
 			: 'auto';
 		$clean['posts_per_page']    = isset( $input['posts_per_page'] ) ? max( 1, absint( $input['posts_per_page'] ) ) : 12;
+		$clean['out_of_stock_last'] = ! empty( $input['out_of_stock_last'] );
 
 		$clean['groups']       = $this->sanitize_groups( $input['groups'] ?? array() );
 		$clean['sort_options'] = $this->sanitize_sort_options( $input['sort_options'] ?? array() );

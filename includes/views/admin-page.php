@@ -225,6 +225,13 @@ defined( 'ABSPATH' ) || exit;
 						<input type="number" min="1" id="pf-posts-per-page" name="pf_filter_settings[posts_per_page]" value="<?php echo esc_attr( $settings['posts_per_page'] ); ?>" style="width:80px" />
 					</td>
 				</tr>
+				<tr>
+					<th><?php esc_html_e( 'Товары не в наличии — в конец', 'pf-filter' ); ?></th>
+					<td>
+						<label><input type="checkbox" name="pf_filter_settings[out_of_stock_last]" value="1" <?php checked( ! empty( $settings['out_of_stock_last'] ) ); ?> /> <?php esc_html_e( 'включено', 'pf-filter' ); ?></label>
+						<p class="description"><?php esc_html_e( 'Товары без наличия всегда показываются после товаров в наличии, при любой сортировке. Действует только для профилей с типом записи «Товары» (WooCommerce).', 'pf-filter' ); ?></p>
+					</td>
+				</tr>
 			</table>
 		</div>
 
