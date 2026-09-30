@@ -4,7 +4,7 @@
  * Переменные приходят из PF_Search_Admin::render_page(): $enabled,
  * $environment_ok, $profiles, $profile_id, $profile, $post_types,
  * $acf_by_type, $state, $summary, $has_wc, $template_info, $analytics,
- * $top_queries, $zero_queries.
+ * $top_queries, $zero_queries, $template_roots.
  *
  * @package PF_Filter
  */
@@ -294,6 +294,37 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 								);
 								?>
 							</p>
+							<?php if ( $template_roots ) : ?>
+								<p><strong><?php esc_html_e( 'Что найдено в теме:', 'pf-filter' ); ?></strong></p>
+								<ul class="pfs-roots">
+									<?php foreach ( $template_roots as $pfs_root ) : ?>
+										<li>
+											<code><?php echo esc_html( '' === $pfs_root['value'] ? 'pfs' : 'pfs="' . $pfs_root['value'] . '"' ); ?></code>
+											— <code><?php echo esc_html( $pfs_root['file'] ); ?></code>:
+											<?php if ( '' !== $pfs_root['value'] && $pfs_root['value'] !== $profile_id ) : ?>
+												<span class="pfs-warning">
+													<?php
+													printf(
+														/* translators: 1: ID в вёрстке, 2: ID профиля */
+														esc_html__( 'ID «%1$s» не совпадает с ID этого профиля «%2$s». Поменяйте поле «ID профиля» ниже на «%1$s» или значение pfs в вёрстке.', 'pf-filter' ),
+														esc_html( $pfs_root['value'] ),
+														esc_html( $profile_id )
+													);
+													?>
+												</span>
+											<?php elseif ( ! $pfs_root['has_results'] ) : ?>
+												<span class="pfs-warning"><?php esc_html_e( 'внутри нет [pfs-results].', 'pf-filter' ); ?></span>
+											<?php elseif ( ! $pfs_root['has_loop'] ) : ?>
+												<span class="pfs-warning"><?php esc_html_e( 'в [pfs-results] нет цикла записей — поставьте на него метку wp_query (например \'post_type\' => \'product\', \'posts_per_page\' => 1) и переэкспортируйте тему.', 'pf-filter' ); ?></span>
+											<?php else : ?>
+												<span class="pfs-muted"><?php esc_html_e( 'блок с циклом, но без ID — относится к первому профилю поиска.', 'pf-filter' ); ?></span>
+											<?php endif; ?>
+										</li>
+									<?php endforeach; ?>
+								</ul>
+							<?php else : ?>
+								<p class="description"><?php esc_html_e( 'В файлах темы нет ни одного [pfs-results].', 'pf-filter' ); ?></p>
+							<?php endif; ?>
 						<?php endif; ?>
 					</td>
 				</tr>

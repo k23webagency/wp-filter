@@ -126,7 +126,8 @@ class PF_Search_Admin {
 		// Страница настроек — момент, когда верстальщик проверяет результат
 		// своей вёрстки: список файлов темы пересканировать заново.
 		PF_Search_Template::flush_files_cache();
-		$template_info = ( $enabled && $profile_id ) ? ( new PF_Search_Template() )->describe( $profile_id ) : null;
+		$template_info  = ( $enabled && $profile_id ) ? ( new PF_Search_Template() )->describe( $profile_id ) : null;
+		$template_roots = ( $enabled && $profile_id && ! $template_info ) ? ( new PF_Search_Template() )->list_roots() : array();
 
 		require PF_FILTER_PATH . 'includes/views/search-admin-page.php';
 	}

@@ -53,6 +53,12 @@ class PF_Search_Template {
 	const MAX_FILES = 3000;
 
 	/**
+	 * Открывающий тег корня блока поиска: атрибут pfs (не pfs-*), значение
+	 * необязательно. Группы: 1 — тег, 3 — значение.
+	 */
+	const ROOT_PATTERN = '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(?<![\w-])pfs(?:\s*=\s*(["\'])([^"\']*)\2)?(?=[\s>\/])[^>]*>/i';
+
+	/**
 	 * Каталоги, которые не сканируются.
 	 */
 	const SKIP_DIRS = array( 'node_modules', 'vendor', '.git', '.svn', 'assets', 'images', 'img', 'fonts', 'css', 'js' );
@@ -158,6 +164,39 @@ class PF_Search_Template {
 	}
 
 	/**
+	 * Для админки, когда блок профиля не найден: какие блоки [pfs] вообще
+	 * есть в файлах темы — с их ID, файлом и тем, есть ли внутри
+	 * [pfs-results] с циклом записей. Помогает сразу увидеть несовпадение
+	 * ID (pfs="shop" в вёрстке, а у профиля ID search) или отсутствие метки
+	 * цикла на [pfs-results].
+	 *
+	 * @return array Список ['value' => string, 'file' => string, 'has_results' => bool, 'has_loop' => bool].
+	 */
+	public function list_roots() {
+		$out = array();
+		foreach ( $this->get_candidate_files() as $source_file ) {
+			$source = file_get_contents( $source_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			if ( ! $source || ! preg_match_all( self::ROOT_PATTERN, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+				continue;
+			}
+			foreach ( $matches as $m ) {
+				$inner = $this->inner_of_match( $source, $m );
+				if ( null === $inner ) {
+					continue;
+				}
+				$results = $this->parser->find_element_inner( $inner, '(?<![\w-])pfs-results(?![\w-])' );
+				$out[]   = array(
+					'value'       => isset( $m[3] ) ? (string) $m[3][0] : '',
+					'file'        => $this->relative_path( $source_file ),
+					'has_results' => null !== $results,
+					'has_loop'    => null !== $results && (bool) preg_match( '/the_post\s*\(\s*\)\s*;/i', $results ),
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * Сбросить список файлов (после смены темы, со страницы настроек).
 	 */
 	public static function flush_files_cache() {
@@ -207,8 +246,7 @@ class PF_Search_Template {
 	 * @return string|null
 	 */
 	private function find_root( $source, $profile_id, $is_first ) {
-		$pattern = '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(?<![\w-])pfs(?:\s*=\s*(["\'])([^"\']*)\2)?(?=[\s>\/])[^>]*>/i';
-		if ( ! preg_match_all( $pattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
+		if ( ! preg_match_all( self::ROOT_PATTERN, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
 			$matches = array();
 		}
 
