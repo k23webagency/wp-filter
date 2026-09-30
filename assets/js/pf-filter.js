@@ -1702,6 +1702,9 @@
 			if ( 'range' === self.groups[ field ].config.template ) {
 				return; // range-группа (цена и т.п.) всегда видна, релевантность по счётчикам к ней не применяется.
 			}
+			if ( 'search' === self.groups[ field ].config.template ) {
+				return; // Поиск по тексту: значений и счётчиков у группы нет, видна всегда.
+			}
 			self.groups[ field ].el.classList.toggle( 'pf-hidden', ! ( field in counts ) );
 		} );
 

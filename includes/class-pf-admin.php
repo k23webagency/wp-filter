@@ -653,7 +653,9 @@ class PF_Admin {
 		// не относящиеся к текущему шаблону всё равно предупреждают о нехватке
 		// разметки — если панель свёрнута, админ может это не увидеть, поэтому
 		// предупреждение дублируется маркером прямо на кнопке "Настройки".
-		$has_warning = ( $search && false === $search_available )
+		// Поиск по значениям группы у «Поиска по тексту» не настраивается.
+		$is_text_search = PF_Attributes::SEARCH_FIELD === $field;
+		$has_warning    = ( $search && false === $search_available && ! $is_text_search )
 			|| null !== $tree_depth_warning
 			|| ( $color_meta_key && false === $colors_available );
 		?>
@@ -739,7 +741,7 @@ class PF_Admin {
 							<input type="checkbox" name="<?php echo esc_attr( $n ); ?>[search]" value="1" <?php checked( $search ); ?> />
 							<?php esc_html_e( 'Поиск', 'pf-filter' ); ?>
 						</label>
-						<?php if ( $search && false === $search_available ) : ?>
+						<?php if ( $search && false === $search_available && ! $is_text_search ) : ?>
 							<br /><span style="color:#b32d2e;font-size:11px;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден input[type=text] — поле поиска показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет поля в шаблоне', 'pf-filter' ); ?></span>
 						<?php endif; ?>
 					</div>
