@@ -434,6 +434,14 @@
 			}
 		};
 		input.addEventListener( 'focus', reopen );
+		// Webflow Dropdown закрывается по mouseup в любом месте вне себя, а
+		// поле лежит вне дропдауна — клик в поле при открытом окне не должен
+		// его закрывать (иначе окно мигает: закрылось и открылось снова).
+		input.addEventListener( 'mouseup', function ( e ) {
+			if ( self.isWebflowToggle() && self.isOpenNow() ) {
+				e.stopPropagation();
+			}
+		} );
 		input.addEventListener( 'pfs:synced', function () {
 			self.updateClear();
 		} );
@@ -796,7 +804,7 @@
 			return ! this.list.classList.contains( 'is-hidden' );
 		}
 		// Компонент Webflow Dropdown: состояние синхронно в классе w--open.
-		if ( this.toggle.classList.contains( 'w-dropdown-toggle' ) ) {
+		if ( this.isWebflowToggle() ) {
 			return this.toggle.classList.contains( 'w--open' );
 		}
 		// Только что нажимали переключатель — анимация ещё идёт, видимость
@@ -809,7 +817,19 @@
 
 	PFSearch.prototype.pressToggle = function () {
 		this.lastToggleAt = Date.now();
-		this.toggle.click();
+		// Полная последовательность настоящего клика мышью: компонент Webflow
+		// Dropdown открывается/закрывается по mouseup, Webflow Interactions
+		// («Mouse click», анимация открытия) и свой JS темы — по click.
+		// Одного click() недостаточно (Dropdown его не видит), одного
+		// mouseup — тоже (анимация Interactions не проигрывается).
+		var toggle = this.toggle;
+		[ 'mousedown', 'mouseup', 'click' ].forEach( function ( type ) {
+			toggle.dispatchEvent( new MouseEvent( type, { bubbles: true, cancelable: true, view: window } ) );
+		} );
+	};
+
+	PFSearch.prototype.isWebflowToggle = function () {
+		return !! this.toggle && this.toggle.classList.contains( 'w-dropdown-toggle' );
 	};
 
 	PFSearch.prototype.open = function () {
