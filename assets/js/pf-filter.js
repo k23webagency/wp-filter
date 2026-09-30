@@ -5,8 +5,12 @@
  * Принцип устойчивости: каждое обращение к DOM через pf-* атрибут
  * оборачивается в проверку наличия элемента. Отсутствие опционального
  * атрибута — console.warn и пропуск только этой функции. Отсутствие
- * обязательного (pf-form/pf-list) — console.error и остановка
- * инициализации только для этой формы. pf-target нигде не обязателен —
+ * обязательного ([pf-list]) — console.error и остановка инициализации
+ * только для этого блока.
+ *
+ * Блок запускается от [pf-form] либо — если формы нет — от [pf-profile] с
+ * [pf-list] внутри: список, пагинация, сортировка, счётчики, чипы и поиск
+ * работают и без формы; форма нужна только для групп фильтра. pf-target нигде не обязателен —
  * его отсутствие разрешается автоматически или через console.warn (см. resolveListElement).
  *
  * [pf-profile] — не атрибут конкретно формы, а маркер ближайшего общего
@@ -212,8 +216,13 @@
 	// PFForm — один экземпляр на каждую найденную [pf-form]
 	// ---------------------------------------------------------------------
 
-	function PFForm( formEl ) {
-		this.formEl = formEl;
+	/**
+	 * @param {Element|null} formEl      [pf-form], либо null — блок без формы.
+	 * @param {Element}      [profileEl] [pf-profile] блока без формы.
+	 */
+	function PFForm( formEl, profileEl ) {
+		this.formEl = formEl || null;
+		this.profileEl = profileEl || null;
 		this.scopeRoot = document; // ближайший [pf-profile]-контейнер, либо document — см. init().
 		this.listEl = null;
 		this.outputEl = null;
@@ -277,7 +286,7 @@
 	 * @return {Element|null}
 	 */
 	PFForm.prototype.resolveListElement = function () {
-		var targetSelector = this.formEl.getAttribute( 'pf-target' );
+		var targetSelector = this.formEl ? this.formEl.getAttribute( 'pf-target' ) : '';
 
 		if ( targetSelector ) {
 			var explicitList = document.querySelector( targetSelector );
@@ -305,8 +314,11 @@
 	};
 
 	PFForm.prototype.init = function () {
-		if ( ! this.formEl.hasAttribute( 'pf-form' ) ) {
+		if ( this.formEl && ! this.formEl.hasAttribute( 'pf-form' ) ) {
 			// На случай если элемент передан ошибочно.
+			return;
+		}
+		if ( ! this.formEl && ! this.profileEl ) {
 			return;
 		}
 
@@ -314,7 +326,7 @@
 		// остальных pf-* элементов ниже (pf-loading/pf-count/pf-active-filters/
 		// pf-pagination-.../pf-sort) — см. пояснение в шапке файла. closest()
 		// включает саму форму, если атрибут стоит прямо на ней.
-		var profileContainer = this.formEl.closest( '[pf-profile]' );
+		var profileContainer = this.formEl ? this.formEl.closest( '[pf-profile]' ) : this.profileEl;
 		this.scopeRoot = profileContainer || document;
 		this.profileId = profileContainer ? ( profileContainer.getAttribute( 'pf-profile' ) || '' ) : '';
 		this.explicitProfileId = this.profileId;
@@ -332,17 +344,21 @@
 		// явного preventDefault (например <button> без type="button" в вёрстке
 		// темы) вызывает настоящий submit — на Webflow-сайтах это показывает
 		// служебную ошибку самого Webflow вроде "Формы не настроены".
-		this.formEl.addEventListener( 'submit', function ( e ) {
-			e.preventDefault();
-		} );
+		if ( this.formEl ) {
+			this.formEl.addEventListener( 'submit', function ( e ) {
+				e.preventDefault();
+			} );
+		}
 
+		// Без формы групп фильтра нет — это штатный блок «список без
+		// фильтров» (страница результатов поиска, лента статей и т.п.).
 		this.outputEl = qs( this.formEl, '[pf-output]' );
 		this.templatesEl = qs( this.formEl, '[pf-templates]' );
 		// Пустая <form pf-form></form> (ни [pf-output], ни [pf-templates]) —
 		// осознанный блок без групп фильтра (например, страница результатов
 		// поиска): список, сортировка, пагинация работают, ошибок нет.
 		// Ошибка — только если в форме есть одно без другого.
-		var formWithoutGroups = ! this.outputEl && ! this.templatesEl;
+		var formWithoutGroups = ! this.formEl || ( ! this.outputEl && ! this.templatesEl );
 		if ( ! this.outputEl && ! formWithoutGroups ) {
 			console.error( 'PF Filter: [pf-output] не найден, группы фильтров не будут рендериться.' );
 		}
@@ -377,7 +393,7 @@
 		// быть активна, поэтому разметка на выбор стратегии не влияет.
 		this.paginationMode = null;
 
-		var explicitLogic = this.formEl.getAttribute( 'pf-logic' );
+		var explicitLogic = this.formEl ? this.formEl.getAttribute( 'pf-logic' ) : '';
 		this.logic = ( 'and' === explicitLogic || 'or' === explicitLogic ) ? explicitLogic : 'and';
 
 		// this.profileId уже установлен выше (из [pf-profile]-контейнера, если
@@ -403,7 +419,7 @@
 				self.showCounts = !! ( config.settings && config.settings.show_counts );
 				self.searchThreshold = ( config.settings && config.settings.search_threshold ) || 7;
 				self.perPage = ( config.settings && config.settings.posts_per_page ) || 12;
-				if ( ! self.formEl.getAttribute( 'pf-logic' ) ) {
+				if ( ! explicitLogic ) {
 					self.logic = ( config.settings && config.settings.logic ) || 'and';
 				}
 				self.paginationMode = ( config.settings && config.settings.pagination_strategy ) || null;
@@ -672,6 +688,9 @@
 	 * });
 	 */
 	PFForm.prototype.dispatchBuiltEvent = function () {
+		if ( ! this.formEl ) {
+			return;
+		}
 		this.formEl.dispatchEvent( new CustomEvent( 'pf-filter:groups-built', {
 			bubbles: true,
 			detail: { form: this.formEl, output: this.outputEl },
@@ -2603,7 +2622,7 @@
 	 * посетитель сейчас печатает.
 	 */
 	PFForm.prototype.syncSearchInputs = function ( query ) {
-		var root = this.scopeRoot === document ? this.formEl : this.scopeRoot;
+		var root = this.scopeRoot === document ? ( this.formEl || document ) : this.scopeRoot;
 		qsa( root, '[pfs-input]' ).forEach( function ( input ) {
 			if ( input !== document.activeElement && input.value !== query ) {
 				input.value = query;
@@ -2722,16 +2741,25 @@
 			return;
 		}
 
-		var forms = qsa( document, '[pf-form]' );
-		if ( ! forms.length ) {
-			return;
-		}
-
-		forms.forEach( function ( formEl ) {
+		qsa( document, '[pf-form]' ).forEach( function ( formEl ) {
 			try {
 				new PFForm( formEl ).init();
 			} catch ( err ) {
 				console.error( 'PF Filter: ошибка инициализации формы.', err );
+			}
+		} );
+
+		// Блоки без формы: [pf-profile] со списком внутри, но без [pf-form] —
+		// список, пагинация, сортировка, счётчики, чипы и поиск без групп
+		// фильтра. Обёртка без списка — не блок фильтра, пропускаем молча.
+		qsa( document, '[pf-profile]' ).forEach( function ( profileEl ) {
+			if ( qs( profileEl, '[pf-form]' ) || ! qs( profileEl, '[pf-list]' ) ) {
+				return;
+			}
+			try {
+				new PFForm( null, profileEl ).init();
+			} catch ( err ) {
+				console.error( 'PF Filter: ошибка инициализации блока.', err );
 			}
 		} );
 	}

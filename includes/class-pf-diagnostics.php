@@ -286,39 +286,56 @@ class PF_Diagnostics {
 	 * @return array
 	 */
 	private function check_required_attributes( DOMXPath $xpath ) {
-		$required = array(
-			'pf-form'      => __( 'Форма фильтра не инициализируется. Плагин не работает.', 'pf-filter' ),
-			'pf-output'    => __( 'Группы фильтров не будут вставлены в форму.', 'pf-filter' ),
-			'pf-templates' => __( 'Шаблоны групп не найдены. Фильтр не строится.', 'pf-filter' ),
-			'pf-list'      => __( 'Контейнер карточек не найден. Результаты не обновляются.', 'pf-filter' ),
-		);
-
 		$checks     = array();
 		$node_count = array();
-
-		foreach ( $required as $attribute => $fail_message ) {
+		foreach ( array( 'pf-form', 'pf-output', 'pf-templates', 'pf-list' ) as $attribute ) {
 			$nodes                    = $xpath->query( '//*[@' . $attribute . ']' );
-			$found                    = $nodes && $nodes->length > 0;
 			$node_count[ $attribute ] = $nodes ? $nodes->length : 0;
-			$checks[]                 = $this->result(
-				$found ? 'ok' : 'error',
-				'[' . $attribute . ']',
-				$found ? sprintf( 'найдено: %d', $nodes->length ) : $fail_message
-			);
 		}
 
-		$checks[] = $this->check_target_attribute( $xpath, $node_count['pf-form'], $node_count['pf-list'] );
+		// Единственный обязательный элемент блока — список карточек.
+		$checks[] = $this->result(
+			$node_count['pf-list'] ? 'ok' : 'error',
+			'[pf-list]',
+			$node_count['pf-list']
+				? sprintf( 'найдено: %d', $node_count['pf-list'] )
+				: __( 'Контейнер карточек не найден. Результаты не обновляются.', 'pf-filter' )
+		);
+
+		// Форма нужна только для групп фильтра: без неё блок работает как
+		// «список без фильтров» (пагинация, сортировка, счётчики, поиск).
+		if ( ! $node_count['pf-form'] ) {
+			$checks[] = $this->result( 'info', '[pf-form]', __( 'Формы фильтра нет — блок работает без групп фильтра (список, пагинация, сортировка, поиск).', 'pf-filter' ) );
+		} else {
+			$checks[] = $this->result( 'ok', '[pf-form]', sprintf( 'найдено: %d', $node_count['pf-form'] ) );
+			$has_output    = $node_count['pf-output'] > 0;
+			$has_templates = $node_count['pf-templates'] > 0;
+			if ( $has_output && $has_templates ) {
+				$checks[] = $this->result( 'ok', '[pf-output] + [pf-templates]', __( 'найдены', 'pf-filter' ) );
+			} elseif ( ! $has_output && ! $has_templates ) {
+				$checks[] = $this->result( 'info', '[pf-output] + [pf-templates]', __( 'Форма без групп фильтра — так можно, если фильтры не нужны.', 'pf-filter' ) );
+			} else {
+				$checks[] = $this->result(
+					'error',
+					$has_output ? '[pf-templates]' : '[pf-output]',
+					$has_output ? __( 'Шаблоны групп не найдены. Фильтр не строится.', 'pf-filter' ) : __( 'Группы фильтров не будут вставлены в форму.', 'pf-filter' )
+				);
+			}
+		}
+
+		if ( $node_count['pf-form'] ) {
+			$checks[] = $this->check_target_attribute( $xpath, $node_count['pf-form'], $node_count['pf-list'] );
+		}
 
 		return $checks;
 	}
 
 	/**
 	 * pf-target нигде не обязателен (см. resolveListElement() в pf-filter.js):
-	 * - при ровно одной [pf-form] и одном [pf-list] на странице они связываются
-	 *   автоматически, атрибут не нужен;
-	 * - при нескольких формах и/или списках без pf-target связь неоднозначна —
-	 *   предупреждение, а не ошибка (JS всё равно попробует связать первую форму
-	 *   с первым списком);
+	 * - форма ищет список внутри своего [pf-profile]-блока (без обёртки — на
+	 *   всей странице); ровно один список там — связаны автоматически;
+	 * - несколько списков в одном блоке без pf-target — связь неоднозначна:
+	 *   предупреждение (JS всё равно свяжет форму с первым списком);
 	 * - если pf-target указан явно, проверяем что селектор что-то находит.
 	 *
 	 * @param DOMXPath $xpath       XPath документа.
@@ -344,11 +361,20 @@ class PF_Diagnostics {
 			}
 		}
 
-		if ( 1 === $form_count && 1 === $list_count ) {
+		// Та же область поиска списка, что в JS: ближайший [pf-profile] формы.
+		$ambiguous = 0;
+		foreach ( $xpath->query( '//*[@pf-form]' ) as $form ) {
+			$scope = $xpath->query( 'ancestor-or-self::*[@pf-profile][1]', $form )->item( 0 );
+			$lists = $scope ? $xpath->query( './/*[@pf-list]', $scope ) : $xpath->query( '//*[@pf-list]' );
+			if ( 1 !== $lists->length && ! $form->getAttribute( 'pf-target' ) ) {
+				++$ambiguous;
+			}
+		}
+		if ( ! $ambiguous ) {
 			return $this->result(
 				'ok',
 				'[pf-target]',
-				__( 'не указан, но на странице ровно одна форма и один список — связаны автоматически', 'pf-filter' )
+				__( 'не указан — каждая форма связана со своим списком автоматически (один список в блоке [pf-profile] или на странице).', 'pf-filter' )
 			);
 		}
 
@@ -845,6 +871,10 @@ class PF_Diagnostics {
 	 */
 	private function check_apply_button_markup( DOMXPath $xpath ) {
 		if ( 'manual' !== PF_Config::get( 'filter_mode', 'auto' ) ) {
+			return array();
+		}
+		// Кнопка нужна только форме с группами фильтра.
+		if ( ! self::has_attribute( $xpath, 'pf-output' ) ) {
 			return array();
 		}
 
