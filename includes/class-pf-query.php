@@ -49,6 +49,16 @@ class PF_Query {
 	}
 
 	/**
+	 * Отпечаток текущего ограничения поиска — для ключей кэша, построенных
+	 * поверх build() (см. PF_Renderer::matching_post_ids()).
+	 *
+	 * @return string
+	 */
+	public function get_search_restriction_key() {
+		return null === $this->search_ids ? '' : md5( implode( ',', $this->search_ids ) );
+	}
+
+	/**
 	 * Построить WP_Query по параметрам фильтра.
 	 *
 	 * Кастомные (не таксономические, "локальные") атрибуты товаров не

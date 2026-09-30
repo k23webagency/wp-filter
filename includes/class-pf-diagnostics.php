@@ -561,6 +561,16 @@ class PF_Diagnostics {
 					continue;
 				}
 
+				if ( 'search' === $template ) {
+					$has_input = $xpath->query( './/*[@pfs-input]', $node )->length > 0;
+					$checks[]  = $this->result(
+						$has_input ? 'ok' : 'error',
+						$template_label . ' → [pfs-input]',
+						$has_input ? __( 'найден', 'pf-filter' ) : __( 'Нет поля ввода — группа поиска не будет работать', 'pf-filter' )
+					);
+					continue;
+				}
+
 				if ( ! in_array( $template, $row_value_templates, true ) ) {
 					continue; // Незнакомый/кастомный тип шаблона — общую зацепку не проверяем.
 				}

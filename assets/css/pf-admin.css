@@ -151,6 +151,23 @@
 	display: none;
 }
 
+/* Группа «Поиск по тексту» (pf-template="search"): своя настройка —
+   профиль поиска; настройки списков значений к ней не относятся. */
+.pf-filter-admin .pf-detail-field.pf-extra-search-profile {
+	display: none;
+}
+
+.pf-filter-admin tr.pf-group-row[data-template="search"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-search-profile {
+	display: flex;
+}
+
+.pf-filter-admin tr.pf-group-row[data-template="search"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-logic,
+.pf-filter-admin tr.pf-group-row[data-template="search"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-search,
+.pf-filter-admin tr.pf-group-row[data-template="search"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-value-sort,
+.pf-filter-admin tr.pf-group-row[data-template="search"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-zero-values {
+	display: none;
+}
+
 .pf-diag-section .notice.inline {
 	margin: 0 0 4px;
 }

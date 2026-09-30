@@ -370,12 +370,16 @@ class PF_Admin {
 				'field'      => sanitize_text_field( $group['field'] ),
 				'label'      => sanitize_text_field( $group['label'] ?? '' ),
 				'template'   => sanitize_key( $group['template'] ?? 'checkbox' ),
-				'logic'      => in_array( $group['logic'] ?? 'or', array( 'and', 'or' ), true ) ? $group['logic'] : 'or',
+				'logic'      => in_array( $group['logic'] ?? 'or', array( 'and', 'or' ), true ) ? ( $group['logic'] ?? 'or' ) : 'or',
 				'enabled'    => ! empty( $group['enabled'] ),
 				'search'     => ! empty( $group['search'] ),
 				'value_sort' => in_array( $group['value_sort'] ?? '', PF_Attributes::VALUE_SORT_OPTIONS, true ) ? $group['value_sort'] : 'name_asc',
 				'zero_values' => in_array( $group['zero_values'] ?? '', PF_Attributes::ZERO_VALUES_OPTIONS, true ) ? $group['zero_values'] : 'none',
 			);
+
+			if ( ! empty( $group['search_profile'] ) ) {
+				$row['search_profile'] = sanitize_key( $group['search_profile'] );
+			}
 
 			if ( isset( $group['step'] ) && '' !== $group['step'] ) {
 				$row['step'] = floatval( $group['step'] );
@@ -455,6 +459,7 @@ class PF_Admin {
 			'tags'          => __( 'Теги/чипы', 'pf-filter' ),
 			'range'         => __( 'Диапазон (слайдер)', 'pf-filter' ),
 			'category-tree' => __( 'Дерево категорий', 'pf-filter' ),
+			'search'        => __( 'Поиск по тексту', 'pf-filter' ),
 		);
 
 		return $labels[ $slug ] ?? $slug;
@@ -528,6 +533,13 @@ class PF_Admin {
 			);
 		}
 
+		if ( class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() ) {
+			$fields[] = array(
+				'field' => PF_Attributes::SEARCH_FIELD,
+				'label' => __( 'Поиск по тексту (PF Search)', 'pf-filter' ),
+			);
+		}
+
 		return $fields;
 	}
 
@@ -554,6 +566,11 @@ class PF_Admin {
 		// для ручной диагностики разметки.
 		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
 		$available_templates     = $this->get_available_templates( $diagnostics_default_url );
+		// Шаблон группы «Поиск по тексту» предлагается при включённом модуле
+		// поиска, даже если на образце разметки (странице магазина) его нет.
+		if ( class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() && ! in_array( 'search', $available_templates, true ) ) {
+			$available_templates[] = 'search';
+		}
 		// Один скан образца разметки на всю страницу настроек — переиспользуется
 		// и для доступности стратегий пагинации, и для точечных предупреждений
 		// "для этой настройки в вёрстке нет нужного элемента" (см. ниже
@@ -699,7 +716,18 @@ class PF_Admin {
 							<?php endforeach; ?>
 						</select>
 					</div>
-					<div class="pf-detail-field">
+					<?php if ( class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() ) : ?>
+						<div class="pf-detail-field pf-extra-search-profile">
+							<label class="pf-detail-label"><?php esc_html_e( 'Профиль поиска', 'pf-filter' ); ?></label>
+							<select name="<?php echo esc_attr( $n ); ?>[search_profile]" title="<?php esc_attr_e( 'Профиль модуля поиска: по каким полям и с какими весами искать. Пусто — первый профиль, который ищет по типу записей этого профиля фильтра.', 'pf-filter' ); ?>">
+								<option value=""><?php esc_html_e( '— первый подходящий —', 'pf-filter' ); ?></option>
+								<?php foreach ( PF_Search_Config::get_profiles() as $pfs_id => $pfs_profile ) : ?>
+									<option value="<?php echo esc_attr( $pfs_id ); ?>" <?php selected( $group['search_profile'] ?? '', $pfs_id ); ?>><?php echo esc_html( $pfs_profile['name'] . ' — ' . $pfs_id ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+					<?php endif; ?>
+					<div class="pf-detail-field pf-extra-logic">
 						<label class="pf-detail-label"><?php esc_html_e( 'Логика в группе', 'pf-filter' ); ?></label>
 						<select name="<?php echo esc_attr( $n ); ?>[logic]">
 							<option value="or" <?php selected( $logic, 'or' ); ?>><?php esc_html_e( 'OR', 'pf-filter' ); ?></option>
@@ -748,7 +776,7 @@ class PF_Admin {
 							<option value="count_asc" <?php selected( $value_sort, 'count_asc' ); ?>><?php esc_html_e( 'По кол-ву (сначала меньше)', 'pf-filter' ); ?></option>
 						</select>
 					</div>
-					<div class="pf-detail-field">
+					<div class="pf-detail-field pf-extra-zero-values">
 						<label class="pf-detail-label"><?php esc_html_e( 'Нулевые значения', 'pf-filter' ); ?></label>
 						<select name="<?php echo esc_attr( $n ); ?>[zero_values]" title="<?php esc_attr_e( 'Что делать со значением, у которого 0 подходящих записей под текущий выбор остальных фильтров.', 'pf-filter' ); ?>">
 							<option value="none" <?php selected( $zero_values, 'none' ); ?>><?php esc_html_e( 'Не менять', 'pf-filter' ); ?></option>

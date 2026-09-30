@@ -209,7 +209,7 @@ class PF_Search_Template {
 	private function find_root( $source, $profile_id, $is_first ) {
 		$pattern = '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(?<![\w-])pfs(?:\s*=\s*(["\'])([^"\']*)\2)?(?=[\s>\/])[^>]*>/i';
 		if ( ! preg_match_all( $pattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
-			return null;
+			$matches = array();
 		}
 
 		$fallback = null;
@@ -230,7 +230,19 @@ class PF_Search_Template {
 			}
 		}
 
-		return $fallback ? $this->inner_of_match( $source, $fallback ) : null;
+		if ( $fallback ) {
+			return $this->inner_of_match( $source, $fallback );
+		}
+
+		// Поле поиска как группа фильтра: шаблон pf-template="search" — корень
+		// без собственного значения pfs (профиль задаётся в настройках группы),
+		// подходит любому профилю.
+		$group_root = $this->parser->find_element_inner( $source, '\bpf-template\s*=\s*["\']search["\']' );
+		if ( null !== $group_root && false !== strpos( $group_root, 'pfs-results' ) ) {
+			return $group_root;
+		}
+
+		return null;
 	}
 
 	/**

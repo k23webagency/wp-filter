@@ -15,6 +15,8 @@
 
 	var MIN_CHARS = cfg.minChars || 3;
 	var DEBOUNCE = cfg.debounce || 300;
+	// Пауза перед применением группы поиска к списку фильтра.
+	var GROUP_DELAY = 500;
 
 	// Кэш ответов на страницу: ключ — профиль|тип|запрос.
 	var responseCache = {};
@@ -154,8 +156,12 @@
 	// Блок поиска
 	// -----------------------------------------------------------------
 
-	function PFSearch( root ) {
+	function PFSearch( root, options ) {
 		this.root = root;
+		// Режим группы фильтра (pf-template="search"): options.onInput /
+		// options.onSubmit / options.lockedType передаёт pf-filter.js.
+		this.options = options || null;
+		this.groupTimer = null;
 		this.id = ++uid;
 		this.timer = null;
 		this.controller = null;
@@ -189,8 +195,8 @@
 		this.input.setAttribute( 'aria-expanded', 'false' );
 
 		// Внутри блока фильтра тип задан самим блоком.
-		this.filterBlock = root.closest( '[pf-profile]' );
-		this.lockedType = '';
+		this.filterBlock = this.options ? null : root.closest( '[pf-profile]' );
+		this.lockedType = this.options ? ( this.options.lockedType || '' ) : '';
 		if ( this.filterBlock ) {
 			var filterProfile = this.filterBlock.getAttribute( 'pf-profile' ) || cfg.firstFilterProfile;
 			this.lockedType = cfg.filterProfiles[ filterProfile ] || '';
@@ -233,6 +239,9 @@
 	 * шапке) заполняются запросом; на странице результатов — ещё и тип.
 	 */
 	PFSearch.prototype.prefillFromUrl = function () {
+		if ( this.options ) {
+			return; // Поле группы заполняет pf-filter.js (syncSearchInputs()).
+		}
 		var params;
 		try {
 			params = new URLSearchParams( window.location.search );
@@ -308,6 +317,10 @@
 			return;
 		}
 
+		if ( this.options ) {
+			sample.classList.add( 'pf-hidden' );
+			return; // В группе фильтра тип задан профилем фильтра.
+		}
 		if ( this.lockedType ) {
 			sample.classList.add( 'pf-hidden' );
 			console.warn( 'PF Search: кнопка [pfs-type] внутри блока фильтра [pf-profile] не нужна — тип записей задан блоком фильтра. Кнопка скрыта.', sample );
@@ -421,6 +434,9 @@
 			}
 		};
 		input.addEventListener( 'focus', reopen );
+		input.addEventListener( 'pfs:synced', function () {
+			self.updateClear();
+		} );
 		// Компонент Webflow Dropdown сам закрывается по клику вне себя, а
 		// поле лежит вне дропдауна — клик в поле его закрыл бы. Проверяем
 		// после того, как отработают обработчики клика темы.
@@ -453,7 +469,7 @@
 			el.addEventListener( 'click', function ( e ) {
 				// Ссылка вне блока фильтра — обычный переход по href (можно
 				// открыть в новой вкладке); всё остальное — полная выдача.
-				if ( 'A' === el.tagName && ! self.filterBlock && el.getAttribute( 'href' ) && '#' !== el.getAttribute( 'href' ) ) {
+				if ( 'A' === el.tagName && ! self.filterBlock && ! self.options && el.getAttribute( 'href' ) && '#' !== el.getAttribute( 'href' ) ) {
 					return;
 				}
 				e.preventDefault();
@@ -527,6 +543,16 @@
 	PFSearch.prototype.schedule = function () {
 		var self = this;
 		clearTimeout( this.timer );
+
+		// Группа фильтра: применить к списку после паузы в наборе (как
+		// изменение любого фильтра). Меньше минимума символов — снять поиск.
+		if ( this.options && this.options.onInput ) {
+			clearTimeout( this.groupTimer );
+			this.groupTimer = setTimeout( function () {
+				var q = self.query();
+				self.options.onInput( q.length >= MIN_CHARS ? q : '' );
+			}, GROUP_DELAY );
+		}
 
 		if ( ! this.live ) {
 			return; // Нет окна — нет запросов при наборе.
@@ -824,7 +850,10 @@
 		this.lastData = null;
 		this.updateClear();
 		this.close();
-		if ( this.filterBlock ) {
+		clearTimeout( this.groupTimer );
+		if ( this.options && this.options.onSubmit ) {
+			this.options.onSubmit( '' );
+		} else if ( this.filterBlock ) {
 			this.submitToBlock( '' );
 		}
 		if ( focus ) {
@@ -859,6 +888,14 @@
 
 	PFSearch.prototype.fullSearch = function () {
 		var q = this.query();
+
+		// Группа фильтра: Enter/«Найти»/«Показать все» — применить сразу.
+		if ( this.options && this.options.onSubmit ) {
+			clearTimeout( this.groupTimer );
+			this.close();
+			this.options.onSubmit( q.length >= MIN_CHARS ? q : '' );
+			return;
+		}
 
 		// Внутри блока фильтра — выдача в его [pf-list] (обработчик ставит
 		// pf-filter.js; если его нет — переход, как вне блока). Пустое поле +
@@ -907,7 +944,9 @@
 	function init() {
 		window.pfsInstances = window.pfsInstances || [];
 		toArray( document.querySelectorAll( '[pfs]' ) ).forEach( function ( root ) {
-			if ( root.pfsInstance ) {
+			// Шаблоны групп фильтра — это не живые блоки: их запускает
+			// pf-filter.js после построения группы (window.pfsSearchInit).
+			if ( root.pfsInstance || root.closest( '[pf-templates]' ) ) {
 				return;
 			}
 			var instance = new PFSearch( root );
@@ -918,6 +957,28 @@
 		} );
 		fillPageQuery();
 	}
+
+	/**
+	 * Запустить блок поиска на корне, построенном позже загрузки страницы
+	 * (группа фильтра pf-template="search", см. pf-filter.js).
+	 *
+	 * @param {Element} root    Корень [pfs].
+	 * @param {Object}  options onInput(query), onSubmit(query), lockedType.
+	 * @return {PFSearch|null}
+	 */
+	window.pfsSearchInit = function ( root, options ) {
+		if ( root.pfsInstance ) {
+			return root.pfsInstance;
+		}
+		var instance = new PFSearch( root, options );
+		if ( ! instance.init() ) {
+			return null;
+		}
+		root.pfsInstance = instance;
+		window.pfsInstances = window.pfsInstances || [];
+		window.pfsInstances.push( instance );
+		return instance;
+	};
 
 	if ( 'loading' === document.readyState ) {
 		document.addEventListener( 'DOMContentLoaded', init );

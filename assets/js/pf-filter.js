@@ -409,6 +409,7 @@
 				self.paginationMode = ( config.settings && config.settings.pagination_strategy ) || null;
 				self.filterMode = ( config.settings && config.settings.filter_mode ) || 'auto';
 				self.syncUrl = ! config.settings || false !== config.settings.sync_url;
+				self.postType = ( config.settings && config.settings.post_type ) || '';
 
 				if ( self.outputEl && self.templatesEl ) {
 					self.buildGroups( config.groups || [] );
@@ -576,7 +577,9 @@
 			self._consumedTemplates.add( tpl );
 
 			var clone;
-			if ( 'range' === groupConfig.template ) {
+			if ( 'search' === groupConfig.template ) {
+				clone = self.buildSearchGroup( groupConfig, groupNode );
+			} else if ( 'range' === groupConfig.template ) {
 				clone = self.buildRangeGroup( groupConfig, groupNode );
 			} else if ( 'category-tree' === groupConfig.template ) {
 				clone = self.buildCategoryTreeGroup( groupConfig, groupNode );
@@ -1358,6 +1361,12 @@
 			var group = this.groups[ field ];
 			var template = group.config.template;
 
+			// Группа «Поиск по тексту» — не фильтр по значениям: её запрос
+			// живёт в state.search (см. buildSearchGroup()).
+			if ( 'search' === template ) {
+				return;
+			}
+
 			if ( 'range' === template ) {
 				// См. buildRangeGroup(): при отсутствии визуального слайдера
 				// состояние диапазона хранится на корневом узле группы.
@@ -2106,6 +2115,10 @@
 	 * @return {boolean}
 	 */
 	PFForm.prototype.isFieldActive = function ( field, filters ) {
+		var searchGroup = this.groups[ field ];
+		if ( searchGroup && 'search' === searchGroup.config.template ) {
+			return !! this.state.search;
+		}
 		var group = this.groups[ field ];
 		if ( group && 'range' === group.config.template ) {
 			return !! filters[ field ];
@@ -2121,6 +2134,9 @@
 	 */
 	PFForm.prototype.hasActiveFilters = function ( filters ) {
 		var self = this;
+		if ( this.state.search ) {
+			return true;
+		}
 		return Object.keys( this.groups ).some( function ( field ) {
 			return self.isFieldActive( field, filters );
 		} );
@@ -2134,6 +2150,10 @@
 	 * фильтрах и кнопкой [pf-filter-remove] внутри самой группы).
 	 */
 	PFForm.prototype.resetGroupControls = function ( group ) {
+		if ( group && 'search' === group.config.template ) {
+			this.setSearch( '', '' );
+			return;
+		}
 		qsa( group.el, 'input[type="checkbox"], input[type="radio"]' ).forEach( function ( input ) {
 			setChecked( input, false );
 		} );
@@ -2172,6 +2192,9 @@
 		Object.keys( this.groups ).forEach( function ( field ) {
 			this.resetGroupControls( this.groups[ field ] );
 		}, this );
+		if ( this.state.search ) {
+			this.setSearch( '', '' );
+		}
 
 		this._suppressAutoFilter = false;
 		this.runFilter( { resetPage: true, forceReplace: true } );
@@ -2205,6 +2228,15 @@
 			qsa( container, '[data-pf-generated]' ).forEach( function ( el ) {
 				el.remove();
 			} );
+
+			if ( self.state.search ) {
+				var searchGroup = self.groups.pfs_search;
+				var searchLabel = searchGroup && searchGroup.config.label ? searchGroup.config.label : 'Поиск';
+				self.appendChip( container, chipTpl, searchLabel + ': ' + self.state.search, function () {
+					self.setSearch( '', '' );
+					self.runFilter( { resetPage: true, forceReplace: true } );
+				} );
+			}
 
 			Object.keys( filters ).forEach( function ( field ) {
 				var group = self.groups[ field ];
@@ -2543,8 +2575,9 @@
 	PFForm.prototype.setSearch = function ( query, profile ) {
 		this.logNextSearch = !! query;
 		this.state.search = query;
-		this.state.searchProfile = profile || this.state.searchProfile;
+		this.state.searchProfile = profile || this.searchGroupProfile || this.state.searchProfile;
 		this.state.sortChosen = false;
+		this.syncSearchInputs( query );
 
 		var options = this.sortOptions || [];
 		var relevance = null;
@@ -2562,6 +2595,73 @@
 		} else if ( ! query && 'relevance' === this.state.orderbyRaw && fallback ) {
 			this.activateSortOption( fallback );
 		}
+	};
+
+	/**
+	 * Все поля поиска этого блока ([pfs-input] группы поиска и [pfs] внутри
+	 * [pf-profile]) показывают текущий запрос — кроме поля, в котором
+	 * посетитель сейчас печатает.
+	 */
+	PFForm.prototype.syncSearchInputs = function ( query ) {
+		var root = this.scopeRoot === document ? this.formEl : this.scopeRoot;
+		qsa( root, '[pfs-input]' ).forEach( function ( input ) {
+			if ( input !== document.activeElement && input.value !== query ) {
+				input.value = query;
+				input.dispatchEvent( new CustomEvent( 'pfs:synced', { bubbles: false } ) );
+			}
+		} );
+	};
+
+	/**
+	 * Группа «Поиск по тексту» (pf-template="search"): поле модуля поиска
+	 * среди групп фильтра. Узел группы становится корнем [pfs] (профиль —
+	 * из настроек группы), дальше им управляет pfs-search.js в режиме
+	 * группы: набор текста применяется как изменение любого другого фильтра
+	 * (onFilterValueChanged — «сразу» или «по кнопке»), Enter — сразу.
+	 */
+	PFForm.prototype.buildSearchGroup = function ( groupConfig, groupNode ) {
+		var clone = groupNode;
+		clone.classList.remove( 'pf-hidden' );
+
+		qsa( clone, '[pf-filter-name]' ).forEach( function ( el ) {
+			el.textContent = groupConfig.label;
+		} );
+
+		var root = qs( clone, '[pfs]' ) || clone;
+		root.setAttribute( 'pfs', groupConfig.search_profile || '' );
+		this.searchGroupProfile = groupConfig.search_profile || '';
+
+		if ( ! qs( root, '[pfs-input]' ) ) {
+			console.warn( 'PF Filter: в шаблоне [pf-template="search"] нет поля [pfs-input] — группа поиска пропущена.' );
+			return null;
+		}
+		if ( ! window.pfsSearchInit ) {
+			console.warn( 'PF Filter: модуль поиска (PF Search) не подключён — группа поиска пропущена.' );
+			return null;
+		}
+
+		var self = this;
+		window.pfsSearchInit( root, {
+			lockedType: this.postType,
+			// Набор текста (после паузы) — как изменение фильтра.
+			onInput: function ( query ) {
+				if ( query === self.state.search ) {
+					return;
+				}
+				self.setSearch( query, groupConfig.search_profile );
+				self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
+			},
+			// Enter / «Найти» / «Показать все» / очистка — применить сразу.
+			onSubmit: function ( query ) {
+				if ( query === self.state.search && ! query ) {
+					return;
+				}
+				self.setSearch( query, groupConfig.search_profile );
+				self.runFilter( { resetPage: true, forceReplace: true } );
+			},
+		} );
+
+		return clone;
 	};
 
 	/**

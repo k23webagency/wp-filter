@@ -14,6 +14,13 @@ defined( 'ABSPATH' ) || exit;
 class PF_Attributes {
 
 	/**
+	 * Поле группы «Поиск по тексту» (модуль PF Search) — не таксономия, не
+	 * атрибут и не meta: особая группа со своим шаблоном pf-template="search".
+	 */
+	const SEARCH_FIELD = 'pfs_search';
+
+
+	/**
 	 * Допустимые режимы сортировки значений внутри группы (настройка группы
 	 * value_sort). Применяется единообразно к любому типу группы со списком
 	 * значений (таксономия/кастомный атрибут/плоские категории/дерево
@@ -260,6 +267,12 @@ class PF_Attributes {
 			return null;
 		}
 
+		// Поиск по тексту (модуль PF Search) как группа фильтра: своё поле
+		// ввода в pf-template="search", значений и счётчиков у группы нет.
+		if ( self::SEARCH_FIELD === $field ) {
+			return $this->build_search_group( $config );
+		}
+
 		// Наличие товара (WooCommerce _stock_status) — синтетическое поле по
 		// аналогии с 'price': не таксономия и не ACF-поле, фиксированный
 		// небольшой набор значений. Имеет смысл только для настоящих товаров.
@@ -293,6 +306,44 @@ class PF_Attributes {
 		// (обратная совместимость с группами, сохранёнными до 1.8.0 — meta-ключ
 		// _price) либо произвольное ACF-поле, обнаруженное get_acf_post_fields().
 		return $this->build_range_group( $config, $category_product_ids );
+	}
+
+	/**
+	 * Группа «Поиск по тексту» (модуль PF Search). Только при включённом
+	 * модуле. Профиль поиска — выбранный в группе, если он ищет по типу
+	 * записей профиля фильтра, иначе первый профиль с этим типом.
+	 *
+	 * @param array $config Конфигурация группы.
+	 * @return array|null
+	 */
+	private function build_search_group( array $config ) {
+		if ( ! class_exists( 'PF_Search_Config' ) || ! PF_Search_Config::is_enabled() ) {
+			return null;
+		}
+
+		$type      = PF_Config::get_post_type();
+		$requested = (string) ( $config['search_profile'] ?? '' );
+		$chosen    = '';
+		foreach ( PF_Search_Config::get_profiles() as $id => $profile ) {
+			if ( ! in_array( $type, PF_Search_Config::get_profile_types( $profile ), true ) ) {
+				continue;
+			}
+			if ( (string) $id === $requested ) {
+				$chosen = (string) $id;
+				break;
+			}
+			if ( '' === $chosen ) {
+				$chosen = (string) $id;
+			}
+		}
+
+		return array(
+			'field'            => self::SEARCH_FIELD,
+			'label'            => ! empty( $config['label'] ) ? $config['label'] : __( 'Поиск', 'pf-filter' ),
+			'template'         => 'search',
+			'template_variant' => isset( $config['template_variant'] ) ? $config['template_variant'] : '',
+			'search_profile'   => $chosen,
+		);
 	}
 
 	/**
@@ -1510,6 +1561,10 @@ class PF_Attributes {
 	 * @return array
 	 */
 	public function get_compatible_templates( $field ) {
+		if ( self::SEARCH_FIELD === $field ) {
+			return array( 'search' );
+		}
+
 		if ( taxonomy_exists( $field ) && is_taxonomy_hierarchical( $field ) ) {
 			return array( 'category-tree', 'checkbox', 'radio', 'tags' );
 		}

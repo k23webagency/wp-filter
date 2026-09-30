@@ -249,7 +249,7 @@ class PF_Renderer {
 
 		foreach ( $groups as $group ) {
 			$field = isset( $group['field'] ) ? $group['field'] : '';
-			if ( '' === $field ) {
+			if ( '' === $field || PF_Attributes::SEARCH_FIELD === $field ) {
 				continue;
 			}
 
@@ -298,7 +298,9 @@ class PF_Renderer {
 	 * @return int[]
 	 */
 	private function matching_post_ids( array $filters, $logic, PF_Query $builder ) {
-		$cache_key = md5( $logic . '|' . wp_json_encode( $filters ) );
+		// Ограничение поиска (PF_Query::set_search_restriction()) меняет
+		// выборку при тех же фильтрах — оно обязано быть частью ключа.
+		$cache_key = md5( $logic . '|' . wp_json_encode( $filters ) . '|' . $builder->get_search_restriction_key() );
 		if ( isset( $this->matching_ids_cache[ $cache_key ] ) ) {
 			return $this->matching_ids_cache[ $cache_key ];
 		}

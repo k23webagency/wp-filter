@@ -213,6 +213,9 @@ class PF_REST_API {
 		// страница результатов): сужает и список, и facet-счётчики.
 		$search             = trim( sanitize_text_field( (string) ( $body['search'] ?? '' ) ) );
 		$search_unavailable = false;
+		// Построитель общий на экземпляр REST-контроллера — ограничение
+		// прошлого вызова в этом же процессе не должно протечь в этот.
+		$this->query_builder->set_search_restriction( null );
 		if ( '' !== $search && class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() ) {
 			$search_ids = $this->search_ids_for( $search, sanitize_key( (string) ( $body['search_profile'] ?? '' ) ) );
 			if ( null === $search_ids ) {
