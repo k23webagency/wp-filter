@@ -49,6 +49,14 @@ class PF_REST_API {
 	private $last_search_profile = '';
 
 	/**
+	 * Исправленный запрос (опечатка, раскладка, транслит) из последнего
+	 * search_ids_for(), если движок поиска искал по нему, иначе null.
+	 *
+	 * @var string|null
+	 */
+	private $last_search_suggest = null;
+
+	/**
 	 * Конструктор.
 	 */
 	public function __construct() {
@@ -216,6 +224,7 @@ class PF_REST_API {
 		// Построитель общий на экземпляр REST-контроллера — ограничение
 		// прошлого вызова в этом же процессе не должно протечь в этот.
 		$this->query_builder->set_search_restriction( null );
+		$this->last_search_suggest = null;
 		if ( '' !== $search && class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() ) {
 			$search_ids = $this->search_ids_for( $search, sanitize_key( (string) ( $body['search_profile'] ?? '' ) ) );
 			if ( null === $search_ids ) {
@@ -258,6 +267,9 @@ class PF_REST_API {
 
 		if ( '' !== $search ) {
 			$response['search'] = $search;
+			if ( null !== $this->last_search_suggest ) {
+				$response['suggest'] = $this->last_search_suggest;
+			}
 			if ( $search_unavailable ) {
 				$response['search_unavailable'] = true;
 			}
@@ -307,6 +319,8 @@ class PF_REST_API {
 				'per_page' => PF_Search_Engine::MAX_CANDIDATES,
 			)
 		);
+
+		$this->last_search_suggest = $result['suggest'] ?? null;
 
 		return $result['ids'];
 	}

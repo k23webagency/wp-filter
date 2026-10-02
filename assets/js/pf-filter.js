@@ -228,7 +228,9 @@
 		this.outputEl = null;
 		this.templatesEl = null;
 		this.loadingEl = null;
-		this.emptyEl = null;
+		this.emptyEls = [];
+		this.notEmptyEls = [];
+		this.suggestEls = [];
 		this.sortEl = null;
 		this.paginationMode = null;
 		this.filterMode = 'auto'; // 'auto' | 'manual' — настройка pf_filter_settings.filter_mode, см. init().
@@ -381,16 +383,31 @@
 		this.initSearchBridge();
 
 		this.loadingEl = qs( this.scopeRoot, '[pf-list="loading"]' );
-		this.emptyEl = qs( this.scopeRoot, '[pf-list="empty"]' );
+		// Сообщения о результате: pf-list="empty" — когда ничего не найдено,
+		// pf-list="not-empty" — когда найдено. Их может быть несколько (например,
+		// заголовок «Результаты по запросу…» и строка над списком).
+		this.emptyEls = qsa( this.scopeRoot, '[pf-list="empty"]' );
+		this.notEmptyEls = qsa( this.scopeRoot, '[pf-list="not-empty"]' );
+		// Подсказка «Возможно, вы искали…» страницы результатов — вне блоков
+		// поиска (внутри них подсказкой управляет живой поиск, pfs-search.js).
+		this.suggestEls = qsa( this.scopeRoot, '[pf-search="suggest"]' ).filter( function ( el ) {
+			return ! el.closest( '[pf-search=""]' );
+		} );
 		// Плагин сам гарантирует, что оба скрыты по умолчанию — не полагается на то,
 		// что тема пропишет для них display:none. is-hidden снимается/добавляется
 		// в runFilter()/handleResponse(), а не только после первого запроса.
 		if ( this.loadingEl ) {
 			this.loadingEl.classList.add( 'is-hidden' );
 		}
-		if ( this.emptyEl ) {
-			this.emptyEl.classList.add( 'is-hidden' );
-		}
+		this.emptyEls.forEach( function ( el ) {
+			el.classList.add( 'is-hidden' );
+		} );
+		this.suggestEls.forEach( function ( el ) {
+			el.classList.add( 'is-hidden' );
+		} );
+		// pf-list="not-empty" до первого ответа — по уже отрисованному списку,
+		// чтобы заголовок не мигал.
+		this.setResultState( ! this.listEl || this.listEl.children.length > 0, false );
 		// Активная стратегия пагинации — исключительно настройка админки
 		// (pagination_strategy), устанавливается ниже, после загрузки /config.
 		// В разметке страницы могут одновременно лежать готовые элементы сразу
@@ -1666,19 +1683,15 @@
 
 		// silent: [pf-list=""] на первой загрузке уже отрендерен обычным циклом
 		// WordPress — трогать его не нужно, запрос был только за цифрами.
+		this.setResultState( data.count > 0, true );
+		this.updateSuggest( data.suggest || '' );
+
 		if ( ! silent ) {
 			if ( 0 === data.count ) {
-				if ( this.emptyEl ) {
-					this.emptyEl.classList.remove( 'is-hidden' );
-				}
 				if ( this.listEl ) {
 					this.listEl.innerHTML = '';
 				}
 			} else {
-				if ( this.emptyEl ) {
-					this.emptyEl.classList.add( 'is-hidden' );
-				}
-
 				if ( this.listEl ) {
 					var appendModes = [ 'load-more', 'both', 'infinite' ];
 					var appended = appendModes.includes( this.paginationMode ) && ! forceReplace;
@@ -1939,6 +1952,32 @@
 	// -----------------------------------------------------------------
 	// Пагинация
 	// -----------------------------------------------------------------
+
+	/**
+	 * Сообщения о результате: pf-list="not-empty" видны, когда что-то найдено,
+	 * pf-list="empty" — когда ничего. withEmpty=false — только not-empty
+	 * (до первого ответа empty остаётся скрытым).
+	 */
+	PFForm.prototype.setResultState = function ( found, withEmpty ) {
+		this.notEmptyEls.forEach( function ( el ) {
+			el.classList.toggle( 'is-hidden', ! found );
+		} );
+		if ( withEmpty ) {
+			this.emptyEls.forEach( function ( el ) {
+				el.classList.toggle( 'is-hidden', found );
+			} );
+		}
+	};
+
+	/** «Возможно, вы искали…»: виден, только если поиск исправил запрос. */
+	PFForm.prototype.updateSuggest = function ( suggest ) {
+		this.suggestEls.forEach( function ( box ) {
+			qsa( box, '[pf-search="suggest-query"]' ).forEach( function ( el ) {
+				el.textContent = suggest;
+			} );
+			box.classList.toggle( 'is-hidden', ! suggest );
+		} );
+	};
 
 	/** Сколько номеров показывать по обе стороны от текущей страницы. */
 	var PAGE_NEIGHBORS = 2;
