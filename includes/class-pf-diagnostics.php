@@ -288,43 +288,39 @@ class PF_Diagnostics {
 	private function check_required_attributes( DOMXPath $xpath ) {
 		$checks     = array();
 		$node_count = array();
-		foreach ( array( 'pf-form', 'pf-output', 'pf-templates', 'pf-list' ) as $attribute ) {
-			$nodes                    = $xpath->query( '//*[@' . $attribute . ']' );
-			$node_count[ $attribute ] = $nodes ? $nodes->length : 0;
-		}
+		$node_count = array(
+			'form'      => $xpath->query( '//*[@pf-filter=""]' )->length,
+			'output'    => $xpath->query( '//*[@pf-filter="output"]' )->length,
+			'templates' => $xpath->query( '//*[@pf-filter="output"]//*[@pf-template]' )->length,
+			'list'      => $xpath->query( '//*[@pf-list=""]' )->length,
+		);
 
 		// Единственный обязательный элемент блока — список карточек.
 		$checks[] = $this->result(
-			$node_count['pf-list'] ? 'ok' : 'error',
+			$node_count['list'] ? 'ok' : 'error',
 			'[pf-list]',
-			$node_count['pf-list']
-				? sprintf( 'найдено: %d', $node_count['pf-list'] )
+			$node_count['list']
+				? sprintf( 'найдено: %d', $node_count['list'] )
 				: __( 'Контейнер карточек не найден. Результаты не обновляются.', 'pf-filter' )
 		);
 
 		// Форма нужна только для групп фильтра: без неё блок работает как
 		// «список без фильтров» (пагинация, сортировка, счётчики, поиск).
-		if ( ! $node_count['pf-form'] ) {
-			$checks[] = $this->result( 'info', '[pf-form]', __( 'Формы фильтра нет — блок работает без групп фильтра (список, пагинация, сортировка, поиск).', 'pf-filter' ) );
+		if ( ! $node_count['form'] ) {
+			$checks[] = $this->result( 'info', '[pf-filter]', __( 'Формы фильтра нет — блок работает без групп фильтра (список, пагинация, сортировка, поиск).', 'pf-filter' ) );
 		} else {
-			$checks[] = $this->result( 'ok', '[pf-form]', sprintf( 'найдено: %d', $node_count['pf-form'] ) );
-			$has_output    = $node_count['pf-output'] > 0;
-			$has_templates = $node_count['pf-templates'] > 0;
-			if ( $has_output && $has_templates ) {
-				$checks[] = $this->result( 'ok', '[pf-output] + [pf-templates]', __( 'найдены', 'pf-filter' ) );
-			} elseif ( ! $has_output && ! $has_templates ) {
-				$checks[] = $this->result( 'info', '[pf-output] + [pf-templates]', __( 'Форма без групп фильтра — так можно, если фильтры не нужны.', 'pf-filter' ) );
+			$checks[] = $this->result( 'ok', '[pf-filter]', sprintf( 'найдено: %d', $node_count['form'] ) );
+			if ( ! $node_count['output'] ) {
+				$checks[] = $this->result( 'info', '[pf-filter="output"]', __( 'Форма без групп фильтра — так можно, если фильтры не нужны.', 'pf-filter' ) );
+			} elseif ( $node_count['templates'] ) {
+				$checks[] = $this->result( 'ok', '[pf-filter="output"]', sprintf( 'шаблонов групп внутри: %d', $node_count['templates'] ) );
 			} else {
-				$checks[] = $this->result(
-					'error',
-					$has_output ? '[pf-templates]' : '[pf-output]',
-					$has_output ? __( 'Шаблоны групп не найдены. Фильтр не строится.', 'pf-filter' ) : __( 'Группы фильтров не будут вставлены в форму.', 'pf-filter' )
-				);
+				$checks[] = $this->result( 'error', '[pf-filter="output"]', __( 'Внутри нет шаблонов групп (pf-template). Фильтр не строится.', 'pf-filter' ) );
 			}
 		}
 
-		if ( $node_count['pf-form'] ) {
-			$checks[] = $this->check_target_attribute( $xpath, $node_count['pf-form'], $node_count['pf-list'] );
+		if ( $node_count['form'] ) {
+			$checks[] = $this->check_target_attribute( $xpath, $node_count['form'], $node_count['list'] );
 		}
 
 		return $checks;
@@ -339,7 +335,7 @@ class PF_Diagnostics {
 	 * - если pf-target указан явно, проверяем что селектор что-то находит.
 	 *
 	 * @param DOMXPath $xpath       XPath документа.
-	 * @param int      $form_count  Количество найденных [pf-form].
+	 * @param int      $form_count  Количество найденных [pf-filter].
 	 * @param int      $list_count  Количество найденных [pf-list].
 	 * @return array
 	 */
@@ -363,9 +359,9 @@ class PF_Diagnostics {
 
 		// Та же область поиска списка, что в JS: ближайший [pf-profile] формы.
 		$ambiguous = 0;
-		foreach ( $xpath->query( '//*[@pf-form]' ) as $form ) {
+		foreach ( $xpath->query( '//*[@pf-filter=""]' ) as $form ) {
 			$scope = $xpath->query( 'ancestor-or-self::*[@pf-profile][1]', $form )->item( 0 );
-			$lists = $scope ? $xpath->query( './/*[@pf-list]', $scope ) : $xpath->query( '//*[@pf-list]' );
+			$lists = $scope ? $xpath->query( './/*[@pf-list=""]', $scope ) : $xpath->query( '//*[@pf-list=""]' );
 			if ( 1 !== $lists->length && ! $form->getAttribute( 'pf-target' ) ) {
 				++$ambiguous;
 			}
@@ -518,9 +514,9 @@ class PF_Diagnostics {
 	private function check_group_templates( DOMXPath $xpath, array $found_templates ) {
 		$checks = array();
 
-		// [pf-filter-row] / [pf-filter-value] — общая зацепка только для этих
-		// шаблонов. У range и category-tree — свои зацепки (pf-filter-range-slider/
-		// pf-filter-range-value и pf-filter-list-1 соответственно), проверять их
+		// [pf-filter="row"] / [pf-filter="value"] — общая зацепка только для этих
+		// шаблонов. У range и category-tree — свои зацепки (pf-filter="slider"/
+		// pf-filter="min|max" и pf-filter="list" соответственно), проверять их
 		// по общему правилу неверно — это всегда давало бы ложную ошибку.
 		$row_value_templates = array( 'checkbox', 'radio', 'tags' );
 
@@ -531,14 +527,14 @@ class PF_Diagnostics {
 			}
 
 			// Верстальщик может свёрстать несколько ВАРИАНТОВ одного и того же
-			// pf-template (pf-template-variant, разные визуальные обёртки одной и
+			// pf-template (pf-variant, разные визуальные обёртки одной и
 			// той же логики) — у каждого своя разметка, проверять нужно каждый
 			// отдельно, а не только первый попавшийся узел с этим pf-template
 			// (иначе можно пропустить сломанный второй вариант или ложно
 			// сообщить об ошибке из-за первого, хотя реально используется второй).
 			$nodes_by_variant = array();
 			foreach ( $template_nodes as $template_node ) {
-				$variant = $template_node->getAttribute( 'pf-template-variant' );
+				$variant = $template_node->getAttribute( 'pf-variant' );
 				if ( ! isset( $nodes_by_variant[ $variant ] ) ) {
 					$nodes_by_variant[ $variant ] = $template_node;
 				}
@@ -546,52 +542,52 @@ class PF_Diagnostics {
 
 			foreach ( $nodes_by_variant as $variant => $node ) {
 				$template_label = '' !== $variant
-					? sprintf( '[pf-template="%1$s"][pf-template-variant="%2$s"]', $template, $variant )
+					? sprintf( '[pf-template="%1$s"][pf-variant="%2$s"]', $template, $variant )
 					: sprintf( '[pf-template="%s"]', $template );
 
 				if ( 'range' === $template ) {
-					// [pf-filter-range-slider] нужен только для перетаскивания/
+					// [pf-filter="slider"] нужен только для перетаскивания/
 					// визуального трека — сам range-фильтр работает и без него,
-					// пока в разметке есть хотя бы [pf-filter-range-value]
+					// пока в разметке есть хотя бы [pf-filter="min|max"]
 					// (прямой ввод числом, см. bindNumberInput() в pf-filter.js).
 					// Обязательна ровно одна из двух зацепок; отсутствие обеих —
 					// единственный случай, когда шаблон реально не работает.
-					$has_slider = $xpath->query( './/*[@pf-filter-range-slider]', $node )->length > 0;
-					$has_value  = $xpath->query( './/*[@pf-filter-range-value]', $node )->length > 0;
+					$has_slider = $xpath->query( './/*[@pf-filter="slider"]', $node )->length > 0;
+					$has_value  = $xpath->query( './/*[(@pf-filter="min" or @pf-filter="max")]', $node )->length > 0;
 
 					if ( $has_slider ) {
-						$checks[] = $this->result( 'ok', $template_label . ' → [pf-filter-range-slider]', __( 'найден', 'pf-filter' ) );
+						$checks[] = $this->result( 'ok', $template_label . ' → [pf-filter="slider"]', __( 'найден', 'pf-filter' ) );
 					} elseif ( $has_value ) {
 						$checks[] = $this->result(
 							'warning',
-							$template_label . ' → [pf-filter-range-slider]',
-							__( 'Не найден — перетаскивание недоступно, работает только прямой ввод через [pf-filter-range-value].', 'pf-filter' )
+							$template_label . ' → [pf-filter="slider"]',
+							__( 'Не найден — перетаскивание недоступно, работает только прямой ввод через [pf-filter="min|max"].', 'pf-filter' )
 						);
 					} else {
 						$checks[] = $this->result(
 							'error',
-							$template_label . ' → [pf-filter-range-slider]',
-							__( 'Ни [pf-filter-range-slider], ни [pf-filter-range-value] не найдены — шаблон `range` не будет работать.', 'pf-filter' )
+							$template_label . ' → [pf-filter="slider"]',
+							__( 'Ни [pf-filter="slider"], ни [pf-filter="min|max"] не найдены — шаблон `range` не будет работать.', 'pf-filter' )
 						);
 					}
 					continue;
 				}
 
 				if ( 'category-tree' === $template ) {
-					$has_list = $xpath->query( './/*[@pf-filter-list-1]', $node )->length > 0;
+					$has_list = $xpath->query( './/*[@pf-filter="list"]', $node )->length > 0;
 					$checks[] = $this->result(
 						$has_list ? 'ok' : 'error',
-						$template_label . ' → [pf-filter-list-1]',
+						$template_label . ' → [pf-filter="list"]',
 						$has_list ? __( 'найден', 'pf-filter' ) : __( 'Дерево категорий не будет построено', 'pf-filter' )
 					);
 					continue;
 				}
 
 				if ( 'search' === $template ) {
-					$has_input = $xpath->query( './/*[@pfs-input]', $node )->length > 0;
+					$has_input = $xpath->query( './/*[@pf-search="input"]', $node )->length > 0;
 					$checks[]  = $this->result(
 						$has_input ? 'ok' : 'error',
-						$template_label . ' → [pfs-input]',
+						$template_label . ' → [pf-search="input"]',
 						$has_input ? __( 'найден', 'pf-filter' ) : __( 'Нет поля ввода — группа поиска не будет работать', 'pf-filter' )
 					);
 					continue;
@@ -601,20 +597,20 @@ class PF_Diagnostics {
 					continue; // Незнакомый/кастомный тип шаблона — общую зацепку не проверяем.
 				}
 
-				$has_row  = $xpath->query( './/*[@pf-filter-row]', $node )->length > 0;
+				$has_row  = $xpath->query( './/*[@pf-filter="row"]', $node )->length > 0;
 				$checks[] = $this->result(
 					$has_row ? 'ok' : 'error',
-					$template_label . ' → [pf-filter-row]',
+					$template_label . ' → [pf-filter="row"]',
 					$has_row
 						? __( 'найден', 'pf-filter' )
 						/* translators: %s: значение pf-template */
 						: sprintf( __( 'Шаблон `%s` не будет наполнен данными', 'pf-filter' ), $template )
 				);
 
-				$has_value = $xpath->query( './/*[@pf-filter-value]', $node )->length > 0;
+				$has_value = $xpath->query( './/*[@pf-filter="value"]', $node )->length > 0;
 				$checks[]  = $this->result(
 					$has_value ? 'ok' : 'warning',
-					$template_label . ' → [pf-filter-value]',
+					$template_label . ' → [pf-filter="value"]',
 					$has_value ? __( 'найден', 'pf-filter' ) : __( 'Значения будут без текста', 'pf-filter' )
 				);
 			}
@@ -640,21 +636,21 @@ class PF_Diagnostics {
 			}
 
 			// Шаблон на странице есть, но настроенного конкретного ВАРИАНТА
-			// (pf-template-variant) среди его узлов может не быть — например,
+			// (pf-variant) среди его узлов может не быть — например,
 			// верстальщик убрал/переименовал вариант, а группа продолжает
 			// на него ссылаться. Некритично (JS в этом случае падает обратно на
 			// первый найденный узел этого pf-template, см. pf-filter.js), но
 			// стоит подсветить — иначе выбор варианта в админке тихо не работает.
 			if ( ! empty( $group['template_variant'] ) ) {
 				$variant_nodes = $xpath->query(
-					'//*[@pf-template=' . self::xpath_literal( $group['template'] ) . '][@pf-template-variant=' . self::xpath_literal( $group['template_variant'] ) . ']'
+					'//*[@pf-template=' . self::xpath_literal( $group['template'] ) . '][@pf-variant=' . self::xpath_literal( $group['template_variant'] ) . ']'
 				);
 				if ( ! $variant_nodes || 0 === $variant_nodes->length ) {
 					$checks[] = $this->result(
 						'warning',
-						sprintf( '%s → [pf-template-variant="%s"]', $group['label'] ?: $group['field'], $group['template_variant'] ),
+						sprintf( '%s → [pf-variant="%s"]', $group['label'] ?: $group['field'], $group['template_variant'] ),
 						sprintf(
-							/* translators: 1: название группы, 2: значение pf-template-variant */
+							/* translators: 1: название группы, 2: значение pf-variant */
 							__( 'Для группы «%1$s» назначен вариант оформления `%2$s`, но он не найден на странице — будет использован первый попавшийся узел шаблона', 'pf-filter' ),
 							$group['label'] ?: $group['field'],
 							$group['template_variant']
@@ -676,36 +672,36 @@ class PF_Diagnostics {
 	private function check_smart_hints( DOMXPath $xpath ) {
 		$checks = array();
 
-		$chip_remove_nodes = $xpath->query( '//*[@pf-chip-remove]' );
+		$chip_remove_nodes = $xpath->query( '//*[@pf-chips="remove"]' );
 		foreach ( $chip_remove_nodes as $node ) {
-			$has_ancestor = $xpath->query( 'ancestor::*[@pf-active-chip]', $node )->length > 0;
+			$has_ancestor = $xpath->query( 'ancestor::*[@pf-chips="chip"]', $node )->length > 0;
 			if ( ! $has_ancestor ) {
 				$checks[] = $this->result(
 					'warning',
-					'[pf-chip-remove]',
-					__( 'Найден pf-chip-remove без родителя с pf-active-chip — возможно неверная структура чипа', 'pf-filter' )
+					'[pf-chips="remove"]',
+					__( 'Найден pf-chips="remove" без родителя с pf-chips="chip" — возможно неверная структура чипа', 'pf-filter' )
 				);
 				break;
 			}
 		}
 
-		$sort_option_found = $xpath->query( '//*[@pf-sort-option]' )->length > 0;
-		$sort_found        = $xpath->query( '//*[@pf-sort]' )->length > 0;
+		$sort_option_found = $xpath->query( '//*[@pf-sort="option"]' )->length > 0;
+		$sort_found        = $xpath->query( '//*[@pf-sort=""]' )->length > 0;
 		if ( $sort_option_found && ! $sort_found ) {
-			$checks[] = $this->result( 'warning', '[pf-sort-option]', __( 'Найден pf-sort-option, но нет pf-sort на странице', 'pf-filter' ) );
+			$checks[] = $this->result( 'warning', '[pf-sort="option"]', __( 'Найден pf-sort="option", но нет pf-sort на странице', 'pf-filter' ) );
 		}
 
-		$page_item_found  = $xpath->query( '//*[@pf-page-item]' )->length > 0;
-		$pagination_found = $xpath->query( '//*[@pf-pagination]' )->length > 0;
+		$page_item_found  = $xpath->query( '//*[@pf-pagination="page"]' )->length > 0;
+		$pagination_found = $xpath->query( '//*[@pf-pagination=""]' )->length > 0;
 		if ( $page_item_found && ! $pagination_found ) {
-			$checks[] = $this->result( 'warning', '[pf-page-item]', __( 'Найден pf-page-item, но нет pf-pagination', 'pf-filter' ) );
+			$checks[] = $this->result( 'warning', '[pf-pagination="page"]', __( 'Найден pf-pagination="page", но нет pf-pagination', 'pf-filter' ) );
 		}
 
-		$form_count = $xpath->query( '//*[@pf-form]' )->length;
+		$form_count = $xpath->query( '//*[@pf-filter=""]' )->length;
 		if ( $form_count > 1 ) {
 			$checks[] = $this->result(
 				'info',
-				'[pf-form]',
+				'[pf-filter]',
 				sprintf(
 					/* translators: %d: количество найденных форм */
 					__( 'Найдено несколько форм фильтра на странице: %d', 'pf-filter' ),
@@ -734,7 +730,7 @@ class PF_Diagnostics {
 	private function check_third_party_widget_hints( DOMXPath $xpath ) {
 		$checks = array();
 
-		$list_nodes = $xpath->query( '//*[@pf-list]' );
+		$list_nodes = $xpath->query( '//*[@pf-list=""]' );
 		if ( ! $list_nodes || 0 === $list_nodes->length ) {
 			return $checks;
 		}
@@ -858,7 +854,7 @@ class PF_Diagnostics {
 	}
 
 	/**
-	 * [pf-apply] имеет смысл проверять только когда сама настройка filter_mode —
+	 * [pf-filter="apply"] имеет смысл проверять только когда сама настройка filter_mode —
 	 * 'manual': без этой кнопки список тогда никогда не обновится, что бы
 	 * пользователь ни выбрал (счётчики значений и границы range при этом
 	 * продолжат обновляться вживую — см. PFForm.prototype.previewFilterCounts()
@@ -874,19 +870,19 @@ class PF_Diagnostics {
 			return array();
 		}
 		// Кнопка нужна только форме с группами фильтра.
-		if ( ! self::has_attribute( $xpath, 'pf-output' ) ) {
+		if ( ! self::has_attribute( $xpath, 'pf-filter="output"' ) ) {
 			return array();
 		}
 
-		$has_apply = self::has_attribute( $xpath, 'pf-apply' );
+		$has_apply = self::has_attribute( $xpath, 'pf-filter="apply"' );
 
 		return array(
 			$this->result(
 				$has_apply ? 'ok' : 'error',
 				__( 'Режим применения фильтра — «по кнопке» (filter_mode: manual)', 'pf-filter' ),
 				$has_apply
-					? __( '[pf-apply] найден на странице.', 'pf-filter' )
-					: __( '[pf-apply] не найден — список никогда не обновится, что бы пользователь ни выбрал.', 'pf-filter' )
+					? __( '[pf-filter="apply"] найден на странице.', 'pf-filter' )
+					: __( '[pf-filter="apply"] не найден — список никогда не обновится, что бы пользователь ни выбрал.', 'pf-filter' )
 			),
 		);
 	}
@@ -906,9 +902,9 @@ class PF_Diagnostics {
 	 */
 	public static function detect_pagination_availability( DOMXPath $xpath ) {
 		$available = array(
-			'pages'     => $xpath->query( '//*[@pf-pagination-pages]' )->length > 0 && $xpath->query( '//*[@pf-page-item]' )->length > 0,
-			'load-more' => $xpath->query( '//*[@pf-load-more]' )->length > 0,
-			'infinite'  => $xpath->query( '//*[@pf-infinite-trigger]' )->length > 0,
+			'pages'     => $xpath->query( '//*[@pf-pagination="pages"]' )->length > 0 && $xpath->query( '//*[@pf-pagination="page"]' )->length > 0,
+			'load-more' => $xpath->query( '//*[@pf-pagination="more"]' )->length > 0,
+			'infinite'  => $xpath->query( '//*[@pf-pagination="trigger"]' )->length > 0,
 		);
 		$available['both'] = $available['pages'] && $available['load-more'];
 
@@ -954,7 +950,8 @@ class PF_Diagnostics {
 	 * элементов.
 	 *
 	 * @param DOMXPath    $xpath     XPath уже распарсенной страницы (см. fetch_dom).
-	 * @param string      $attribute Имя pf-* атрибута без квадратных скобок (например 'pf-filter-count').
+	 * @param string      $attribute Атрибут без квадратных скобок: имя ('pf-template') или
+	 *                               имя со значением ('pf-filter="count"', 'pf-sort=""').
 	 * @param string|null $template  Если задано — искать только внутри [pf-template="$template"].
 	 * @return bool
 	 */
@@ -999,24 +996,17 @@ class PF_Diagnostics {
 
 		$real_depth = $this->attributes->get_real_category_depth( $taxonomy );
 
+		// Уровни шаблона — вложенные друг в друга [pf-filter="list"]:
+		// глубина = самая длинная цепочка списков внутри шаблона.
 		$max_level = 0;
-		$found_levels = array();
-		foreach ( $xpath->query( '//*' ) as $node ) {
-			if ( ! $node instanceof DOMElement ) {
-				continue;
-			}
-			foreach ( $node->attributes as $attribute ) {
-				if ( preg_match( '/^pf-filter-list-(\d+)$/', $attribute->nodeName, $matches ) ) {
-					$level                 = (int) $matches[1];
-					$found_levels[ $level ] = true;
-					$max_level              = max( $max_level, $level );
-				}
-			}
+		foreach ( $xpath->query( '//*[@pf-template="category-tree"]//*[@pf-filter="list"]' ) as $list ) {
+			$level     = 1 + (int) $xpath->evaluate( 'count(ancestor::*[@pf-filter="list"])', $list );
+			$max_level = max( $max_level, $level );
 		}
 
 		if ( 0 === $max_level ) {
 			return array(
-				$this->result( 'warning', __( 'Глубина дерева категорий', 'pf-filter' ), __( 'Шаблон category-tree найден, но pf-filter-list-N не обнаружен.', 'pf-filter' ) ),
+				$this->result( 'warning', __( 'Глубина дерева категорий', 'pf-filter' ), __( 'Шаблон category-tree найден, но pf-filter="list" не обнаружен.', 'pf-filter' ) ),
 			);
 		}
 
@@ -1030,22 +1020,15 @@ class PF_Diagnostics {
 			);
 		}
 
-		ksort( $found_levels );
-		$found_attrs = array();
-		foreach ( array_keys( $found_levels ) as $level ) {
-			$found_attrs[] = 'pf-filter-list-' . $level;
-		}
-
 		return array(
 			$this->result(
 				'warning',
 				__( 'Глубина дерева категорий', 'pf-filter' ),
 				sprintf(
-					/* translators: 1: реальная глубина, 2: глубина шаблона, 3: список найденных атрибутов, 4: глубина шаблона (повтор) */
-					__( 'Дерево категорий имеет %1$d уровней вложенности. Шаблон поддерживает %2$d уровня (найдены %3$s). Категории глубже %4$d-го уровня не будут показаны. Расширьте шаблон category-tree или оставьте как есть.', 'pf-filter' ),
+					/* translators: 1: реальная глубина, 2: глубина шаблона, 3: глубина шаблона (повтор) */
+					__( 'Дерево категорий имеет %1$d уровней вложенности. Шаблон поддерживает %2$d (вложенных [pf-filter="list"]). Категории глубже %3$d-го уровня не будут показаны. Расширьте шаблон category-tree или оставьте как есть.', 'pf-filter' ),
 					$real_depth,
 					$max_level,
-					implode( ', ', $found_attrs ),
 					$max_level
 				)
 			),
@@ -1060,7 +1043,7 @@ class PF_Diagnostics {
 	 */
 	private function auto_hooks_info( DOMXPath $xpath ) {
 		$text_inputs = $xpath->query( '//*[@pf-template]//input[@type="text"]' )->length;
-		$rows        = $xpath->query( '//*[@pf-filter-row]' )->length;
+		$rows        = $xpath->query( '//*[@pf-filter="row"]' )->length;
 
 		return array(
 			$this->result(
@@ -1070,7 +1053,7 @@ class PF_Diagnostics {
 			),
 			$this->result(
 				'info',
-				'pf-filter-row → parentElement',
+				'pf-filter="row" → parentElement',
 				sprintf( __( 'контейнер для клонов строк — найдено строк-шаблонов: %d', 'pf-filter' ), $rows )
 			),
 		);

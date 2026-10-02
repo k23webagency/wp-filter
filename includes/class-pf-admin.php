@@ -395,7 +395,7 @@ class PF_Admin {
 				$row['color_meta_key'] = sanitize_key( $group['color_meta_key'] );
 			}
 
-			// Вариант оформления шаблона (pf-template-variant в разметке) — верстальщик
+			// Вариант оформления шаблона (pf-variant в разметке) — верстальщик
 			// может свёрстать несколько вариантов одного и того же pf-template
 			// (напр. checkbox плоским списком и checkbox в дропдауне), это
 			// произвольная строка, значение которой полностью выбирает верстальщик.
@@ -602,7 +602,7 @@ class PF_Admin {
 	 * @param array         $available_templates Список доступных значений pf-template.
 	 * @param DOMXPath|null $scan_xpath          XPath образца разметки (см. PF_Admin::render_page()) для точечных
 	 *                                           предупреждений "нет нужного элемента"; null — сканирование недоступно.
-	 * @param array         $template_variants   Карта template => найденные варианты pf-template-variant
+	 * @param array         $template_variants   Карта template => найденные варианты pf-variant
 	 *                                           (см. PF_Admin::get_available_template_variants_map()).
 	 */
 	public function render_group_row( $name_prefix, $index, array $group, array $available_fields, array $available_templates, $scan_xpath = null, array $template_variants = array() ) {
@@ -629,7 +629,7 @@ class PF_Admin {
 		// null — сканирование недоступно (тогда ничего не предупреждаем, как и
 		// в остальных местах, завязанных на скан образца разметки).
 		$search_available = $scan_xpath ? PF_Diagnostics::has_text_input( $scan_xpath, $template ) : null;
-		$colors_available = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter-swatch', $template ) : null;
+		$colors_available = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter="swatch"', $template ) : null;
 		// Реальная глубина дерева этой таксономии vs эффективно настроенная.
 		// Для category-tree депth всегда эффективна (своя, иначе дефолт
 		// PF_Attributes::DEFAULT_TREE_DEPTH, см. build_category_tree_group()).
@@ -699,7 +699,7 @@ class PF_Admin {
 						<label class="pf-detail-label"><?php esc_html_e( 'Вариант оформления', 'pf-filter' ); ?></label>
 						<?php
 						/*
-						 * Подпись варианта — сам его слаг из разметки (pf-template-variant),
+						 * Подпись варианта — сам его слаг из разметки (pf-variant),
 						 * человекочитаемой подписи не существует: верстальщик придумывает
 						 * это имя сам, плагину неоткуда взять для него перевод. Список
 						 * options — ВСЕ найденные варианты всех шаблонов сразу (не только
@@ -766,7 +766,7 @@ class PF_Admin {
 							<?php endforeach; ?>
 						</select>
 						<?php if ( $color_meta_key && false === $colors_available ) : ?>
-							<p style="color:#b32d2e;font-size:11px;margin:4px 0 0;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден [pf-filter-swatch] — цвета показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет pf-filter-swatch в шаблоне', 'pf-filter' ); ?></p>
+							<p style="color:#b32d2e;font-size:11px;margin:4px 0 0;" title="<?php esc_attr_e( 'В шаблоне pf-template этой группы не найден [pf-filter="swatch"] — цвета показывать будет негде.', 'pf-filter' ); ?>">⚠ <?php esc_html_e( 'нет pf-filter="swatch" в шаблоне', 'pf-filter' ); ?></p>
 						<?php endif; ?>
 					</div>
 					<div class="pf-detail-field pf-extra-value-sort">
@@ -821,7 +821,7 @@ class PF_Admin {
 	}
 
 	/**
-	 * Карта template => варианты (pf-template-variant), реально найденные в
+	 * Карта template => варианты (pf-variant), реально найденные в
 	 * разметке для каждого значения pf-template. Верстальщик волен свёрстать
 	 * несколько вариантов одного и того же типа шаблона (например, checkbox
 	 * плоским списком и checkbox внутри дропдауна) — подпись варианта в
@@ -830,7 +830,7 @@ class PF_Admin {
 	 *
 	 * В отличие от get_available_templates() (простой regex по телу ответа)
 	 * здесь нужна привязка "этот вариант — именно для ЭТОГО pf-template", а
-	 * не просто список всех значений pf-template-variant на странице — для
+	 * не просто список всех значений pf-variant на странице — для
 	 * этого используется уже распарсенный DOMXPath (тот же, что и остальная
 	 * диагностика разметки на этой странице настроек), а не повторный fetch.
 	 *
@@ -845,7 +845,7 @@ class PF_Admin {
 		}
 
 		foreach ( $templates as $template ) {
-			$nodes    = $scan_xpath->query( '//*[@pf-template=' . PF_Diagnostics::xpath_literal( $template ) . ']/@pf-template-variant' );
+			$nodes    = $scan_xpath->query( '//*[@pf-template=' . PF_Diagnostics::xpath_literal( $template ) . ']/@pf-variant' );
 			$variants = array();
 			foreach ( $nodes as $node ) {
 				$value = trim( $node->nodeValue );

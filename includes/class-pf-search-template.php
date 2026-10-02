@@ -1,20 +1,20 @@
 <?php
 /**
  * Шаблон карточки выпадающего окна поиска: цикл записей темы внутри
- * [pfs-results] — тот же принцип, что PF_Card_Template для [pf-list]
+ * [pf-search="results"] — тот же принцип, что PF_Card_Template для [pf-list]
  * фильтра (вырезать тело цикла между the_post() и endwhile, кэшировать
  * в файл, подключать include на каждую запись).
  *
  * Отличие — где искать файл. Блок поиска обычно стоит в шапке
  * (header.php, шаблон шапки), а не в шаблоне страницы, поэтому файл
  * находится сканированием PHP-файлов темы (дочерней и родительской) на
- * атрибут pfs-results. Список таких файлов кэшируется ненадолго; сам
+ * атрибут pf-search="results". Список таких файлов кэшируется ненадолго; сам
  * извлечённый снипет — по mtime исходного файла, как у фильтра.
  *
- * Какой блок в файле: корень [pfs="<id профиля>"]; корень с пустым
- * значением pfs относится к первому профилю поиска. Внутри корня — либо
- * [pfs-group="<вариант>"] (если вариант задан для типа записей в профиле
- * и такая группа есть), либо первый [pfs-results].
+ * Какой блок в файле: корень [pf-search pf-search-profile="<id профиля>"];
+ * корень без pf-search-profile относится к первому профилю поиска. Внутри
+ * корня — либо [pf-search-group="<вариант>"] (если вариант задан для типа
+ * записей в профиле и такая группа есть), либо первый [pf-search="results"].
  *
  * Любая неудача — null (вызывающий код отдаёт пустой html с template:false,
  * а фронт отключает окно с console.warn). Никогда не фатальная ошибка.
@@ -33,10 +33,10 @@ class PF_Search_Template {
 	 * Версия логики извлечения/формата кэша — увеличивать при любом
 	 * изменении, иначе останутся старые закэшированные снипеты.
 	 */
-	const CACHE_VERSION = 1;
+	const CACHE_VERSION = 2;
 
 	/**
-	 * Transient со списком файлов темы, где есть pfs-results.
+	 * Transient со списком файлов темы, где есть pf-search="results".
 	 */
 	const FILES_TRANSIENT = 'pf_search_template_files';
 
@@ -53,10 +53,16 @@ class PF_Search_Template {
 	const MAX_FILES = 3000;
 
 	/**
-	 * Открывающий тег корня блока поиска: атрибут pfs (не pfs-*), значение
-	 * необязательно. Группы: 1 — тег, 3 — значение.
+	 * Открывающий тег корня блока поиска: атрибут pf-search без значения
+	 * (не pf-search="…" и не pf-search-profile). Группа 1 — тег. ID профиля —
+	 * отдельный атрибут pf-search-profile в том же теге (root_profile()).
 	 */
-	const ROOT_PATTERN = '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(?<![\w-])pfs(?:\s*=\s*(["\'])([^"\']*)\2)?(?=[\s>\/])[^>]*>/i';
+	const ROOT_PATTERN = '/<([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(?<![\w-])pf-search(?:\s*=\s*(?:""|\'\'))?(?=[\s>\/])[^>]*>/i';
+
+	/**
+	 * Фрагмент регулярки: контейнер карточек pf-search="results".
+	 */
+	const RESULTS_PATTERN = '(?<![\w-])pf-search\s*=\s*["\']results["\']';
 
 	/**
 	 * Каталоги, которые не сканируются.
@@ -81,7 +87,7 @@ class PF_Search_Template {
 	 * Закэшированный снипет карточки для профиля и варианта.
 	 *
 	 * @param string $profile_id ID профиля поиска.
-	 * @param string $group      Имя варианта pfs-group (пусто — первый [pfs-results]).
+	 * @param string $group      Имя варианта pf-search-group (пусто — первый [pf-search="results"]).
 	 * @return array{file:string,group:string}|null file — путь к снипету для include,
 	 *               group — вариант, который реально использован ('' — без группы/первая).
 	 */
@@ -131,7 +137,7 @@ class PF_Search_Template {
 	}
 
 	/**
-	 * Для админки: где найден блок профиля и какие варианты pfs-group в нём есть.
+	 * Для админки: где найден блок профиля и какие варианты pf-search-group в нём есть.
 	 *
 	 * @param string $profile_id ID профиля поиска.
 	 * @return array{file:string,groups:array}|null file — путь относительно темы.
@@ -145,12 +151,12 @@ class PF_Search_Template {
 				continue;
 			}
 			$root = $this->find_root( $source, $profile_id, $is_first );
-			if ( null === $root || false === strpos( $root, 'pfs-results' ) ) {
+			if ( null === $root || ! self::has_results( $root ) ) {
 				continue;
 			}
 
 			$groups = array();
-			if ( preg_match_all( '/(?<![\w-])pfs-group\s*=\s*(["\'])([^"\']+)\1/i', $root, $m ) ) {
+			if ( preg_match_all( '/(?<![\w-])pf-search-group\s*=\s*(["\'])([^"\']+)\1/i', $root, $m ) ) {
 				$groups = array_values( array_unique( $m[2] ) );
 			}
 
@@ -164,11 +170,11 @@ class PF_Search_Template {
 	}
 
 	/**
-	 * Для админки, когда блок профиля не найден: какие блоки [pfs] вообще
+	 * Для админки, когда блок профиля не найден: какие блоки [pf-search] вообще
 	 * есть в файлах темы — с их ID, файлом и тем, есть ли внутри
-	 * [pfs-results] с циклом записей. Помогает сразу увидеть несовпадение
-	 * ID (pfs="shop" в вёрстке, а у профиля ID search) или отсутствие метки
-	 * цикла на [pfs-results].
+	 * [pf-search="results"] с циклом записей. Помогает сразу увидеть несовпадение
+	 * ID (pf-search-profile="shop" в вёрстке, а у профиля ID search) или
+	 * отсутствие метки цикла на [pf-search="results"].
 	 *
 	 * @return array Список ['value' => string, 'file' => string, 'has_results' => bool, 'has_loop' => bool].
 	 */
@@ -184,9 +190,9 @@ class PF_Search_Template {
 				if ( null === $inner ) {
 					continue;
 				}
-				$results = $this->parser->find_element_inner( $inner, '(?<![\w-])pfs-results(?![\w-])' );
+				$results = $this->parser->find_element_inner( $inner, self::RESULTS_PATTERN );
 				$out[]   = array(
-					'value'       => isset( $m[3] ) ? (string) $m[3][0] : '',
+					'value'       => self::root_profile( $m[0][0] ),
 					'file'        => $this->relative_path( $source_file ),
 					'has_results' => null !== $results,
 					'has_loop'    => null !== $results && (bool) preg_match( '/the_post\s*\(\s*\)\s*;/i', $results ),
@@ -194,6 +200,26 @@ class PF_Search_Template {
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * ID профиля из открывающего тега корня (pf-search-profile), '' — нет.
+	 *
+	 * @param string $open_tag Открывающий тег.
+	 * @return string
+	 */
+	private static function root_profile( $open_tag ) {
+		return preg_match( '/(?<![\w-])pf-search-profile\s*=\s*(["\'])([^"\']*)\1/i', $open_tag, $pm ) ? $pm[2] : '';
+	}
+
+	/**
+	 * Есть ли в тексте контейнер pf-search="results".
+	 *
+	 * @param string $text Текст.
+	 * @return bool
+	 */
+	private static function has_results( $text ) {
+		return (bool) preg_match( '/' . self::RESULTS_PATTERN . '/i', $text );
 	}
 
 	/**
@@ -208,8 +234,8 @@ class PF_Search_Template {
 	 *
 	 * @param string $source     Содержимое файла.
 	 * @param string $profile_id ID профиля.
-	 * @param string $group      Вариант pfs-group ('' — первый [pfs-results] в корне).
-	 * @param bool   $is_first   Профиль — первый (обслуживает корень с пустым pfs).
+	 * @param string $group      Вариант pf-search-group ('' — первый [pf-search="results"] в корне).
+	 * @param bool   $is_first   Профиль — первый (обслуживает корень без pf-search-profile).
 	 * @return string|null
 	 */
 	private function extract( $source, $profile_id, $group, $is_first ) {
@@ -222,13 +248,13 @@ class PF_Search_Template {
 		if ( '' !== $group ) {
 			// Без захватывающих групп: фрагмент вставляется в регулярку
 			// find_element_inner(), где группа 1 — имя тега.
-			$scope = $this->parser->find_element_inner( $root, '(?<![\w-])pfs-group\s*=\s*["\']' . preg_quote( $group, '/' ) . '["\']' );
+			$scope = $this->parser->find_element_inner( $root, '(?<![\w-])pf-search-group\s*=\s*["\']' . preg_quote( $group, '/' ) . '["\']' );
 			if ( null === $scope ) {
 				return null;
 			}
 		}
 
-		$results = $this->parser->find_element_inner( $scope, '(?<![\w-])pfs-results(?![\w-])' );
+		$results = $this->parser->find_element_inner( $scope, self::RESULTS_PATTERN );
 		if ( null === $results ) {
 			return null;
 		}
@@ -237,7 +263,7 @@ class PF_Search_Template {
 	}
 
 	/**
-	 * Содержимое корня [pfs="<id>"] (или корня с пустым pfs для первого
+	 * Содержимое корня [pf-search-profile="<id>"] (или корня без профиля для первого
 	 * профиля) в файле.
 	 *
 	 * @param string $source     Содержимое файла.
@@ -252,7 +278,7 @@ class PF_Search_Template {
 
 		$fallback = null;
 		foreach ( $matches as $m ) {
-			$value = isset( $m[3] ) ? (string) $m[3][0] : '';
+			$value = self::root_profile( $m[0][0] );
 			if ( $value === $profile_id ) {
 				$chosen = $m;
 			} elseif ( '' === $value && $is_first && null === $fallback ) {
@@ -273,10 +299,10 @@ class PF_Search_Template {
 		}
 
 		// Поле поиска как группа фильтра: шаблон pf-template="search" — корень
-		// без собственного значения pfs (профиль задаётся в настройках группы),
+		// без собственного pf-search-profile (профиль задаётся в настройках группы),
 		// подходит любому профилю.
 		$group_root = $this->parser->find_element_inner( $source, '\bpf-template\s*=\s*["\']search["\']' );
-		if ( null !== $group_root && false !== strpos( $group_root, 'pfs-results' ) ) {
+		if ( null !== $group_root && self::has_results( $group_root ) ) {
 			return $group_root;
 		}
 
@@ -299,7 +325,7 @@ class PF_Search_Template {
 	}
 
 	/**
-	 * PHP-файлы темы, где встречается pfs-results (дочерняя тема первой).
+	 * PHP-файлы темы, где встречается pf-search="results" (дочерняя тема первой).
 	 *
 	 * @return string[]
 	 */
@@ -338,7 +364,7 @@ class PF_Search_Template {
 						continue;
 					}
 					$content = file_get_contents( $file->getPathname() ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-					if ( $content && false !== strpos( $content, 'pfs-results' ) ) {
+					if ( $content && self::has_results( $content ) ) {
 						$files[] = $file->getPathname();
 					}
 				}
@@ -347,7 +373,7 @@ class PF_Search_Template {
 			}
 		}
 
-		// Сначала файлы с явным [pfs="..."] шапки/подвала — обычно их мало,
+		// Сначала файлы с явным [pf-search-profile="..."] шапки/подвала — обычно их мало,
 		// порядок внутри не важен: блок ищется по ID профиля.
 		sort( $files );
 
@@ -364,7 +390,7 @@ class PF_Search_Template {
 	}
 
 	/**
-	 * Профиль — первый по порядку (корень с пустым pfs относится к нему).
+	 * Профиль — первый по порядку (корень без pf-search-profile относится к нему).
 	 *
 	 * @param string $profile_id ID профиля.
 	 * @return bool

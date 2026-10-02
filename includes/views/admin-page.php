@@ -131,8 +131,8 @@ defined( 'ABSPATH' ) || exit;
 					<th><?php esc_html_e( 'Показывать счётчик товаров', 'pf-filter' ); ?></th>
 					<td>
 						<label><input type="checkbox" name="pf_filter_settings[show_counts]" value="1" <?php checked( ! empty( $settings['show_counts'] ) ); ?> /> <?php esc_html_e( 'включено', 'pf-filter' ); ?></label>
-						<?php if ( ! empty( $settings['show_counts'] ) && $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter-count' ) ) : ?>
-							<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден ни один [pf-filter-count] — счётчики показывать негде.', 'pf-filter' ); ?></p>
+						<?php if ( ! empty( $settings['show_counts'] ) && $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter="count"' ) ) : ?>
+							<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден ни один [pf-filter="count"] — счётчики показывать негде.', 'pf-filter' ); ?></p>
 						<?php endif; ?>
 					</td>
 				</tr>
@@ -200,7 +200,7 @@ defined( 'ABSPATH' ) || exit;
 				</tr>
 				<?php
 				$filter_mode           = $settings['filter_mode'] ?? 'auto';
-				$has_apply_button      = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-apply' ) : null;
+				$has_apply_button      = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter="apply"' ) : null;
 				?>
 				<tr>
 					<th><?php esc_html_e( 'Режим применения фильтра', 'pf-filter' ); ?></th>
@@ -211,11 +211,11 @@ defined( 'ABSPATH' ) || exit;
 						</label><br />
 						<label>
 							<input type="radio" name="pf_filter_settings[filter_mode]" value="manual" <?php checked( $filter_mode, 'manual' ); ?> />
-							<?php esc_html_e( 'По кнопке «Применить» — список обновляется только по клику на [pf-apply]', 'pf-filter' ); ?>
+							<?php esc_html_e( 'По кнопке «Применить» — список обновляется только по клику на [pf-filter="apply"]', 'pf-filter' ); ?>
 						</label>
 						<p class="description"><?php esc_html_e( 'В режиме «По кнопке» счётчики значений и границы диапазона продолжают обновляться вживую под ещё не применённый выбор — ждёт кнопку только сам список, пагинация, чипы активных фильтров и URL.', 'pf-filter' ); ?></p>
 						<?php if ( 'manual' === $filter_mode && false === $has_apply_button ) : ?>
-							<p class="description" style="color:#b32d2e"><?php esc_html_e( 'В разметке страницы не найден [pf-apply] — список не будет обновляться вообще, пока кнопка не появится в теме.', 'pf-filter' ); ?></p>
+							<p class="description" style="color:#b32d2e"><?php esc_html_e( 'В разметке страницы не найден [pf-filter="apply"] — список не будет обновляться вообще, пока кнопка не появится в теме.', 'pf-filter' ); ?></p>
 						<?php endif; ?>
 					</td>
 				</tr>
@@ -314,7 +314,7 @@ defined( 'ABSPATH' ) || exit;
 		</div>
 
 		<div class="pf-tab-panel" id="pf-tab-sort" data-tab="sort" style="display:none">
-			<?php if ( $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-sort' ) ) : ?>
+			<?php if ( $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-sort=""' ) ) : ?>
 				<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден [pf-sort] — блок сортировки в разметке отсутствует, эти настройки ни на что не повлияют.', 'pf-filter' ); ?></p>
 			<?php endif; ?>
 			<table class="widefat pf-sort-table">

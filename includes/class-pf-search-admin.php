@@ -461,7 +461,7 @@ class PF_Search_Admin {
 		$page                  = isset( $input['results_page'] ) ? absint( $input['results_page'] ) : 0;
 		$clean['results_page'] = ( $page && 'page' === get_post_type( $page ) ) ? $page : 0;
 
-		// Вариант вёрстки карточек окна (pfs-group) по типам записей.
+		// Вариант вёрстки карточек окна (pf-search-group) по типам записей.
 		$clean['group_variants'] = array();
 		foreach ( (array) ( $input['group_variants'] ?? array() ) as $type => $variant ) {
 			$type    = sanitize_key( (string) $type );

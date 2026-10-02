@@ -5,23 +5,23 @@
  * Принцип устойчивости: каждое обращение к DOM через pf-* атрибут
  * оборачивается в проверку наличия элемента. Отсутствие опционального
  * атрибута — console.warn и пропуск только этой функции. Отсутствие
- * обязательного ([pf-list]) — console.error и остановка инициализации
+ * обязательного ([pf-list=""]) — console.error и остановка инициализации
  * только для этого блока.
  *
- * Блок запускается от [pf-form] либо — если формы нет — от [pf-profile] с
- * [pf-list] внутри: список, пагинация, сортировка, счётчики, чипы и поиск
+ * Блок запускается от [pf-filter=""] либо — если формы нет — от [pf-profile] с
+ * [pf-list=""] внутри: список, пагинация, сортировка, счётчики, чипы и поиск
  * работают и без формы; форма нужна только для групп фильтра. pf-target нигде не обязателен —
  * его отсутствие разрешается автоматически или через console.warn (см. resolveListElement).
  *
  * [pf-profile] — не атрибут конкретно формы, а маркер ближайшего общего
- * контейнера ОДНОГО блока фильтрации (форма + список + pf-loading/pf-empty/
- * pf-count/pf-active-filters/pf-pagination-.../pf-sort внутри одной обёртки).
+ * контейнера ОДНОГО блока фильтрации (форма + список + pf-list="loading"/pf-list="empty"/
+ * pf-list="count"/pf-chips/pf-pagination/pf-sort внутри одной обёртки).
  * Находится через formEl.closest('[pf-profile]') — значит атрибут можно
  * поставить и прямо на саму форму (вырожденный случай), и на любого её
  * предка. Все перечисленные выше pf-* элементы ищутся ВНУТРИ этого
  * контейнера, а не по всему document — это и разруливает, какой профиль
  * им соответствует, и заодно даёт двум независимым блокам фильтрации на
- * одной странице не путать чужие pf-count/pf-loading и т.п. Если на
+ * одной странице не путать чужие pf-list="count"/pf-list="loading" и т.п. Если на
  * странице такого контейнера нет вообще (простая тема с одним блоком
  * фильтра) — всё ищется по всему document, как было исторически.
  */
@@ -144,7 +144,7 @@
 	/**
 	 * То же самое, что setRangeDisplayValue(), но сразу для НЕСКОЛЬКИХ
 	 * элементов одной стороны — верстальщик может поставить
-	 * [pf-filter-range-value="min"] сразу на два элемента (например, на
+	 * [pf-filter="min"] сразу на два элемента (например, на
 	 * редактируемый <input> и рядом на обычный <div> только для показа):
 	 * оба должны обновляться синхронно, а не только первый найденный.
 	 *
@@ -191,12 +191,12 @@
 	}
 
 	/**
-	 * Спозиционировать [pf-filter-range-track] — полоску подсветки между
+	 * Спозиционировать [pf-filter="track"] — полоску подсветки между
 	 * двумя бегунками — инлайновыми left/width в процентах, теми же
 	 * границами, что и у самих бегунков (percentForRange()), так что она
 	 * всегда точно совпадает с текущим выделенным диапазоном.
 	 *
-	 * @param {Element|null} track Элемент [pf-filter-range-track] (может отсутствовать в разметке — тогда no-op).
+	 * @param {Element|null} track Элемент [pf-filter="track"] (может отсутствовать в разметке — тогда no-op).
 	 * @param {number} curMin Текущее значение min.
 	 * @param {number} curMax Текущее значение max.
 	 * @param {number} min    Левая граница трека.
@@ -213,11 +213,11 @@
 	}
 
 	// ---------------------------------------------------------------------
-	// PFForm — один экземпляр на каждую найденную [pf-form]
+	// PFForm — один экземпляр на каждую найденную [pf-filter=""]
 	// ---------------------------------------------------------------------
 
 	/**
-	 * @param {Element|null} formEl      [pf-form], либо null — блок без формы.
+	 * @param {Element|null} formEl      [pf-filter=""], либо null — блок без формы.
 	 * @param {Element}      [profileEl] [pf-profile] блока без формы.
 	 */
 	function PFForm( formEl, profileEl ) {
@@ -250,7 +250,7 @@
 			orderby: 'menu_order',
 			order: 'ASC',
 			paged: 1,
-			// Поиск модуля PF Search: запрос из [pfs] внутри блока или ?q= на
+			// Поиск модуля PF Search: запрос из [pf-search=""] внутри блока или ?q= на
 			// странице результатов. sortChosen — посетитель сам выбрал
 			// сортировку; пока нет — при поиске сортировка по релевантности.
 			search: '',
@@ -272,15 +272,15 @@
 	}
 
 	/**
-	 * Найти [pf-list] для этой формы в границах this.scopeRoot (см. init()).
+	 * Найти [pf-list=""] для этой формы в границах this.scopeRoot (см. init()).
 	 * pf-target нигде не обязателен:
 	 * - если задан — используется как CSS-селектор от всего document (явная
 	 *   связь, побеждает любую автоматику);
-	 * - если внутри scopeRoot ровно один [pf-list] — используется он,
+	 * - если внутри scopeRoot ровно один [pf-list=""] — используется он,
 	 *   независимо от того, сколько внутри форм (несколько форм на один и
 	 *   тот же список — обычный случай, например мобильная и десктопная
 	 *   версии одной и той же формы фильтра — не требуют pf-target);
-	 * - если внутри scopeRoot несколько [pf-list] и pf-target не задан —
+	 * - если внутри scopeRoot несколько [pf-list=""] и pf-target не задан —
 	 *   неоднозначность: console.warn, best-effort — первый найденный список.
 	 *
 	 * @return {Element|null}
@@ -291,13 +291,13 @@
 		if ( targetSelector ) {
 			var explicitList = document.querySelector( targetSelector );
 			if ( ! explicitList ) {
-				console.error( 'PF Filter: элемент [pf-list] по селектору "' + targetSelector + '" не найден, форма не инициализирована.' );
+				console.error( 'PF Filter: элемент [pf-list=""] по селектору "' + targetSelector + '" не найден, форма не инициализирована.' );
 				return null;
 			}
 			return explicitList;
 		}
 
-		var scopedLists = qsa( this.scopeRoot, '[pf-list]' );
+		var scopedLists = qsa( this.scopeRoot, '[pf-list=""]' );
 		var scopeLabel = this.scopeRoot === document ? 'на странице' : 'внутри её [pf-profile]-блока';
 
 		if ( 1 === scopedLists.length ) {
@@ -305,16 +305,16 @@
 		}
 
 		if ( ! scopedLists.length ) {
-			console.error( 'PF Filter: [pf-list] не найден ' + scopeLabel + ', форма не инициализирована.' );
+			console.error( 'PF Filter: [pf-list=""] не найден ' + scopeLabel + ', форма не инициализирована.' );
 			return null;
 		}
 
-		console.warn( 'PF Filter: атрибут pf-target не указан, а ' + scopeLabel + ' несколько [pf-list] — однозначно связать нельзя. Добавьте pf-target="#selector" на форму. Пробую связать с первым найденным списком.' );
+		console.warn( 'PF Filter: атрибут pf-target не указан, а ' + scopeLabel + ' несколько [pf-list=""] — однозначно связать нельзя. Добавьте pf-target="#selector" на форму. Пробую связать с первым найденным списком.' );
 		return scopedLists[ 0 ];
 	};
 
 	PFForm.prototype.init = function () {
-		if ( this.formEl && ! this.formEl.hasAttribute( 'pf-form' ) ) {
+		if ( this.formEl && '' !== this.formEl.getAttribute( 'pf-filter' ) ) {
 			// На случай если элемент передан ошибочно.
 			return;
 		}
@@ -323,8 +323,8 @@
 		}
 
 		// [pf-profile] определяет и профиль, и границу блока для всех
-		// остальных pf-* элементов ниже (pf-loading/pf-count/pf-active-filters/
-		// pf-pagination-.../pf-sort) — см. пояснение в шапке файла. closest()
+		// остальных pf-* элементов ниже (pf-list="loading"/pf-list="count"/pf-chips/
+		// pf-pagination/pf-sort) — см. пояснение в шапке файла. closest()
 		// включает саму форму, если атрибут стоит прямо на ней.
 		var profileContainer = this.formEl ? this.formEl.closest( '[pf-profile]' ) : this.profileEl;
 		this.scopeRoot = profileContainer || document;
@@ -338,7 +338,7 @@
 			return;
 		}
 
-		// [pf-form] — реальный <form>, но никогда не должен отправляться нативно
+		// [pf-filter=""] — реальный <form>, но никогда не должен отправляться нативно
 		// (это чисто клиентский UI фильтра, а не форма с реальным действием).
 		// Без этой защиты Enter в поле поиска группы или клик по элементу без
 		// явного preventDefault (например <button> без type="button" в вёрстке
@@ -352,30 +352,36 @@
 
 		// Без формы групп фильтра нет — это штатный блок «список без
 		// фильтров» (страница результатов поиска, лента статей и т.п.).
-		this.outputEl = qs( this.formEl, '[pf-output]' );
-		this.templatesEl = qs( this.formEl, '[pf-templates]' );
-		// Пустая <form pf-form></form> (ни [pf-output], ни [pf-templates]) —
-		// осознанный блок без групп фильтра (например, страница результатов
-		// поиска): список, сортировка, пагинация работают, ошибок нет.
-		// Ошибка — только если в форме есть одно без другого.
-		var formWithoutGroups = ! this.formEl || ( ! this.outputEl && ! this.templatesEl );
-		if ( ! this.outputEl && ! formWithoutGroups ) {
-			console.error( 'PF Filter: [pf-output] не найден, группы фильтров не будут рендериться.' );
-		}
-
-		if ( this.templatesEl ) {
-			// [pf-templates] — библиотека шаблонов для клонирования, на живой странице
-			// её саму видно быть не должно (иначе пользователь увидит сырую разметку
-			// верстальщика вместо реальных данных).
-			this.templatesEl.classList.add( 'pf-hidden' );
-		} else if ( ! formWithoutGroups ) {
-			console.error( 'PF Filter: [pf-templates] не найден, фильтр не будет построен.' );
+		this.outputEl = qs( this.formEl, '[pf-filter="output"]' );
+		// Шаблоны групп лежат прямо внутри [pf-filter="output"]: забираем их в
+		// скрытую библиотеку рядом (перемещение, не клон — обработчики Webflow
+		// сохраняются), а output освобождается под реальные группы.
+		// Форма без [pf-filter="output"] — осознанный блок без групп фильтра
+		// (например, страница результатов поиска): список, сортировка,
+		// пагинация работают, ошибок нет.
+		var formWithoutGroups = ! this.formEl || ! this.outputEl;
+		if ( this.outputEl ) {
+			this.templatesEl = document.createElement( 'div' );
+			this.templatesEl.className = 'pf-hidden';
+			this.templatesEl.setAttribute( 'data-pf-templates', '' );
+			qsa( this.outputEl, '[pf-template]' ).forEach( function ( tpl ) {
+				// Только верхние шаблоны: вложенные (вариант внутри варианта не
+				// бывает, но защитимся) уедут вместе с родителем.
+				if ( tpl.parentElement && tpl.parentElement.closest( '[pf-template]' ) ) {
+					return;
+				}
+				this.templatesEl.appendChild( tpl );
+			}, this );
+			this.outputEl.parentNode.insertBefore( this.templatesEl, this.outputEl.nextSibling );
+			if ( ! this.templatesEl.children.length ) {
+				console.error( 'PF Filter: внутри [pf-filter="output"] нет шаблонов групп (pf-template), фильтр не будет построен.' );
+			}
 		}
 
 		this.initSearchBridge();
 
-		this.loadingEl = qs( this.scopeRoot, '[pf-loading]' );
-		this.emptyEl = qs( this.scopeRoot, '[pf-empty]' );
+		this.loadingEl = qs( this.scopeRoot, '[pf-list="loading"]' );
+		this.emptyEl = qs( this.scopeRoot, '[pf-list="empty"]' );
 		// Плагин сам гарантирует, что оба скрыты по умолчанию — не полагается на то,
 		// что тема пропишет для них display:none. is-hidden снимается/добавляется
 		// в runFilter()/handleResponse(), а не только после первого запроса.
@@ -450,12 +456,12 @@
 				if ( ! restoredFromUrl && searchFromUrl ) {
 					self.runFilter( { forceReplace: true } );
 				} else if ( ! restoredFromUrl ) {
-					// Первая загрузка страницы без фильтров в URL — обычно [pf-list]
+					// Первая загрузка страницы без фильтров в URL — обычно [pf-list=""]
 					// трогать не нужно (уже отрендерен обычным циклом WordPress с
 					// правильным posts_per_page, см. PF_Plugin::limit_main_query_posts_per_page()),
-					// [pf-count]/счётчики групп/пагинация просто досчитываются тихим
+					// [pf-list="count"]/счётчики групп/пагинация просто досчитываются тихим
 					// запросом. Но этот хук ограничивает только ГЛАВНЫЙ запрос
-					// страницы-архива — если [pf-form]/[pf-list] встроены НЕ на архив
+					// страницы-архива — если [pf-filter=""]/[pf-list=""] встроены НЕ на архив
 					// своего типа записи (например, маленький виджет на главной
 					// странице сайта), список изначально рисуется отдельным запросом
 					// темы, который плагин не ограничивает и не может ограничить на
@@ -488,7 +494,7 @@
 	 * явного профиля формы) сервер уже мог встроить готовый ответ прямо в
 	 * разметку страницы — window.pfInitialConfig (см. PF_Plugin::enqueue_scripts()
 	 * / PF_REST_API::build_config_data()) — тогда сети вообще не нужно ждать.
-	 * Стираем сразу после использования: если на странице несколько [pf-form]
+	 * Стираем сразу после использования: если на странице несколько [pf-filter=""]
 	 * с разными профилями, второй и следующие не должны принять чужие данные
 	 * за свои. Если embed недоступен (страница не архив ни одного профиля,
 	 * либо это уже не первый вызов) — обычный сетевой запрос с повторными
@@ -541,7 +547,7 @@
 	PFForm.prototype.buildGroups = function ( groups ) {
 		var self = this;
 
-		// [pf-output] — точка вставки плагина. Если верстальщик оставил там
+		// [pf-filter="output"] — точка вставки плагина. Если верстальщик оставил там
 		// дизайн-превью (например, не убрал пример разметки после вёрстки в Webflow),
 		// оно должно быть заменено реальными группами, а не остаться рядом с ними.
 		this.outputEl.innerHTML = '';
@@ -551,7 +557,7 @@
 		}
 		if ( ! this._templateCache ) {
 			// Кэш узлов-шаблонов по ключу "template + вариант": первую группу с
-			// данной парой мы физически ПЕРЕМЕЩАЕМ из [pf-templates] (см. ниже), и
+			// данной парой мы физически ПЕРЕМЕЩАЕМ из библиотеки шаблонов (см. ниже), и
 			// после этого её уже не найти свежим querySelector внутри templatesEl.
 			// Кэш хранит ссылку на узел независимо от того, где он сейчас
 			// находится в DOM.
@@ -564,12 +570,12 @@
 			var tpl = self._templateCache[ cacheKey ];
 			if ( undefined === tpl ) {
 				if ( variant ) {
-					tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"][pf-template-variant="' + variant + '"]' );
+					tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"][pf-variant="' + variant + '"]' );
 					if ( ! tpl ) {
 						// Настроенный в админке вариант не найден в разметке (убрали/
 						// переименовали верстальщик) — деградируем на первый попавшийся
 						// узел этого pf-template, а не пропускаем группу целиком.
-						console.warn( 'PF Filter: вариант [pf-template="' + groupConfig.template + '"][pf-template-variant="' + variant + '"] не найден, использую вариант по умолчанию.' );
+						console.warn( 'PF Filter: вариант [pf-template="' + groupConfig.template + '"][pf-variant="' + variant + '"] не найден, использую вариант по умолчанию.' );
 						tpl = qs( self.templatesEl, '[pf-template="' + groupConfig.template + '"]' );
 					}
 				} else {
@@ -612,18 +618,18 @@
 	};
 
 	/**
-	 * [pf-filter-remove] — необязательная кнопка сброса фильтра КОНКРЕТНО
+	 * [pf-filter="remove"] — необязательная кнопка сброса фильтра КОНКРЕТНО
 	 * этой группы, может быть где угодно внутри pf-template. В отличие от
-	 * [pf-active-reset] (сбрасывает вообще все фильтры сразу), эта — только
+	 * [pf-chips="reset"] (сбрасывает вообще все фильтры сразу), эта — только
 	 * значения своей группы. Работает одинаково для любого типа шаблона —
 	 * checkbox/radio/tags/range/category-tree.
-	 * Скрыта по умолчанию (как и [pf-active-reset]/[pf-active-chip]) — до
+	 * Скрыта по умолчанию (как и [pf-chips="reset"]/[pf-chips="chip"]) — до
 	 * первого ответа сервера показываться нечему, видимость обновляется в
 	 * updateActiveFilters() по факту реально активного фильтра этой группы.
 	 */
 	PFForm.prototype.initGroupRemove = function ( groupClone, field ) {
 		var self = this;
-		qsa( groupClone, '[pf-filter-remove]' ).forEach( function ( btn ) {
+		qsa( groupClone, '[pf-filter="remove"]' ).forEach( function ( btn ) {
 			btn.classList.add( 'pf-hidden' );
 			btn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
@@ -646,7 +652,7 @@
 	 *
 	 * Намеренно НЕ вызывается общий Webflow.destroy()+Webflow.ready(): это
 	 * перезапускает ВСЕ модули Webflow разом, включая "forms" — а он управляет
-	 * той же <form>, что и pf-form, и его переинициализация ломала другую
+	 * той же <form>, что и pf-filter, и его переинициализация ломала другую
 	 * функциональность плагина (например, обработчик поиска внутри группы
 	 * фильтра переставал получать события). Вместо этого дропдауны
 	 * переинициализируются точечно через их собственный модуль — у него
@@ -683,7 +689,7 @@
 	 *
 	 * @example
 	 * document.addEventListener('pf-filter:groups-built', function (e) {
-	 *   // e.detail.form — форма [pf-form], e.detail.output — [pf-output]
+	 *   // e.detail.form — форма [pf-filter=""], e.detail.output — [pf-filter="output"]
 	 *   // здесь безопасно навешивать/переинициализировать свою интерактивность
 	 * });
 	 */
@@ -699,14 +705,14 @@
 
 	/**
 	 * Событие "список карточек обновлён" — тот же хук, что и
-	 * pf-filter:groups-built выше, только для [pf-list]. Карточки, которые
+	 * pf-filter:groups-built выше, только для [pf-list=""]. Карточки, которые
 	 * плагин подставляет через AJAX, не проходят через обычную загрузку
 	 * страницы — поэтому любая интерактивность темы внутри карточки,
 	 * инициализируемая один раз на DOMContentLoaded и привязанная к
 	 * конкретным DOM-узлам (слайдеры/галереи, тултипы, лениво
 	 * подгружаемые изображения и т.п.), для новых карточек не сработает
 	 * сама по себе — её нужно переинициализировать по этому событию.
-	 * Всплывает до document, слушать можно и там, и на самом [pf-list].
+	 * Всплывает до document, слушать можно и там, и на самом [pf-list=""].
 	 *
 	 * @param {boolean} appended true — новые карточки ДОБАВЛЕНЫ к уже
 	 *   существующим (пагинация load-more/infinite), false — список
@@ -714,7 +720,7 @@
 	 *
 	 * @example
 	 * document.addEventListener('pf-filter:list-updated', function (e) {
-	 *   // e.detail.list     — элемент [pf-list]
+	 *   // e.detail.list     — элемент [pf-list=""]
 	 *   // e.detail.appended — true, если карточки добавлены, а не заменили список
 	 *   // здесь безопасно (пере)инициализировать интерактивность внутри карточек
 	 * });
@@ -737,19 +743,19 @@
 		// сохранена), либо его клон (повторное использование того же pf-template).
 		var clone = groupNode;
 
-		var nameEl = qs( clone, '[pf-filter-name]' );
+		var nameEl = qs( clone, '[pf-filter="name"]' );
 		if ( nameEl ) {
 			nameEl.textContent = groupConfig.label;
 		}
 
 		// Снимок ДО клонирования: дизайн-шаблон группы часто содержит несколько
-		// примеров [pf-filter-row] сразу (разные визуальные состояния), а не один.
+		// примеров [pf-filter="row"] сразу (разные визуальные состояния), а не один.
 		// Все они должны быть удалены после наполнения реальными значениями —
 		// не только тот единственный элемент, который взят как шаблон.
-		var existingRows = qsa( clone, '[pf-filter-row]' );
+		var existingRows = qsa( clone, '[pf-filter="row"]' );
 		var rowTpl = existingRows[ 0 ];
 		if ( ! rowTpl ) {
-			console.warn( 'PF Filter: [pf-filter-row] не найден в шаблоне группы "' + groupConfig.field + '", группа не наполнена.' );
+			console.warn( 'PF Filter: [pf-filter="row"] не найден в шаблоне группы "' + groupConfig.field + '", группа не наполнена.' );
 			return clone;
 		}
 
@@ -782,7 +788,7 @@
 				} );
 			} else if ( isTags ) {
 				// preventDefault обязателен: если верстальщик сделал строку через
-				// <button> (тип по умолчанию submit) внутри <form pf-form>, клик без
+				// <button> (тип по умолчанию submit) внутри <form pf-filter>, клик без
 				// него реально отправляет форму — Webflow в ответ показывает свой
 				// служебный "Ошибка отправки / Формы не настроены".
 				rowClone.addEventListener( 'click', function ( e ) {
@@ -829,12 +835,12 @@
 			rowClone.setAttribute( 'data-pf-order', order );
 		}
 
-		var valueEl = qs( rowClone, '[pf-filter-value]' );
+		var valueEl = qs( rowClone, '[pf-filter="value"]' );
 		if ( valueEl ) {
 			valueEl.textContent = value.label;
 		}
 
-		var countEl = qs( rowClone, '[pf-filter-count]' );
+		var countEl = qs( rowClone, '[pf-filter="count"]' );
 		if ( countEl ) {
 			if ( this.showCounts ) {
 				countEl.textContent = value.count;
@@ -843,12 +849,12 @@
 			}
 		}
 
-		var swatchEl = qs( rowClone, '[pf-filter-swatch]' );
+		var swatchEl = qs( rowClone, '[pf-filter="swatch"]' );
 		if ( swatchEl ) {
 			if ( value.color ) {
 				// background-color ставится напрямую инлайн-стилем — он всегда
 				// сильнее любого правила CSS темы (в т.ч. цвета, зашитого прямо в
-				// дизайн-шаблон группы в [pf-templates]), никакого дополнительного
+				// дизайн-шаблон группы в [pf-filter="output"]), никакого дополнительного
 				// CSS от темы для этого не требуется.
 				swatchEl.style.backgroundColor = value.color;
 				swatchEl.classList.remove( 'pf-hidden' );
@@ -907,7 +913,7 @@
 			var visible = [];
 
 			rows.forEach( function ( row ) {
-				var valueEl = qs( row, '[pf-filter-value]' );
+				var valueEl = qs( row, '[pf-filter="value"]' );
 				var text = valueEl ? valueEl.textContent.toLowerCase() : '';
 				if ( ! text.includes( query ) ) {
 					return;
@@ -935,20 +941,20 @@
 		var self = this;
 		var clone = groupNode; // см. комментарий в buildGroups() про move-vs-clone.
 
-		var nameEl = qs( clone, '[pf-filter-name]' );
+		var nameEl = qs( clone, '[pf-filter="name"]' );
 		if ( nameEl ) {
 			nameEl.textContent = groupConfig.label;
 		}
 
-		// [pf-filter-range-slider] нужен только для drag/визуального трека —
+		// [pf-filter="slider"] нужен только для drag/визуального трека —
 		// без него range всё равно работает через прямой ввод в
-		// [pf-filter-range-value] (см. bindNumberInput() ниже), поэтому не
+		// [pf-filter="min"], [pf-filter="max"] (см. bindNumberInput() ниже), поэтому не
 		// прерываем инициализацию группы, а просто держим состояние диапазона
 		// (min/max/currentMin/currentMax/userMin/userMax) на корневом узле
 		// группы вместо отсутствующего слайдера.
-		var slider = qs( clone, '[pf-filter-range-slider]' );
+		var slider = qs( clone, '[pf-filter="slider"]' );
 		if ( ! slider ) {
-			console.warn( 'PF Filter: [pf-filter-range-slider] не найден для группы "' + groupConfig.field + '" — перетаскивание недоступно, работает только прямой ввод через [pf-filter-range-value].' );
+			console.warn( 'PF Filter: [pf-filter="slider"] не найден для группы "' + groupConfig.field + '" — перетаскивание недоступно, работает только прямой ввод через [pf-filter="min"], [pf-filter="max"].' );
 			slider = clone;
 		}
 
@@ -962,42 +968,33 @@
 		slider.dataset.currentMin = min;
 		slider.dataset.currentMax = max;
 
-		var minBoundEl = qs( clone, '[pf-filter-range="min"]' );
-		if ( minBoundEl ) {
-			minBoundEl.textContent = min;
-		}
-		var maxBoundEl = qs( clone, '[pf-filter-range="max"]' );
-		if ( maxBoundEl ) {
-			maxBoundEl.textContent = max;
-		}
-
-		var minHandle = qs( clone, '[pf-filter-range-handle="min"]' );
-		var maxHandle = qs( clone, '[pf-filter-range-handle="max"]' );
-		// Атрибут [pf-filter-range-value="min"/"max"] может стоять сразу на
+		var minHandle = qs( clone, '[pf-filter="handle-min"]' );
+		var maxHandle = qs( clone, '[pf-filter="handle-max"]' );
+		// Атрибут [pf-filter="min"/"max"] может стоять сразу на
 		// НЕСКОЛЬКИХ элементах одной стороны (например, редактируемый <input>
 		// плюс рядом обычный <div> только для показа) — все они обновляются
 		// синхронно (setRangeDisplayValues() ниже). Редактируемым (получает
 		// обработчик change в bindNumberInput()) становится ПЕРВЫЙ найденный
 		// среди них <input> — остальные, включая другие возможные <input>,
 		// только отображают значение.
-		var minValueEls = qsa( clone, '[pf-filter-range-value="min"]' );
-		var maxValueEls = qsa( clone, '[pf-filter-range-value="max"]' );
+		var minValueEls = qsa( clone, '[pf-filter="min"]' );
+		var maxValueEls = qsa( clone, '[pf-filter="max"]' );
 		var minInput = minValueEls.filter( function ( el ) { return 'INPUT' === el.tagName; } )[ 0 ] || null;
 		var maxInput = maxValueEls.filter( function ( el ) { return 'INPUT' === el.tagName; } )[ 0 ] || null;
-		// [pf-filter-range-track] — необязательная полоска подсветки между
+		// [pf-filter="track"] — необязательная полоска подсветки между
 		// бегунками, см. positionRangeTrack(). Нет предупреждения при
 		// отсутствии — атрибут новый и не обязателен, чисто визуальное дополнение.
-		var trackEl = qs( clone, '[pf-filter-range-track]' );
+		var trackEl = qs( clone, '[pf-filter="track"]' );
 
 		if ( ! minHandle || ! maxHandle ) {
-			console.warn( 'PF Filter: [pf-filter-range-handle] не найден для группы "' + groupConfig.field + '", drag недоступен.' );
+			console.warn( 'PF Filter: [pf-filter="handle-min"] / [pf-filter="handle-max"] не найден для группы "' + groupConfig.field + '", drag недоступен.' );
 		}
 		if ( ! minValueEls.length || ! maxValueEls.length ) {
-			console.warn( 'PF Filter: [pf-filter-range-value] не найден для группы "' + groupConfig.field + '", значения не отображаются.' );
+			console.warn( 'PF Filter: [pf-filter="min"], [pf-filter="max"] не найден для группы "' + groupConfig.field + '", значения не отображаются.' );
 		}
 
 		// В момент построения группы ничего ещё не тронуто пользователем —
-		// оба [pf-filter-range-value] (если это <input>) показываются как
+		// оба [pf-filter="min"], [pf-filter="max"] (если это <input>) показываются как
 		// placeholder текущей границы, а не как готовое value.
 		setRangeDisplayValues( minValueEls, min, false );
 		setRangeDisplayValues( maxValueEls, max, false );
@@ -1126,13 +1123,13 @@
 
 		/**
 		 * Навесить обработчик прямого ввода на РЕДАКТИРУЕМЫЙ <input> этой
-		 * стороны (первый найденный среди [pf-filter-range-value], см. выше) —
+		 * стороны (первый найденный среди [pf-filter="min"], [pf-filter="max"], см. выше) —
 		 * но обновлять отображение нужно у ВСЕХ элементов этой стороны сразу
 		 * (els), включая сам editEl и любые другие "только для показа".
 		 *
 		 * @param {Element|null} editEl Редактируемый <input> (может отсутствовать — тогда no-op).
 		 * @param {string} type         'min' | 'max'.
-		 * @param {Element[]} els       Все [pf-filter-range-value] этой стороны.
+		 * @param {Element[]} els       Все [pf-filter="min"], [pf-filter="max"] этой стороны.
 		 */
 		function bindNumberInput( editEl, type, els ) {
 			if ( ! editEl ) {
@@ -1229,7 +1226,7 @@
 
 		// См. buildRangeGroup(): при отсутствии визуального слайдера состояние
 		// диапазона хранится на корневом узле группы.
-		var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
+		var slider = qs( group.el, '[pf-filter="slider"]' ) || group.el;
 
 		var newMin = parseFloat( bounds.min );
 		var newMax = parseFloat( bounds.max );
@@ -1252,38 +1249,29 @@
 		slider.dataset.currentMin = newCurMin;
 		slider.dataset.currentMax = newCurMax;
 
-		var minBoundEl = qs( group.el, '[pf-filter-range="min"]' );
-		if ( minBoundEl ) {
-			minBoundEl.textContent = newMin;
-		}
-		var maxBoundEl = qs( group.el, '[pf-filter-range="max"]' );
-		if ( maxBoundEl ) {
-			maxBoundEl.textContent = newMax;
-		}
-
-		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), newCurMin, newMin, newMax, false );
-		positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), newCurMax, newMin, newMax, true );
-		setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), newCurMin, hasUserMin );
-		setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), newCurMax, hasUserMax );
-		positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), newCurMin, newCurMax, newMin, newMax );
+		positionRangeHandle( qs( group.el, '[pf-filter="handle-min"]' ), newCurMin, newMin, newMax, false );
+		positionRangeHandle( qs( group.el, '[pf-filter="handle-max"]' ), newCurMax, newMin, newMax, true );
+		setRangeDisplayValues( qsa( group.el, '[pf-filter="min"]' ), newCurMin, hasUserMin );
+		setRangeDisplayValues( qsa( group.el, '[pf-filter="max"]' ), newCurMax, hasUserMax );
+		positionRangeTrack( qs( group.el, '[pf-filter="track"]' ), newCurMin, newCurMax, newMin, newMax );
 	};
 
-	/** Дерево категорий — рекурсивный алгоритм buildLevel по нумерованным уровням. */
+	/** Дерево категорий — рекурсивный алгоритм buildLevel, уровни шаблона — по вложенности [pf-filter="list"]. */
 	PFForm.prototype.buildCategoryTreeGroup = function ( groupConfig, groupNode ) {
 		var clone = groupNode; // см. комментарий в buildGroups() про move-vs-clone.
 
-		var nameEl = qs( clone, '[pf-filter-name]' );
+		var nameEl = qs( clone, '[pf-filter="name"]' );
 		if ( nameEl ) {
 			nameEl.textContent = groupConfig.label;
 		}
 
-		var rootContainer = qs( clone, '[pf-filter-list-1]' );
+		var rootContainer = qs( clone, '[pf-filter="list"]' );
 		if ( ! rootContainer ) {
-			console.warn( 'PF Filter: [pf-filter-list-1] не найден для группы "' + groupConfig.field + '", дерево не построено.' );
+			console.warn( 'PF Filter: [pf-filter="list"] не найден для группы "' + groupConfig.field + '", дерево не построено.' );
 			return clone;
 		}
 
-		this.buildTreeLevel( groupConfig.values || [], rootContainer, 1, clone );
+		this.buildTreeLevel( groupConfig.values || [], rootContainer, 0, this.collectTreeLevels( rootContainer ) );
 
 		// В отличие от плоских списков, дерево категорий раньше вообще не
 		// получало обработку поиска — поле поиска, если оно есть в шаблоне,
@@ -1307,23 +1295,55 @@
 		return total;
 	};
 
-	PFForm.prototype.buildTreeLevel = function ( items, container, level, templateRoot ) {
+	/**
+	 * Собственные узлы уровня: элемент принадлежит списку list, если ближайший
+	 * над ним [pf-filter="list"] или [pf-filter="parent"] — сам list (а не
+	 * родитель этого же уровня и не вложенный список).
+	 */
+	function treeOwnNodes( list, value ) {
+		return qsa( list, '[pf-filter="' + value + '"]' ).filter( function ( el ) {
+			return el.parentElement && el.parentElement.closest( '[pf-filter="list"], [pf-filter="parent"]' ) === list;
+		} );
+	}
+
+	/**
+	 * Шаблоны уровней дерева по вложенности: уровень 1 — row/parent внутри
+	 * первого [pf-filter="list"], следующий — внутри [pf-filter="list"]
+	 * в parent предыдущего уровня, и так далее. Собираются один раз до
+	 * наполнения — ссылки на исходные узлы, клоны делает buildTreeLevel().
+	 */
+	PFForm.prototype.collectTreeLevels = function ( rootList ) {
+		var levels = [];
+		var list = rootList;
+		while ( list && levels.length < 20 ) {
+			var level = {
+				row: treeOwnNodes( list, 'row' )[ 0 ] || null,
+				parent: treeOwnNodes( list, 'parent' )[ 0 ] || null,
+			};
+			levels.push( level );
+			list = level.parent ? qs( level.parent, '[pf-filter="list"]' ) : null;
+		}
+		return levels;
+	};
+
+	PFForm.prototype.buildTreeLevel = function ( items, container, level, levels ) {
 		var self = this;
 		if ( ! container ) {
 			return;
 		}
 
-		// container на этом уровне уже содержит шаблонные узлы pf-filter-parent-N /
-		// pf-filter-row-N — либо оригинальные (уровень 1, внутри templateRoot),
+		// container на этом уровне уже содержит шаблонные узлы pf-filter="parent" /
+		// pf-filter="row" — либо оригинальные (уровень 1, внутри templateRoot),
 		// либо их неиспользуемые копии (если container — часть только что
 		// склонированного родителя предыдущего уровня, а вместе с ним скопировалось
 		// и всё вложенное поддерево шаблонов). В обоих случаях после наполнения
 		// контейнера реальными данными эти узлы — лишние, их нужно убрать.
-		var staleTemplateNodes = qsa( container, '[pf-filter-parent-' + level + '], [pf-filter-row-' + level + ']' );
+		var staleTemplateNodes = treeOwnNodes( container, 'parent' ).concat( treeOwnNodes( container, 'row' ) );
+		var tpl = levels[ level ] || {};
 
 		items.forEach( function ( item, index ) {
 			if ( item.children && item.children.length > 0 ) {
-				var parentTpl = qs( templateRoot, '[pf-filter-parent-' + level + ']' );
+				var parentTpl = tpl.parent;
 				if ( ! parentTpl ) {
 					// Реальная глубина данных превышает глубину шаблона — тихо обрезать
 					// (предупреждение показывается только в админке, не в консоли сайта).
@@ -1333,12 +1353,12 @@
 				self.fillRow( parentClone, item, index );
 				self.wireTreeInputs( parentClone, item.value );
 
-				var childContainer = qs( parentClone, '[pf-filter-list-' + ( level + 1 ) + ']' );
-				self.buildTreeLevel( item.children, childContainer, level + 1, templateRoot );
+				var childContainer = qs( parentClone, '[pf-filter="list"]' );
+				self.buildTreeLevel( item.children, childContainer, level + 1, levels );
 
 				container.appendChild( parentClone );
 			} else {
-				var rowTpl = qs( templateRoot, '[pf-filter-row-' + level + ']' );
+				var rowTpl = tpl.row;
 				if ( ! rowTpl ) {
 					return;
 				}
@@ -1389,7 +1409,7 @@
 			if ( 'range' === template ) {
 				// См. buildRangeGroup(): при отсутствии визуального слайдера
 				// состояние диапазона хранится на корневом узле группы.
-				var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
+				var slider = qs( group.el, '[pf-filter="slider"]' ) || group.el;
 				var hasUserMin = undefined !== slider.dataset.userMin;
 				var hasUserMax = undefined !== slider.dataset.userMax;
 				// Отправляется "замороженное" абсолютное значение выбора
@@ -1453,7 +1473,7 @@
 	 * - 'manual' (pf_filter_settings.filter_mode) — список/пагинация/чипы/URL
 	 *   не трогаются вообще, обновляются только счётчики значений и границы
 	 *   range-групп под ещё не применённый выбор — см. previewFilterCounts().
-	 *   Настоящее применение — только по клику [pf-apply], см. initApplyButton().
+	 *   Настоящее применение — только по клику [pf-filter="apply"], см. initApplyButton().
 	 */
 	PFForm.prototype.onFilterValueChanged = function ( opts ) {
 		if ( 'manual' === this.filterMode ) {
@@ -1464,7 +1484,7 @@
 	};
 
 	/**
-	 * [pf-apply] — кнопка "Применить фильтр", имеет смысл только при
+	 * [pf-filter="apply"] — кнопка "Применить фильтр", имеет смысл только при
 	 * filter_mode:'manual'. Клик — обычный полный runFilter(), тот же самый
 	 * запрос, что при filter_mode:'auto' случился бы сразу по изменению
 	 * значения фильтра.
@@ -1473,9 +1493,9 @@
 		if ( 'manual' !== this.filterMode ) {
 			return;
 		}
-		this.applyBtn = qs( this.scopeRoot, '[pf-apply]' );
+		this.applyBtn = qs( this.scopeRoot, '[pf-filter="apply"]' );
 		if ( ! this.applyBtn ) {
-			console.warn( 'PF Filter: filter_mode="manual", но [pf-apply] не найден в разметке — список не будет обновляться, пока кнопка не появится в теме.' );
+			console.warn( 'PF Filter: filter_mode="manual", но [pf-filter="apply"] не найден в разметке — список не будет обновляться, пока кнопка не появится в теме.' );
 			return;
 		}
 		var self = this;
@@ -1494,7 +1514,7 @@
 	 * поэтому нерелевантные группы одинаково скрываются/показываются что при
 	 * предпросмотре, что при реальном применении. Список карточек, пагинация,
 	 * чипы активных фильтров и URL этот запрос НЕ трогает — это исключительно
-	 * ответственность runFilter() по клику [pf-apply]. Свой собственный
+	 * ответственность runFilter() по клику [pf-filter="apply"]. Свой собственный
 	 * AbortController — предпросмотр не должен прерывать настоящий runFilter()
 	 * (у него общий this.abortController) и наоборот.
 	 */
@@ -1644,7 +1664,7 @@
 		this.totalCount = data.count || 0;
 		this.state.paged = data.current_page || this.state.paged;
 
-		// silent: [pf-list] на первой загрузке уже отрендерен обычным циклом
+		// silent: [pf-list=""] на первой загрузке уже отрендерен обычным циклом
 		// WordPress — трогать его не нужно, запрос был только за цифрами.
 		if ( ! silent ) {
 			if ( 0 === data.count ) {
@@ -1682,7 +1702,7 @@
 	};
 
 	PFForm.prototype.updateCounters = function ( data ) {
-		qsa( this.scopeRoot, '[pf-count]' ).forEach( function ( el ) {
+		qsa( this.scopeRoot, '[pf-list="count"]' ).forEach( function ( el ) {
 			el.textContent = data.count;
 		} );
 	};
@@ -1739,7 +1759,7 @@
 					return;
 				}
 				var count   = fieldCounts[ value ];
-				var countEl = qs( row, '[pf-filter-count]' );
+				var countEl = qs( row, '[pf-filter="count"]' );
 				if ( countEl && self.showCounts ) {
 					countEl.textContent = count;
 				}
@@ -1821,31 +1841,31 @@
 	// -----------------------------------------------------------------
 
 	PFForm.prototype.initSort = function ( sortOptions ) {
-		this.sortEl = qs( this.scopeRoot, '[pf-sort]' );
+		this.sortEl = qs( this.scopeRoot, '[pf-sort=""]' );
 		if ( ! this.sortEl ) {
 			return;
 		}
 
 		var self = this;
-		var triggerLabel = qs( this.sortEl, '[pf-sort-trigger-label]' );
+		var triggerLabel = qs( this.sortEl, '[pf-sort="label"]' );
 		// Снимок ДО клонирования: может содержать не только сам шаблон, но и
 		// дизайн-превью — например несколько статичных «Опция» внутри вложенной
 		// обёртки, которые верстальщик не убрал. Все они должны быть удалены,
 		// а не только тот единственный элемент, который мы взяли как шаблон.
-		var existingOptions = qsa( this.sortEl, '[pf-sort-option]' );
+		var existingOptions = qsa( this.sortEl, '[pf-sort="option"]' );
 		var optionTpl = existingOptions[ 0 ];
 
 		if ( ! optionTpl ) {
-			console.warn( 'PF Filter: [pf-sort-option] не найден, список сортировки не построен.' );
+			console.warn( 'PF Filter: [pf-sort="option"] не найден, список сортировки не построен.' );
 			return;
 		}
 
 		// Контейнер для вставки — родитель уже существующего элемента списка
-		// (найденного по pf-sort-option), а не угаданный по классу Webflow/темы:
+		// (найденного по pf-sort="option"), а не угаданный по классу Webflow/темы:
 		// реальный родитель может быть на уровень глубже общей обёртки дропдауна.
 		var list = optionTpl.parentElement;
 		if ( ! list ) {
-			console.warn( 'PF Filter: у [pf-sort-option] нет родителя, список сортировки не построен.' );
+			console.warn( 'PF Filter: у [pf-sort="option"] нет родителя, список сортировки не построен.' );
 			return;
 		}
 
@@ -1922,18 +1942,18 @@
 
 	PFForm.prototype.initPagination = function () {
 		// Ссылки на элементы пагинации кэшируются один раз здесь, а не через
-		// document.querySelector('[pf-page-item]') при каждом рендере в
+		// document.querySelector('[pf-pagination="page"]') при каждом рендере в
 		// updatePaginationUI(). Причина: сгенерированные клоны номеров страниц
-		// (cloneNode от этого же шаблона) тоже несут атрибут pf-page-item и после
+		// (cloneNode от этого же шаблона) тоже несут атрибут pf-pagination="page" и после
 		// первого рендера идут в DOM раньше оригинала — повторный querySelector
 		// нашёл бы уже сгенерированный клон вместо настоящего шаблона, что ведёт
 		// к его ошибочному удалению и потере номеров страниц после первого клика.
-		this._pagesContainer  = qs( this.scopeRoot, '[pf-pagination-pages]' );
-		this._pageItemTpl     = qs( this.scopeRoot, '[pf-page-item]' );
-		this._prevBtn         = qs( this.scopeRoot, '[pf-page-prev]' );
-		this._nextBtn         = qs( this.scopeRoot, '[pf-page-next]' );
-		this._loadMoreBtn     = qs( this.scopeRoot, '[pf-load-more]' );
-		this._infiniteTrigger = qs( this.scopeRoot, '[pf-infinite-trigger]' );
+		this._pagesContainer  = qs( this.scopeRoot, '[pf-pagination="pages"]' );
+		this._pageItemTpl     = qs( this.scopeRoot, '[pf-pagination="page"]' );
+		this._prevBtn         = qs( this.scopeRoot, '[pf-pagination="prev"]' );
+		this._nextBtn         = qs( this.scopeRoot, '[pf-pagination="next"]' );
+		this._loadMoreBtn     = qs( this.scopeRoot, '[pf-pagination="more"]' );
+		this._infiniteTrigger = qs( this.scopeRoot, '[pf-pagination="trigger"]' );
 
 		// this.paginationMode берётся исключительно из настроек админки
 		// (pagination_strategy) — см. init().
@@ -1954,7 +1974,7 @@
 		}
 
 		if ( 'pages' === this.paginationMode || 'both' === this.paginationMode ) {
-			// pf-page-prev/next обычно <a href="#"> — без preventDefault клик
+			// pf-pagination="prev"/next обычно <a href="#"> — без preventDefault клик
 			// прыгал бы в начало страницы вместо запуска AJAX-фильтрации.
 			if ( this._prevBtn ) {
 				this._prevBtn.addEventListener( 'click', function ( e ) {
@@ -1988,7 +2008,7 @@
 				} );
 				this.infiniteObserver.observe( this._infiniteTrigger );
 			} else if ( ! this._infiniteTrigger ) {
-				console.warn( 'PF Filter: [pf-infinite-trigger] не найден, автоподгрузка недоступна.' );
+				console.warn( 'PF Filter: [pf-pagination="trigger"] не найден, автоподгрузка недоступна.' );
 			}
 		}
 	};
@@ -2022,7 +2042,7 @@
 			// остаться статичный дизайн-превью (например, Webflow-пример «активной
 			// второй страницы») — его тоже нужно убрать, иначе он будет висеть рядом
 			// с реальной пагинацией.
-			qsa( pagesContainer, '[pf-page-item]' ).forEach( function ( el ) {
+			qsa( pagesContainer, '[pf-pagination="page"]' ).forEach( function ( el ) {
 				if ( el !== itemTpl && ! el.hasAttribute( 'data-pf-generated' ) ) {
 					el.remove();
 				}
@@ -2047,8 +2067,8 @@
 
 				// Вставляем на место шаблона (перед itemTpl), а не в конец
 				// контейнера — иначе номера страниц оказываются ПОСЛЕ
-				// pf-page-next, если в разметке стрелки лежат внутри того же
-				// контейнера, что и pf-page-item (частый случай).
+				// pf-pagination="next", если в разметке стрелки лежат внутри того же
+				// контейнера, что и pf-pagination="page" (частый случай).
 				itemTpl.insertAdjacentElement( 'beforebegin', clone );
 			}
 			itemTpl.classList.add( 'pf-hidden' );
@@ -2099,17 +2119,17 @@
 	PFForm.prototype.initActiveFilters = function () {
 		var self = this;
 
-		// [pf-active-chip] — шаблон одного чипа, который клонируется в updateActiveFilters().
+		// [pf-chips="chip"] — шаблон одного чипа, который клонируется в updateActiveFilters().
 		// Сам шаблон должен быть скрыт сразу, а не только после первого реального
 		// обновления фильтров — иначе на пустой странице виден необработанный чип
 		// с текстом-заглушкой из разметки.
-		qsa( this.scopeRoot, '[pf-active-chip]' ).forEach( function ( chipTpl ) {
+		qsa( this.scopeRoot, '[pf-chips="chip"]' ).forEach( function ( chipTpl ) {
 			chipTpl.classList.add( 'pf-hidden' );
 		} );
 
 		// Кнопка сброса по умолчанию скрыта — показывается только когда есть
 		// хоть один реально активный фильтр (см. updateActiveFilters()).
-		qsa( this.scopeRoot, '[pf-active-reset]' ).forEach( function ( btn ) {
+		qsa( this.scopeRoot, '[pf-chips="reset"]' ).forEach( function ( btn ) {
 			btn.classList.add( 'pf-hidden' );
 			btn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
@@ -2169,7 +2189,7 @@
 	 * без запуска runFilter(). Общая часть для resetAllFilters() (сбрасывает
 	 * все группы разом одним итоговым запросом) и resetGroupFilter()
 	 * (сбрасывает ровно одну группу — используется чипом цены в активных
-	 * фильтрах и кнопкой [pf-filter-remove] внутри самой группы).
+	 * фильтрах и кнопкой [pf-filter="remove"] внутри самой группы).
 	 */
 	PFForm.prototype.resetGroupControls = function ( group ) {
 		if ( group && 'search' === group.config.template ) {
@@ -2186,7 +2206,7 @@
 		if ( 'range' === group.config.template ) {
 			// См. buildRangeGroup(): при отсутствии визуального слайдера
 			// состояние диапазона хранится на корневом узле группы.
-			var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
+			var slider = qs( group.el, '[pf-filter="slider"]' ) || group.el;
 			var rangeMin = parseFloat( slider.dataset.min );
 			var rangeMax = parseFloat( slider.dataset.max );
 			slider.dataset.currentMin = slider.dataset.min;
@@ -2197,11 +2217,11 @@
 			// "тронутый"), пока сервер не подтвердит это следующим ответом.
 			delete slider.dataset.userMin;
 			delete slider.dataset.userMax;
-			positionRangeHandle( qs( group.el, '[pf-filter-range-handle="min"]' ), rangeMin, rangeMin, rangeMax, false );
-			positionRangeHandle( qs( group.el, '[pf-filter-range-handle="max"]' ), rangeMax, rangeMin, rangeMax, true );
-			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), slider.dataset.min, false );
-			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), slider.dataset.max, false );
-			positionRangeTrack( qs( group.el, '[pf-filter-range-track]' ), rangeMin, rangeMax, rangeMin, rangeMax );
+			positionRangeHandle( qs( group.el, '[pf-filter="handle-min"]' ), rangeMin, rangeMin, rangeMax, false );
+			positionRangeHandle( qs( group.el, '[pf-filter="handle-max"]' ), rangeMax, rangeMin, rangeMax, true );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter="min"]' ), slider.dataset.min, false );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter="max"]' ), slider.dataset.max, false );
+			positionRangeTrack( qs( group.el, '[pf-filter="track"]' ), rangeMin, rangeMax, rangeMin, rangeMax );
 		}
 	};
 
@@ -2226,23 +2246,23 @@
 		var self = this;
 		var filters = this.collectFilters();
 
-		qsa( this.scopeRoot, '[pf-active-reset]' ).forEach( function ( btn ) {
+		qsa( this.scopeRoot, '[pf-chips="reset"]' ).forEach( function ( btn ) {
 			btn.classList.toggle( 'pf-hidden', ! self.hasActiveFilters( filters ) );
 		} );
 
-		// [pf-filter-remove] — кнопка сброса ОДНОЙ группы, живёт внутри её
+		// [pf-filter="remove"] — кнопка сброса ОДНОЙ группы, живёт внутри её
 		// pf-template — показывается, только когда у этой конкретной группы
 		// реально есть активный фильтр.
 		Object.keys( this.groups ).forEach( function ( field ) {
 			var group = self.groups[ field ];
 			var active = self.isFieldActive( field, filters );
-			qsa( group.el, '[pf-filter-remove]' ).forEach( function ( btn ) {
+			qsa( group.el, '[pf-filter="remove"]' ).forEach( function ( btn ) {
 				btn.classList.toggle( 'pf-hidden', ! active );
 			} );
 		} );
 
-		qsa( this.scopeRoot, '[pf-active-filters]' ).forEach( function ( container ) {
-			var chipTpl = qs( container, '[pf-active-chip]' );
+		qsa( this.scopeRoot, '[pf-chips=""]' ).forEach( function ( container ) {
+			var chipTpl = qs( container, '[pf-chips="chip"]' );
 			if ( ! chipTpl ) {
 				return;
 			}
@@ -2299,12 +2319,12 @@
 		clone.classList.remove( 'pf-hidden' );
 		clone.setAttribute( 'data-pf-generated', '1' );
 
-		var labelEl = qs( clone, '[pf-chip-label]' );
+		var labelEl = qs( clone, '[pf-chips="label"]' );
 		if ( labelEl ) {
 			labelEl.textContent = text;
 		}
 
-		var removeBtn = qs( clone, '[pf-chip-remove]' );
+		var removeBtn = qs( clone, '[pf-chips="remove"]' );
 		if ( removeBtn ) {
 			removeBtn.addEventListener( 'click', function ( e ) {
 				e.preventDefault();
@@ -2321,7 +2341,7 @@
 			return value;
 		}
 		var row = qs( group.el, '[data-pf-value="' + CSS.escape( value ) + '"]' );
-		var valueEl = row ? qs( row, '[pf-filter-value]' ) : null;
+		var valueEl = row ? qs( row, '[pf-filter="value"]' ) : null;
 		return valueEl ? valueEl.textContent : value;
 	};
 
@@ -2536,7 +2556,7 @@
 	PFForm.prototype.restoreRangeFromUrl = function ( group, minOrMax, rawValue ) {
 		// См. buildRangeGroup(): при отсутствии визуального слайдера состояние
 		// диапазона хранится на корневом узле группы.
-		var slider = qs( group.el, '[pf-filter-range-slider]' ) || group.el;
+		var slider = qs( group.el, '[pf-filter="slider"]' ) || group.el;
 		var value = parseFloat( rawValue );
 		if ( isNaN( value ) ) {
 			return;
@@ -2550,11 +2570,11 @@
 		if ( 'min' === minOrMax ) {
 			slider.dataset.currentMin = value;
 			slider.dataset.userMin = value;
-			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="min"]' ), value, true );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter="min"]' ), value, true );
 		} else {
 			slider.dataset.currentMax = value;
 			slider.dataset.userMax = value;
-			setRangeDisplayValues( qsa( group.el, '[pf-filter-range-value="max"]' ), value, true );
+			setRangeDisplayValues( qsa( group.el, '[pf-filter="max"]' ), value, true );
 		}
 	};
 
@@ -2563,7 +2583,7 @@
 	// -----------------------------------------------------------------
 
 	/**
-	 * Приём полной выдачи от [pfs] внутри этого блока: pfs-search.js кидает
+	 * Приём полной выдачи от [pf-search=""] внутри этого блока: pfs-search.js кидает
 	 * отменяемое событие pfs:submit на [pf-profile]; отмена = «обработано
 	 * здесь, переход на страницу результатов не нужен». Если форм на один
 	 * блок несколько, запрос применяют все, а фильтрацию запускает первая.
@@ -2573,7 +2593,7 @@
 			return;
 		}
 		var self = this;
-		this.scopeRoot.addEventListener( 'pfs:submit', function ( e ) {
+		this.scopeRoot.addEventListener( 'pf-search:submit', function ( e ) {
 			var detail = e.detail || {};
 			var query = ( detail.query || '' ).trim();
 			e.preventDefault();
@@ -2592,7 +2612,7 @@
 	/**
 	 * Задать/снять поисковый запрос блока. Новый запрос сбрасывает выбор
 	 * сортировки посетителем (снова по релевантности) и подсвечивает вариант
-	 * «По релевантности» в [pf-sort], если он есть в списке.
+	 * «По релевантности» в [pf-sort=""], если он есть в списке.
 	 */
 	PFForm.prototype.setSearch = function ( query, profile ) {
 		this.logNextSearch = !! query;
@@ -2620,23 +2640,23 @@
 	};
 
 	/**
-	 * Все поля поиска этого блока ([pfs-input] группы поиска и [pfs] внутри
+	 * Все поля поиска этого блока ([pf-search="input"] группы поиска и [pf-search=""] внутри
 	 * [pf-profile]) показывают текущий запрос — кроме поля, в котором
 	 * посетитель сейчас печатает.
 	 */
 	PFForm.prototype.syncSearchInputs = function ( query ) {
 		var root = this.scopeRoot === document ? ( this.formEl || document ) : this.scopeRoot;
-		qsa( root, '[pfs-input]' ).forEach( function ( input ) {
+		qsa( root, '[pf-search="input"]' ).forEach( function ( input ) {
 			if ( input !== document.activeElement && input.value !== query ) {
 				input.value = query;
-				input.dispatchEvent( new CustomEvent( 'pfs:synced', { bubbles: false } ) );
+				input.dispatchEvent( new CustomEvent( 'pf-search:synced', { bubbles: false } ) );
 			}
 		} );
 	};
 
 	/**
 	 * Группа «Поиск по тексту» (pf-template="search"): поле модуля поиска
-	 * среди групп фильтра. Узел группы становится корнем [pfs] (профиль —
+	 * среди групп фильтра. Узел группы становится корнем [pf-search=""] (профиль —
 	 * из настроек группы), дальше им управляет pfs-search.js в режиме
 	 * группы: набор текста применяется как изменение любого другого фильтра
 	 * (onFilterValueChanged — «сразу» или «по кнопке»), Enter — сразу.
@@ -2645,16 +2665,17 @@
 		var clone = groupNode;
 		clone.classList.remove( 'pf-hidden' );
 
-		qsa( clone, '[pf-filter-name]' ).forEach( function ( el ) {
+		qsa( clone, '[pf-filter="name"]' ).forEach( function ( el ) {
 			el.textContent = groupConfig.label;
 		} );
 
-		var root = qs( clone, '[pfs]' ) || clone;
-		root.setAttribute( 'pfs', groupConfig.search_profile || '' );
+		var root = qs( clone, '[pf-search=""]' ) || clone;
+		root.setAttribute( 'pf-search', '' );
+		root.setAttribute( 'pf-search-profile', groupConfig.search_profile || '' );
 		this.searchGroupProfile = groupConfig.search_profile || '';
 
-		if ( ! qs( root, '[pfs-input]' ) ) {
-			console.warn( 'PF Filter: в шаблоне [pf-template="search"] нет поля [pfs-input] — группа поиска пропущена.' );
+		if ( ! qs( root, '[pf-search="input"]' ) ) {
+			console.warn( 'PF Filter: в шаблоне [pf-template="search"] нет поля [pf-search="input"] — группа поиска пропущена.' );
 			return null;
 		}
 		if ( ! window.pfsSearchInit ) {
@@ -2707,8 +2728,8 @@
 			return false;
 		}
 
-		var inner = this.scopeRoot === document ? null : qs( this.scopeRoot, '[pfs]' );
-		this.setSearch( query, inner ? inner.getAttribute( 'pfs' ) || '' : '' );
+		var inner = this.scopeRoot === document ? null : qs( this.scopeRoot, '[pf-search=""]' );
+		this.setSearch( query, inner ? inner.getAttribute( 'pf-search-profile' ) || '' : '' );
 
 		// Явно выбранная сортировка в адресе (не первая по списку и не
 		// «по релевантности») — посетитель её выбирал сам.
@@ -2735,7 +2756,7 @@
 	};
 
 	// ---------------------------------------------------------------------
-	// Инициализация: найти все [pf-form] на странице
+	// Инициализация: найти все [pf-filter=""] на странице
 	// ---------------------------------------------------------------------
 
 	function initAll() {
@@ -2744,7 +2765,7 @@
 			return;
 		}
 
-		qsa( document, '[pf-form]' ).forEach( function ( formEl ) {
+		qsa( document, '[pf-filter=""]' ).forEach( function ( formEl ) {
 			try {
 				new PFForm( formEl ).init();
 			} catch ( err ) {
@@ -2752,11 +2773,11 @@
 			}
 		} );
 
-		// Блоки без формы: [pf-profile] со списком внутри, но без [pf-form] —
+		// Блоки без формы: [pf-profile] со списком внутри, но без [pf-filter=""] —
 		// список, пагинация, сортировка, счётчики, чипы и поиск без групп
 		// фильтра. Обёртка без списка — не блок фильтра, пропускаем молча.
 		qsa( document, '[pf-profile]' ).forEach( function ( profileEl ) {
-			if ( qs( profileEl, '[pf-form]' ) || ! qs( profileEl, '[pf-list]' ) ) {
+			if ( qs( profileEl, '[pf-filter=""]' ) || ! qs( profileEl, '[pf-list=""]' ) ) {
 				return;
 			}
 			try {

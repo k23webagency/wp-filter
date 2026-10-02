@@ -26,7 +26,7 @@ class PF_Search_Config {
 	/**
 	 * Режимы выбора типа записей профиля: 'fixed' — один тип задан в
 	 * админке; 'visitor' — посетитель выбирает один из разрешённых типов
-	 * кнопками [pfs-type].
+	 * кнопками [pf-search="type"].
 	 */
 	const TYPE_MODES = array( 'fixed', 'visitor' );
 
@@ -361,7 +361,7 @@ class PF_Search_Config {
 	}
 
 	/**
-	 * Подпись типа для кнопки [pfs-type]: своя из профиля или название
+	 * Подпись типа для кнопки [pf-search="type"]: своя из профиля или название
 	 * типа записи в WordPress.
 	 *
 	 * @param array  $profile Профиль.

@@ -4,7 +4,7 @@ Tags: woocommerce, filter, ajax, catalog, facet, custom post type, multi-profile
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 2.9.3
+Stable tag: 3.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,9 +45,17 @@ PF Filter работает через контракт HTML-атрибутов `
 1. Загрузите папку `pf-filter` в `/wp-content/plugins/`.
 2. Активируйте плагин через меню «Плагины» в WordPress.
 3. На странице Настройки → PF Filter создайте профиль (или используйте профиль по умолчанию), выберите тип записи и настройте группы фильтров и сортировку.
-4. Разметьте страницу каталога атрибутами `pf-form`, `pf-target` (если форм/списков на странице несколько), `pf-list`, `pf-output`, `pf-templates`, `pf-profile` (если профилей на сайте несколько или блоков фильтрации на странице несколько) и т.д.
+4. Разметьте страницу каталога атрибутами `pf-filter` (форма), `pf-target` (если форм/списков на странице несколько), `pf-list`, `pf-filter="output"` с шаблонами групп внутри, `pf-profile` (если профилей на сайте несколько или блоков фильтрации на странице несколько) и т.д.
 
 == Changelog ==
+
+= 3.0.0 =
+* Новый контракт атрибутов, без обратной совместимости — разметку нужно обновить по справочникам. Правило: атрибут без значения — блок, со значением — что в нём.
+* Фильтр: pf-form → pf-filter; pf-output → pf-filter="output", шаблоны групп кладутся прямо в него (pf-templates больше нет); pf-apply → pf-filter="apply"; pf-filter-name/row/value/count/swatch/remove → pf-filter="…"; pf-template-variant → pf-variant.
+* Дерево категорий: pf-filter="list|row|parent" без номеров уровней — уровень определяется вложенностью списков.
+* Диапазон: pf-filter="slider|track|handle-min|handle-max|min|max"; устаревший pf-filter-range удалён.
+* Список: pf-loading/pf-empty/pf-count → pf-list="loading|empty|count". Сортировка: pf-sort="label|option". Пагинация: pf-pagination="pages|page|prev|next|more|trigger". Чипы: pf-chips, pf-chips="chip|label|remove|reset".
+* Поиск: pfs="ID" → pf-search pf-search-profile="ID"; pfs-* → pf-search="…" (pfs-dropdown-toggle/list → toggle/dropdown); pfs-group → pf-search-group; событие pfs:results-updated → pf-search:results-updated.
 
 = 2.9.3 =
 * Фильтр: группа «Поиск по тексту» пропадала из формы после первой загрузки выдачи, если в профиле включены счётчики. Теперь она видна всегда.

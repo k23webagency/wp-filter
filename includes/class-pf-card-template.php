@@ -51,7 +51,14 @@ class PF_Card_Template {
 	 *
 	 * @var int
 	 */
-	const CACHE_VERSION = 4;
+	const CACHE_VERSION = 5;
+
+	/**
+	 * Фрагмент регулярки открывающего тега списка: атрибут pf-list без
+	 * значения или с пустым значением (pf-list="count" и т.п. не подходят).
+	 * Без захватывающих групп: в find_element_inner() группа 1 — имя тега.
+	 */
+	const LIST_PATTERN = '(?<![\w-])pf-list(?:\s*=\s*(?:""|\'\'))?(?=[\s>\/])';
 
 	/**
 	 * Сканер атрибутов — нужен, чтобы узнать таксономию «категории»
@@ -344,7 +351,9 @@ class PF_Card_Template {
 			}
 		}
 
-		$list_inner = $this->find_element_inner( $search_in, '\bpf-list\b' );
+		// Только сам список: pf-list без значения (или с пустым), не его
+		// служебные элементы pf-list="count|loading|empty".
+		$list_inner = $this->find_element_inner( $search_in, self::LIST_PATTERN );
 		if ( null === $list_inner ) {
 			return null;
 		}
@@ -355,7 +364,7 @@ class PF_Card_Template {
 	/**
 	 * Содержимое ПЕРВОГО элемента, в открывающем теге которого есть
 	 * фрагмент атрибута $attr_pattern (часть регулярного выражения,
-	 * например '\bpf-list\b'), с учётом вложенности одноимённых тегов.
+	 * например self::LIST_PATTERN), с учётом вложенности одноимённых тегов.
 	 * Общий инструмент и для [pf-list] фильтра, и для блоков модуля поиска
 	 * (PF_Search_Template).
 	 *

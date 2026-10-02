@@ -1,9 +1,9 @@
 /**
- * PF Search — живой поиск по атрибутам pfs-* в разметке темы.
+ * PF Search — живой поиск по атрибутам pf-search / pf-search="…" в разметке темы.
  *
  * Контракт разметки — pfs-search-docs.html (справочник для верстальщика)
  * и REFERENCE.md. Работает то, что есть в вёрстке: нет элемента — нет
- * функции, без ошибок. Обязателен только [pfs-input].
+ * функции, без ошибок. Обязателен только [pf-search="input"].
  */
 ( function () {
 	'use strict';
@@ -176,16 +176,16 @@
 	PFSearch.prototype.init = function () {
 		var root = this.root;
 
-		this.profileId = root.getAttribute( 'pfs' ) || cfg.firstProfile;
+		this.profileId = root.getAttribute( 'pf-search-profile' ) || cfg.firstProfile;
 		this.profile = cfg.profiles[ this.profileId ];
 		if ( ! this.profile ) {
 			console.error( 'PF Search: профиль поиска «' + this.profileId + '» не найден (Настройки → PF Search).', root );
 			return false;
 		}
 
-		this.input = root.querySelector( '[pfs-input]' );
+		this.input = root.querySelector( '[pf-search="input"]' );
 		if ( ! this.input ) {
-			console.error( 'PF Search: внутри [pfs] нет поля [pfs-input] — блок поиска не запущен.', root );
+			console.error( 'PF Search: внутри [pf-search=""] нет поля [pf-search="input"] — блок поиска не запущен.', root );
 			return false;
 		}
 
@@ -203,21 +203,21 @@
 		}
 		this.type = this.lockedType || this.profile.defaultType;
 
-		this.list = root.querySelector( '[pfs-dropdown-list]' );
-		this.toggle = root.querySelector( '[pfs-dropdown-toggle]' );
+		this.list = root.querySelector( '[pf-search="dropdown"]' );
+		this.toggle = root.querySelector( '[pf-search="toggle"]' );
 		if ( this.toggle && this.toggle.contains( this.input ) ) {
-			console.warn( 'PF Search: поле [pfs-input] лежит внутри [pfs-dropdown-toggle] — так делать не нужно, переключатель должен быть отдельным элементом.', root );
+			console.warn( 'PF Search: поле [pf-search="input"] лежит внутри [pf-search="toggle"] — так делать не нужно, переключатель должен быть отдельным элементом.', root );
 		}
 
-		this.loading = toArray( root.querySelectorAll( '[pfs-loading]' ) );
-		this.clearBtns = toArray( root.querySelectorAll( '[pfs-clear]' ) );
-		this.submitBtns = toArray( root.querySelectorAll( '[pfs-submit]' ) );
-		this.empties = toArray( root.querySelectorAll( '[pfs-empty]' ) );
-		this.suggests = toArray( root.querySelectorAll( '[pfs-suggest]' ) );
-		this.alls = toArray( root.querySelectorAll( '[pfs-all]' ) );
-		this.counts = toArray( root.querySelectorAll( '[pfs-count]' ) );
-		this.queries = toArray( root.querySelectorAll( '[pfs-query]' ) );
-		this.groups = this.list ? toArray( this.list.querySelectorAll( '[pfs-group]' ) ) : [];
+		this.loading = toArray( root.querySelectorAll( '[pf-search="loading"]' ) );
+		this.clearBtns = toArray( root.querySelectorAll( '[pf-search="clear"]' ) );
+		this.submitBtns = toArray( root.querySelectorAll( '[pf-search="submit"]' ) );
+		this.empties = toArray( root.querySelectorAll( '[pf-search="empty"]' ) );
+		this.suggests = toArray( root.querySelectorAll( '[pf-search="suggest"]' ) );
+		this.alls = toArray( root.querySelectorAll( '[pf-search="all"]' ) );
+		this.counts = toArray( root.querySelectorAll( '[pf-search="count"]' ) );
+		this.queries = toArray( root.querySelectorAll( '[pf-search="query"]' ) );
+		this.groups = this.list ? toArray( this.list.querySelectorAll( '[pf-search-group]' ) ) : [];
 
 		this.loading.forEach( hide );
 		this.empties.forEach( hide );
@@ -279,16 +279,16 @@
 	};
 
 	/**
-	 * Живой поиск возможен, если есть окно и в нём [pfs-results].
+	 * Живой поиск возможен, если есть окно и в нём [pf-search="results"].
 	 */
 	PFSearch.prototype.initLive = function () {
 		if ( ! this.list ) {
 			return; // Окна нет — живой поиск не нужен, это не ошибка.
 		}
 
-		var containers = toArray( this.list.querySelectorAll( '[pfs-results]' ) );
+		var containers = toArray( this.list.querySelectorAll( '[pf-search="results"]' ) );
 		if ( ! containers.length ) {
-			console.warn( 'PF Search: в [pfs-dropdown-list] нет [pfs-results] — выпадающее окно отключено, поиск работает по Enter.', this.root );
+			console.warn( 'PF Search: в [pf-search="dropdown"] нет [pf-search="results"] — выпадающее окно отключено, поиск работает по Enter.', this.root );
 			return;
 		}
 
@@ -312,7 +312,7 @@
 	 */
 	PFSearch.prototype.initTypes = function () {
 		var self = this;
-		var sample = this.root.querySelector( '[pfs-type]' );
+		var sample = this.root.querySelector( '[pf-search="type"]' );
 		if ( ! sample ) {
 			return;
 		}
@@ -323,7 +323,7 @@
 		}
 		if ( this.lockedType ) {
 			sample.classList.add( 'pf-hidden' );
-			console.warn( 'PF Search: кнопка [pfs-type] внутри блока фильтра [pf-profile] не нужна — тип записей задан блоком фильтра. Кнопка скрыта.', sample );
+			console.warn( 'PF Search: кнопка [pf-search="type"] внутри блока фильтра [pf-profile] не нужна — тип записей задан блоком фильтра. Кнопка скрыта.', sample );
 			return;
 		}
 		if ( 'visitor' !== this.profile.typeMode || ! this.profile.types.length ) {
@@ -337,9 +337,9 @@
 
 		this.profile.types.forEach( function ( type, i ) {
 			var btn = 0 === i ? sample : sample.cloneNode( true );
-			btn.setAttribute( 'pfs-type', type.slug );
+			btn.setAttribute( 'data-pf-type', type.slug );
 
-			var label = btn.querySelector( '[pfs-type-label]' ) || btn;
+			var label = btn.querySelector( '[pf-search="type-label"]' ) || btn;
 			label.textContent = type.label;
 
 			var radio = btn.querySelector( 'input[type="radio"]' );
@@ -374,7 +374,7 @@
 	PFSearch.prototype.markType = function () {
 		var type = this.type;
 		( this.typeButtons || [] ).forEach( function ( btn ) {
-			var active = btn.getAttribute( 'pfs-type' ) === type;
+			var active = btn.getAttribute( 'data-pf-type' ) === type;
 			btn.classList.toggle( 'is-active', active );
 			var radio = btn.querySelector( 'input[type="radio"]' );
 			if ( radio ) {
@@ -442,7 +442,7 @@
 				e.stopPropagation();
 			}
 		} );
-		input.addEventListener( 'pfs:synced', function () {
+		input.addEventListener( 'pf-search:synced', function () {
 			self.updateClear();
 		} );
 		// Компонент Webflow Dropdown сам закрывается по клику вне себя, а
@@ -486,7 +486,7 @@
 		} );
 
 		this.suggests.forEach( function ( box ) {
-			toArray( box.querySelectorAll( '[pfs-suggest-query]' ) ).forEach( function ( el ) {
+			toArray( box.querySelectorAll( '[pf-search="suggest-query"]' ) ).forEach( function ( el ) {
 				el.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
 					var text = el.textContent.trim();
@@ -503,7 +503,7 @@
 		if ( this.list ) {
 			// Клик по карточке — запрос точно итоговый.
 			this.list.addEventListener( 'mousedown', function ( e ) {
-				if ( self.lastData && e.target.closest && e.target.closest( '[pfs-results] a[href]' ) ) {
+				if ( self.lastData && e.target.closest && e.target.closest( '[pf-search="results"] a[href]' ) ) {
 					logQuery( self.profileId, self.lastData.type, self.lastData.query, self.lastData.total );
 				}
 			} );
@@ -662,15 +662,15 @@
 
 	/**
 	 * Контейнер карточек под вариант, который вернул сервер: группа с этим
-	 * именем, иначе первая группа, иначе единственный [pfs-results].
+	 * именем, иначе первая группа, иначе единственный [pf-search="results"].
 	 */
 	PFSearch.prototype.resultsTarget = function ( groupName ) {
 		if ( ! this.groups.length ) {
-			return this.list.querySelector( '[pfs-results]' );
+			return this.list.querySelector( '[pf-search="results"]' );
 		}
 		var target = null;
 		this.groups.forEach( function ( g ) {
-			if ( ! target && groupName && g.getAttribute( 'pfs-group' ) === groupName ) {
+			if ( ! target && groupName && g.getAttribute( 'pf-search-group' ) === groupName ) {
 				target = g;
 			}
 		} );
@@ -678,7 +678,7 @@
 		this.groups.forEach( function ( g ) {
 			g.classList.toggle( 'is-hidden', g !== target );
 		} );
-		return target.querySelector( '[pfs-results]' );
+		return target.querySelector( '[pf-search="results"]' );
 	};
 
 	PFSearch.prototype.render = function ( data ) {
@@ -698,7 +698,7 @@
 		if ( false === data.template ) {
 			if ( ! this.templateWarned ) {
 				this.templateWarned = true;
-				console.warn( 'PF Search: не найден цикл карточек внутри [pfs-results] в PHP-файлах темы для профиля «' + this.profileId + '» — выпадающее окно отключено, поиск работает по Enter.', this.root );
+				console.warn( 'PF Search: не найден цикл карточек внутри [pf-search="results"] в PHP-файлах темы для профиля «' + this.profileId + '» — выпадающее окно отключено, поиск работает по Enter.', this.root );
 			}
 			this.live = false;
 			this.close();
@@ -708,11 +708,11 @@
 		var container = this.resultsTarget( data.group );
 		if ( container ) {
 			container.innerHTML = data.html || '';
-			toArray( container.querySelectorAll( '[pfs-highlight]' ) ).forEach( function ( el ) {
+			toArray( container.querySelectorAll( '[pf-search="highlight"]' ) ).forEach( function ( el ) {
 				highlight( el, data.highlight );
 			} );
 			reinitWebflow();
-			container.dispatchEvent( new CustomEvent( 'pfs:results-updated', {
+			container.dispatchEvent( new CustomEvent( 'pf-search:results-updated', {
 				bubbles: true,
 				detail: { results: container, query: data.query, type: data.type, total: data.total },
 			} ) );
@@ -741,7 +741,7 @@
 
 		this.suggests.forEach( function ( box ) {
 			if ( data.suggest ) {
-				toArray( box.querySelectorAll( '[pfs-suggest-query]' ) ).forEach( function ( el ) {
+				toArray( box.querySelectorAll( '[pf-search="suggest-query"]' ) ).forEach( function ( el ) {
 					el.textContent = data.suggest;
 				} );
 				show( box );
@@ -899,7 +899,7 @@
 	 * @return {boolean} true — блок фильтра обработал запрос.
 	 */
 	PFSearch.prototype.submitToBlock = function ( q ) {
-		return ! this.filterBlock.dispatchEvent( new CustomEvent( 'pfs:submit', {
+		return ! this.filterBlock.dispatchEvent( new CustomEvent( 'pf-search:submit', {
 			bubbles: false,
 			cancelable: true,
 			detail: { query: q, type: this.type, profile: this.profileId, search: this },
@@ -917,7 +917,7 @@
 			return;
 		}
 
-		// Внутри блока фильтра — выдача в его [pf-list] (обработчик ставит
+		// Внутри блока фильтра — выдача в его [pf-list=""] (обработчик ставит
 		// pf-filter.js; если его нет — переход, как вне блока). Пустое поле +
 		// Enter — показать список без поиска.
 		if ( this.filterBlock ) {
@@ -941,7 +941,7 @@
 	// -----------------------------------------------------------------
 
 	/**
-	 * [pfs-query] вне любого [pfs] — запрос из адреса страницы (заголовок
+	 * [pf-search="query"] вне любого [pf-search=""] — запрос из адреса страницы (заголовок
 	 * страницы результатов).
 	 */
 	function fillPageQuery() {
@@ -954,8 +954,8 @@
 		if ( ! q ) {
 			return;
 		}
-		toArray( document.querySelectorAll( '[pfs-query]' ) ).forEach( function ( el ) {
-			if ( ! el.closest( '[pfs]' ) ) {
+		toArray( document.querySelectorAll( '[pf-search="query"]' ) ).forEach( function ( el ) {
+			if ( ! el.closest( '[pf-search=""]' ) ) {
 				el.textContent = q;
 			}
 		} );
@@ -963,10 +963,10 @@
 
 	function init() {
 		window.pfsInstances = window.pfsInstances || [];
-		toArray( document.querySelectorAll( '[pfs]' ) ).forEach( function ( root ) {
+		toArray( document.querySelectorAll( '[pf-search=""]' ) ).forEach( function ( root ) {
 			// Шаблоны групп фильтра — это не живые блоки: их запускает
 			// pf-filter.js после построения группы (window.pfsSearchInit).
-			if ( root.pfsInstance || root.closest( '[pf-templates]' ) ) {
+			if ( root.pfsInstance || root.closest( '[pf-template]' ) ) {
 				return;
 			}
 			var instance = new PFSearch( root );
@@ -982,7 +982,7 @@
 	 * Запустить блок поиска на корне, построенном позже загрузки страницы
 	 * (группа фильтра pf-template="search", см. pf-filter.js).
 	 *
-	 * @param {Element} root    Корень [pfs].
+	 * @param {Element} root    Корень [pf-search=""].
 	 * @param {Object}  options onInput(query), onSubmit(query), lockedType.
 	 * @return {PFSearch|null}
 	 */

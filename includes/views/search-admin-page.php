@@ -160,7 +160,7 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 					<th><label for="pfs-id"><?php esc_html_e( 'ID профиля', 'pf-filter' ); ?></label></th>
 					<td>
 						<input type="text" id="pfs-id" name="profile_id" value="<?php echo esc_attr( $profile_id ); ?>" class="regular-text code" />
-						<p class="description"><?php esc_html_e( 'Значение атрибута pfs в разметке темы: pfs="это-значение". Латиница, цифры, дефис. Если уже опубликованная разметка использует старое значение — её нужно будет поправить вручную.', 'pf-filter' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Значение атрибута pf-search в разметке темы: pf-search pf-search-profile="это-значение". Латиница, цифры, дефис. Если уже опубликованная разметка использует старое значение — её нужно будет поправить вручную.', 'pf-filter' ); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -175,7 +175,7 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 									<option value="<?php echo esc_attr( $pfs_slug ); ?>" <?php selected( $profile['post_type'], $pfs_slug ); ?>><?php echo esc_html( $pfs_label ); ?></option>
 								<?php endforeach; ?>
 							</select>
-							<p class="description"><?php esc_html_e( 'Кнопка выбора типа [pfs-type] в этом режиме не нужна — если она есть в вёрстке, плагин её скроет.', 'pf-filter' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Кнопка выбора типа [pf-search="type"] в этом режиме не нужна — если она есть в вёрстке, плагин её скроет.', 'pf-filter' ); ?></p>
 						</div>
 
 						<div class="pfs-mode-panel" data-pfs-mode="visitor">
@@ -204,7 +204,7 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 									<?php endforeach; ?>
 								</tbody>
 							</table>
-							<p class="description"><?php esc_html_e( 'В вёрстке размечается только одна кнопка [pfs-type] — плагин подставит в неё первый тип по порядку и создаст по её образцу кнопки для остальных. Одновременно выбран один тип. Пустая подпись — название типа записей из WordPress.', 'pf-filter' ); ?></p>
+							<p class="description"><?php esc_html_e( 'В вёрстке размечается только одна кнопка [pf-search="type"] — плагин подставит в неё первый тип по порядку и создаст по её образцу кнопки для остальных. Одновременно выбран один тип. Пустая подпись — название типа записей из WordPress.', 'pf-filter' ); ?></p>
 						</div>
 					</td>
 				</tr>
@@ -257,7 +257,7 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 								<?php
 								printf(
 									/* translators: 1: ID профиля, 2: файл темы */
-									esc_html__( 'Блок [pfs="%1$s"] с циклом карточек найден в файле темы %2$s.', 'pf-filter' ),
+									esc_html__( 'Блок [pf-search pf-search-profile="%1$s"] с циклом карточек найден в файле темы %2$s.', 'pf-filter' ),
 									esc_html( $profile_id ),
 									'<code>' . esc_html( $template_info['file'] ) . '</code>'
 								);
@@ -265,7 +265,7 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 							</p>
 							<?php if ( $template_info['groups'] ) : ?>
 								<table class="widefat striped pfs-types-table">
-									<thead><tr><th><?php esc_html_e( 'Тип записей', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Вариант карточек (pfs-group)', 'pf-filter' ); ?></th></tr></thead>
+									<thead><tr><th><?php esc_html_e( 'Тип записей', 'pf-filter' ); ?></th><th><?php esc_html_e( 'Вариант карточек (pf-search-group)', 'pf-filter' ); ?></th></tr></thead>
 									<tbody>
 										<?php foreach ( $post_types as $pfs_slug => $pfs_label ) : ?>
 											<tr data-pfs-for-type="<?php echo esc_attr( $pfs_slug ); ?>">
@@ -282,14 +282,14 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 										<?php endforeach; ?>
 									</tbody>
 								</table>
-								<p class="description"><?php esc_html_e( 'В вёрстке окна несколько вариантов карточек [pfs-group] — выберите, каким рисовать каждый тип записей.', 'pf-filter' ); ?></p>
+								<p class="description"><?php esc_html_e( 'В вёрстке окна несколько вариантов карточек [pf-search-group] — выберите, каким рисовать каждый тип записей.', 'pf-filter' ); ?></p>
 							<?php endif; ?>
 						<?php else : ?>
 							<p class="description">
 								<?php
 								printf(
 									/* translators: %s: ID профиля */
-									esc_html__( 'В PHP-файлах темы не найден блок [pfs="%s"] с циклом записей внутри [pfs-results]. Без него выпадающее окно не работает; поиск по Enter и страница результатов работают. Если окно в вёрстке не нужно — всё в порядке.', 'pf-filter' ),
+									esc_html__( 'В PHP-файлах темы не найден блок [pf-search pf-search-profile="%s"] с циклом записей внутри [pf-search="results"]. Без него выпадающее окно не работает; поиск по Enter и страница результатов работают. Если окно в вёрстке не нужно — всё в порядке.', 'pf-filter' ),
 									esc_html( $profile_id )
 								);
 								?>
@@ -299,23 +299,23 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 								<ul class="pfs-roots">
 									<?php foreach ( $template_roots as $pfs_root ) : ?>
 										<li>
-											<code><?php echo esc_html( '' === $pfs_root['value'] ? 'pfs' : 'pfs="' . $pfs_root['value'] . '"' ); ?></code>
+											<code><?php echo esc_html( '' === $pfs_root['value'] ? 'pf-search' : 'pf-search pf-search-profile="' . $pfs_root['value'] . '"' ); ?></code>
 											— <code><?php echo esc_html( $pfs_root['file'] ); ?></code>:
 											<?php if ( '' !== $pfs_root['value'] && $pfs_root['value'] !== $profile_id ) : ?>
 												<span class="pfs-warning">
 													<?php
 													printf(
 														/* translators: 1: ID в вёрстке, 2: ID профиля */
-														esc_html__( 'ID «%1$s» не совпадает с ID этого профиля «%2$s». Поменяйте поле «ID профиля» ниже на «%1$s» или значение pfs в вёрстке.', 'pf-filter' ),
+														esc_html__( 'ID «%1$s» не совпадает с ID этого профиля «%2$s». Поменяйте поле «ID профиля» ниже на «%1$s» или значение pf-search в вёрстке.', 'pf-filter' ),
 														esc_html( $pfs_root['value'] ),
 														esc_html( $profile_id )
 													);
 													?>
 												</span>
 											<?php elseif ( ! $pfs_root['has_results'] ) : ?>
-												<span class="pfs-warning"><?php esc_html_e( 'внутри нет [pfs-results].', 'pf-filter' ); ?></span>
+												<span class="pfs-warning"><?php esc_html_e( 'внутри нет [pf-search="results"].', 'pf-filter' ); ?></span>
 											<?php elseif ( ! $pfs_root['has_loop'] ) : ?>
-												<span class="pfs-warning"><?php esc_html_e( 'в [pfs-results] нет цикла записей — поставьте на него метку wp_query (например \'post_type\' => \'product\', \'posts_per_page\' => 1) и переэкспортируйте тему.', 'pf-filter' ); ?></span>
+												<span class="pfs-warning"><?php esc_html_e( 'в [pf-search="results"] нет цикла записей — поставьте на него метку wp_query (например \'post_type\' => \'product\', \'posts_per_page\' => 1) и переэкспортируйте тему.', 'pf-filter' ); ?></span>
 											<?php else : ?>
 												<span class="pfs-muted"><?php esc_html_e( 'блок с циклом, но без ID — относится к первому профилю поиска.', 'pf-filter' ); ?></span>
 											<?php endif; ?>
@@ -323,7 +323,7 @@ $pfs_types_in_profile = PF_Search_Config::get_profile_types( $profile );
 									<?php endforeach; ?>
 								</ul>
 							<?php else : ?>
-								<p class="description"><?php esc_html_e( 'В файлах темы нет ни одного [pfs-results].', 'pf-filter' ); ?></p>
+								<p class="description"><?php esc_html_e( 'В файлах темы нет ни одного [pf-search="results"].', 'pf-filter' ); ?></p>
 							<?php endif; ?>
 						<?php endif; ?>
 					</td>

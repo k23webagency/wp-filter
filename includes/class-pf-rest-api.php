@@ -209,7 +209,7 @@ class PF_REST_API {
 		$paged    = $paged > 0 ? $paged : 1;
 		$per_page = $per_page > 0 ? $per_page : 12;
 
-		// Поисковый запрос модуля PF Search ([pfs] внутри блока фильтра или
+		// Поисковый запрос модуля PF Search ([pf-search] внутри блока фильтра или
 		// страница результатов): сужает и список, и facet-счётчики.
 		$search             = trim( sanitize_text_field( (string) ( $body['search'] ?? '' ) ) );
 		$search_unavailable = false;
@@ -269,7 +269,7 @@ class PF_REST_API {
 	/**
 	 * ID результатов поиска для типа записей текущего профиля фильтра, в
 	 * порядке релевантности (не больше PF_Search_Engine::MAX_CANDIDATES).
-	 * Профиль поиска — запрошенный ([pfs] внутри блока), если он ищет по
+	 * Профиль поиска — запрошенный ([pf-search] внутри блока), если он ищет по
 	 * этому типу, иначе первый профиль с этим типом.
 	 *
 	 * @param string $search            Запрос.

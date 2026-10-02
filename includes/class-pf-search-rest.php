@@ -179,7 +179,7 @@ class PF_Search_REST {
 	}
 
 	/**
-	 * Карточки выпадающего окна: цикл темы из [pfs-results] (см.
+	 * Карточки выпадающего окна: цикл темы из [pf-search="results"] (см.
 	 * PF_Search_Template), по одному include на запись — тем же кодом, что
 	 * карточки [pf-list] фильтра (PF_Renderer).
 	 *
