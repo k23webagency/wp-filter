@@ -1940,6 +1940,38 @@
 	// Пагинация
 	// -----------------------------------------------------------------
 
+	/** Сколько номеров показывать по обе стороны от текущей страницы. */
+	var PAGE_NEIGHBORS = 2;
+
+	/**
+	 * Номера страниц для показа: первая, последняя и окно вокруг текущей,
+	 * null — многоточие. Многоточие вместо одной-единственной пропущенной
+	 * страницы не ставится — показывается сама страница (1 2 3, а не 1 … 3).
+	 * Пример: (7, 224, 2) → [1, null, 5, 6, 7, 8, 9, null, 224].
+	 */
+	function pageWindow( current, total, neighbors ) {
+		var pages = [ 1, total ];
+		for ( var p = current - neighbors; p <= current + neighbors; p++ ) {
+			if ( p > 1 && p < total ) {
+				pages.push( p );
+			}
+		}
+		pages = pages.filter( function ( v, i, a ) { return a.indexOf( v ) === i; } )
+			.sort( function ( a, b ) { return a - b; } );
+
+		var out = [];
+		pages.forEach( function ( page, i ) {
+			var prev = pages[ i - 1 ];
+			if ( i > 0 && page - prev === 2 ) {
+				out.push( prev + 1 );
+			} else if ( i > 0 && page - prev > 2 ) {
+				out.push( null );
+			}
+			out.push( page );
+		} );
+		return out;
+	}
+
 	PFForm.prototype.initPagination = function () {
 		// Ссылки на элементы пагинации кэшируются один раз здесь, а не через
 		// document.querySelector('[pf-pagination="page"]') при каждом рендере в
@@ -1950,7 +1982,10 @@
 		// к его ошибочному удалению и потере номеров страниц после первого клика.
 		this._pagesContainer  = qs( this.scopeRoot, '[pf-pagination="pages"]' );
 		this._pageItemTpl     = qs( this.scopeRoot, '[pf-pagination="page"]' );
-		this._prevBtn         = qs( this.scopeRoot, '[pf-pagination="prev"]' );
+		// Необязательный шаблон многоточия между номерами страниц. Нет его —
+		// многоточие делается из клона pf-pagination="page" с классом is-ellipsis.
+		this._ellipsisTpl     = qs( this.scopeRoot, '[pf-pagination="ellipsis"]' );
+		this._prevBtn        = qs( this.scopeRoot, '[pf-pagination="prev"]' );
 		this._nextBtn         = qs( this.scopeRoot, '[pf-pagination="next"]' );
 		this._loadMoreBtn     = qs( this.scopeRoot, '[pf-pagination="more"]' );
 		this._infiniteTrigger = qs( this.scopeRoot, '[pf-pagination="trigger"]' );
@@ -2050,27 +2085,43 @@
 			qsa( pagesContainer, '[data-pf-generated]' ).forEach( function ( el ) {
 				el.remove();
 			} );
-			for ( var i = 1; i <= this.totalPages; i++ ) {
-				var clone = itemTpl.cloneNode( true );
-				clone.setAttribute( 'data-pf-generated', '1' );
-				clone.textContent = i;
-				clone.classList.toggle( 'is-active', i === this.state.paged );
-				clone.classList.remove( 'pf-hidden' );
+			var ellipsisTpl = this._ellipsisTpl;
+			if ( ellipsisTpl ) {
+				ellipsisTpl.classList.add( 'pf-hidden' );
+			}
 
-				( function ( pageNum ) {
+			pageWindow( this.state.paged, this.totalPages, PAGE_NEIGHBORS ).forEach( function ( page ) {
+				var clone;
+				if ( null === page ) {
+					// Многоточие: свой шаблон, если он есть, иначе клон номера
+					// страницы с классом is-ellipsis — некликабельный.
+					clone = ( ellipsisTpl || itemTpl ).cloneNode( true );
+					if ( ! ellipsisTpl ) {
+						clone.textContent = '…';
+						clone.classList.add( 'is-ellipsis' );
+						clone.classList.remove( 'is-active' );
+						clone.removeAttribute( 'href' );
+					}
+					clone.setAttribute( 'aria-hidden', 'true' );
+				} else {
+					clone = itemTpl.cloneNode( true );
+					clone.textContent = page;
+					clone.classList.toggle( 'is-active', page === this.state.paged );
 					clone.addEventListener( 'click', function ( e ) {
 						e.preventDefault();
-						this.state.paged = pageNum;
+						this.state.paged = page;
 						this.runFilter( { forceReplace: true } );
 					}.bind( this ) );
-				}.bind( this ) )( i );
+				}
+				clone.setAttribute( 'data-pf-generated', '1' );
+				clone.classList.remove( 'pf-hidden' );
 
 				// Вставляем на место шаблона (перед itemTpl), а не в конец
 				// контейнера — иначе номера страниц оказываются ПОСЛЕ
 				// pf-pagination="next", если в разметке стрелки лежат внутри того же
 				// контейнера, что и pf-pagination="page" (частый случай).
 				itemTpl.insertAdjacentElement( 'beforebegin', clone );
-			}
+			}, this );
 			itemTpl.classList.add( 'pf-hidden' );
 		}
 
