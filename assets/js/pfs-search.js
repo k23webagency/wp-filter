@@ -213,10 +213,13 @@
 		this.clearBtns = toArray( root.querySelectorAll( '[pf-search="clear"]' ) );
 		this.submitBtns = toArray( root.querySelectorAll( '[pf-search="submit"]' ) );
 		this.empties = toArray( root.querySelectorAll( '[pf-search="empty"]' ) );
-		this.suggests = toArray( root.querySelectorAll( '[pf-search="suggest"]' ) );
+		// query и suggest живого поиска — только внутри окна: там то, что
+		// посетитель печатает сейчас. Всё остальное на странице показывает
+		// запрос, применённый к выдаче (fillPageQuery() и pf-filter.js).
+		this.suggests = this.list ? toArray( this.list.querySelectorAll( '[pf-search="suggest"]' ) ) : [];
 		this.alls = toArray( root.querySelectorAll( '[pf-search="all"]' ) );
 		this.counts = toArray( root.querySelectorAll( '[pf-search="count"]' ) );
-		this.queries = toArray( root.querySelectorAll( '[pf-search="query"]' ) );
+		this.queries = this.list ? toArray( this.list.querySelectorAll( '[pf-search="query"]' ) ) : [];
 		this.groups = this.list ? toArray( this.list.querySelectorAll( '[pf-search-group]' ) ) : [];
 
 		this.loading.forEach( hide );
@@ -941,10 +944,19 @@
 	// -----------------------------------------------------------------
 
 	/**
-	 * [pf-search="query"] вне любого [pf-search=""] — запрос из адреса страницы (заголовок
-	 * страницы результатов).
+	 * Запрос, применённый к выдаче, — во все [pf-search="query"] вне окна живого
+	 * поиска (где бы они ни стояли: в форме, рядом, в блоке фильтра), из адреса
+	 * страницы. Блок фильтра потом обновляет свои после каждого поиска.
+	 * [pf-search="suggest"] вне окна и вне блоков фильтра сразу прячем: данных
+	 * для них нет (внутри блоков ими управляет pf-filter.js).
 	 */
 	function fillPageQuery() {
+		toArray( document.querySelectorAll( '[pf-search="suggest"]' ) ).forEach( function ( el ) {
+			if ( ! el.closest( '[pf-search="dropdown"]' ) && ! el.closest( '[pf-profile]' ) ) {
+				hide( el );
+			}
+		} );
+
 		var q;
 		try {
 			q = new URLSearchParams( window.location.search ).get( 'q' );
@@ -955,7 +967,7 @@
 			return;
 		}
 		toArray( document.querySelectorAll( '[pf-search="query"]' ) ).forEach( function ( el ) {
-			if ( ! el.closest( '[pf-search=""]' ) ) {
+			if ( ! el.closest( '[pf-search="dropdown"]' ) ) {
 				el.textContent = q;
 			}
 		} );

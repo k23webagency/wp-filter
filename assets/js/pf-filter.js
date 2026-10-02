@@ -231,6 +231,7 @@
 		this.emptyEls = [];
 		this.notEmptyEls = [];
 		this.suggestEls = [];
+		this.queryEls = [];
 		this.sortEl = null;
 		this.paginationMode = null;
 		this.filterMode = 'auto'; // 'auto' | 'manual' — настройка pf_filter_settings.filter_mode, см. init().
@@ -388,11 +389,14 @@
 		// заголовок «Результаты по запросу…» и строка над списком).
 		this.emptyEls = qsa( this.scopeRoot, '[pf-list="empty"]' );
 		this.notEmptyEls = qsa( this.scopeRoot, '[pf-list="not-empty"]' );
-		// Подсказка «Возможно, вы искали…» страницы результатов — вне блоков
-		// поиска (внутри них подсказкой управляет живой поиск, pfs-search.js).
-		this.suggestEls = qsa( this.scopeRoot, '[pf-search="suggest"]' ).filter( function ( el ) {
-			return ! el.closest( '[pf-search=""]' );
-		} );
+		// «Возможно, вы искали…» и текст запроса в сообщениях блока — везде,
+		// кроме окна живого поиска (там — то, что печатается сейчас, им
+		// управляет pfs-search.js). Неважно, в форме поиска они или рядом.
+		var outsideDropdown = function ( el ) {
+			return ! el.closest( '[pf-search="dropdown"]' );
+		};
+		this.suggestEls = qsa( this.scopeRoot, '[pf-search="suggest"]' ).filter( outsideDropdown );
+		this.queryEls = qsa( this.scopeRoot, '[pf-search="query"]' ).filter( outsideDropdown );
 		// Плагин сам гарантирует, что оба скрыты по умолчанию — не полагается на то,
 		// что тема пропишет для них display:none. is-hidden снимается/добавляется
 		// в runFilter()/handleResponse(), а не только после первого запроса.
@@ -402,8 +406,19 @@
 		this.emptyEls.forEach( function ( el ) {
 			el.classList.add( 'is-hidden' );
 		} );
+		var self = this;
 		this.suggestEls.forEach( function ( el ) {
 			el.classList.add( 'is-hidden' );
+			qsa( el, '[pf-search="suggest-query"]' ).forEach( function ( link ) {
+				link.addEventListener( 'click', function ( e ) {
+					e.preventDefault();
+					var text = link.textContent.trim();
+					if ( text ) {
+						self.setSearch( text, self.state.searchProfile );
+						self.runFilter( { resetPage: true, forceReplace: true } );
+					}
+				} );
+			} );
 		} );
 		// pf-list="not-empty" до первого ответа — по уже отрисованному списку,
 		// чтобы заголовок не мигал.
@@ -1685,6 +1700,7 @@
 		// WordPress — трогать его не нужно, запрос был только за цифрами.
 		this.setResultState( data.count > 0, true );
 		this.updateSuggest( data.suggest || '' );
+		this.updateQueryText( data.search || '' );
 
 		if ( ! silent ) {
 			if ( 0 === data.count ) {
@@ -1967,6 +1983,16 @@
 				el.classList.toggle( 'is-hidden', found );
 			} );
 		}
+	};
+
+	/** [pf-search="query"] блока — текущий поисковый запрос из ответа. */
+	PFForm.prototype.updateQueryText = function ( query ) {
+		if ( ! query ) {
+			return; // без поиска текст не трогаем — там может быть что угодно
+		}
+		this.queryEls.forEach( function ( el ) {
+			el.textContent = query;
+		} );
 	};
 
 	/** «Возможно, вы искали…»: виден, только если поиск исправил запрос. */
