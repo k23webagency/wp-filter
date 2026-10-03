@@ -619,7 +619,7 @@ KEY hits (hits)
 			$terms = get_the_terms( $post->ID, $taxonomy->name );
 			if ( is_array( $terms ) ) {
 				foreach ( $terms as $term ) {
-					$names[] = $term->name;
+					$names[] = wp_specialchars_decode( $term->name, ENT_QUOTES );
 				}
 			}
 		}
@@ -681,7 +681,7 @@ KEY hits (hits)
 			foreach ( (array) $value as $term_id ) {
 				$term = is_numeric( $term_id ) ? get_term( (int) $term_id ) : null;
 				if ( $term && ! is_wp_error( $term ) ) {
-					$labels[] = $term->name;
+					$labels[] = wp_specialchars_decode( $term->name, ENT_QUOTES );
 				}
 			}
 			return implode( ' ', $labels );

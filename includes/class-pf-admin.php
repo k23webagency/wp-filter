@@ -336,6 +336,7 @@ class PF_Admin {
 		$clean['pagination_strategy'] = in_array( $input['pagination_strategy'] ?? '', PF_Config::PAGINATION_STRATEGIES, true )
 			? $input['pagination_strategy']
 			: 'pages';
+		$clean['scroll_to_top']      = ! empty( $input['scroll_to_top'] );
 		$clean['filter_mode']        = in_array( $input['filter_mode'] ?? '', PF_Config::FILTER_MODES, true )
 			? $input['filter_mode']
 			: 'auto';

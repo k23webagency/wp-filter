@@ -198,6 +198,13 @@ defined( 'ABSPATH' ) || exit;
 						<?php endif; ?>
 					</td>
 				</tr>
+				<tr>
+					<th><?php esc_html_e( 'Прокрутка наверх при смене страницы', 'pf-filter' ); ?></th>
+					<td>
+						<label><input type="checkbox" name="pf_filter_settings[scroll_to_top]" value="1" <?php checked( ! empty( $settings['scroll_to_top'] ) ); ?> /> <?php esc_html_e( 'включено', 'pf-filter' ); ?></label>
+						<p class="description"><?php esc_html_e( 'После перехода на другую страницу (номер страницы или стрелки) плавно прокручивать наверх страницы. На «Загрузить ещё» и автозагрузку не влияет.', 'pf-filter' ); ?></p>
+					</td>
+				</tr>
 				<?php
 				$filter_mode           = $settings['filter_mode'] ?? 'auto';
 				$has_apply_button      = $scan_xpath ? PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter="apply"' ) : null;

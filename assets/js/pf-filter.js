@@ -461,6 +461,7 @@
 					self.logic = ( config.settings && config.settings.logic ) || 'and';
 				}
 				self.paginationMode = ( config.settings && config.settings.pagination_strategy ) || null;
+				self.scrollToTop = ! config.settings || false !== config.settings.scroll_to_top;
 				self.filterMode = ( config.settings && config.settings.filter_mode ) || 'auto';
 				self.syncUrl = ! config.settings || false !== config.settings.sync_url;
 				self.postType = ( config.settings && config.settings.post_type ) || '';
@@ -472,8 +473,10 @@
 					self.reinitWebflow();
 					self.dispatchBuiltEvent();
 				}
+				markReady( self.outputEl );
 
 				self.initSort( config.sort_options || [] );
+				markReady( self.sortEl );
 				self.initPagination();
 				self.initActiveFilters();
 				self.initApplyButton();
@@ -514,6 +517,9 @@
 			} )
 			.catch( function ( err ) {
 				console.error( 'PF Filter: не удалось загрузить /config.', err );
+				// Не оставлять блоки скрытыми навсегда (см. markReady()).
+				markReady( self.outputEl );
+				qsa( self.scopeRoot, READY_SELECTOR ).forEach( markReady );
 			} );
 	};
 
@@ -700,6 +706,20 @@
 	 *
 	 * На сайтах без Webflow window.Webflow не существует — вызов no-op.
 	 */
+	/**
+	 * Блоки, у которых до инициализации видна «голая» вёрстка шаблонов
+	 * (группы фильтра, сортировка, пагинация), скрыты стилем плагина
+	 * (visibility: hidden — место под них сохраняется, вёрстка не прыгает),
+	 * пока на них нет класса pf-ready. См. pf-filter.css.
+	 */
+	var READY_SELECTOR = '[pf-filter="output"], [pf-sort=""], [pf-pagination="pages"], [pf-pagination="more"]';
+
+	function markReady( el ) {
+		if ( el ) {
+			el.classList.add( 'pf-ready' );
+		}
+	}
+
 	PFForm.prototype.reinitWebflow = function () {
 		if ( ! window.Webflow || ! window.Webflow.require ) {
 			return;
@@ -1624,6 +1644,7 @@
 		// вызова. this._forceReplace вдобавок никогда не сбрасывался обратно.
 		var forceReplace = !! opts.forceReplace;
 		var silent = !! opts.silent;
+		var pageChange = !! opts.pageChange;
 
 		if ( this.abortController ) {
 			this.abortController.abort();
@@ -1681,6 +1702,13 @@
 					self._loadingMore = false;
 				}
 				self.handleResponse( data, { forceReplace: forceReplace, silent: silent } );
+				// Переход по страницам (номер/стрелки) — наверх, к началу новой
+				// страницы, а не оставаться внизу у пагинации. Настройка профиля
+				// scroll_to_top. После отрисовки ответа, чтобы не прокручивать
+				// над ещё старым списком.
+				if ( pageChange && self.scrollToTop ) {
+					window.scrollTo( { top: 0, behavior: 'smooth' } );
+				}
 			} )
 			.catch( function ( err ) {
 				if ( 'AbortError' === err.name ) {
@@ -2113,7 +2141,7 @@
 					e.preventDefault();
 					if ( self.state.paged > 1 ) {
 						self.state.paged -= 1;
-						self.runFilter( { forceReplace: true } );
+						self.runFilter( { forceReplace: true, pageChange: true } );
 					}
 				} );
 			}
@@ -2122,7 +2150,7 @@
 					e.preventDefault();
 					if ( self.state.paged < self.totalPages ) {
 						self.state.paged += 1;
-						self.runFilter( { forceReplace: true } );
+						self.runFilter( { forceReplace: true, pageChange: true } );
 					}
 				} );
 			}
@@ -2146,6 +2174,8 @@
 	};
 
 	PFForm.prototype.updatePaginationUI = function () {
+		markReady( this._pagesContainer );
+		markReady( this._loadMoreBtn );
 		if ( ! this.paginationMode ) {
 			return;
 		}
@@ -2207,7 +2237,7 @@
 					clone.addEventListener( 'click', function ( e ) {
 						e.preventDefault();
 						this.state.paged = page;
-						this.runFilter( { forceReplace: true } );
+						this.runFilter( { forceReplace: true, pageChange: true } );
 					}.bind( this ) );
 				}
 				clone.setAttribute( 'data-pf-generated', '1' );

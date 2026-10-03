@@ -96,6 +96,7 @@ class PF_Config {
 			'show_counts'         => true,
 			'sync_url'            => true,
 			'pagination_strategy' => 'pages',
+			'scroll_to_top'       => true,
 			'filter_mode'         => 'auto',
 			'posts_per_page'      => 12,
 			'out_of_stock_last'   => true,

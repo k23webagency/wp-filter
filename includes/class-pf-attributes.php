@@ -412,7 +412,10 @@ class PF_Attributes {
 			}
 			$values[] = array(
 				'value' => $term->slug,
-				'label' => $term->name,
+				// Имя термина WordPress хранит с закодированными сущностями
+				// («Dolce &amp; Gabbana»), а клиент выводит подпись через
+				// textContent — без раскодирования «&amp;» видно буквально.
+				'label' => wp_specialchars_decode( $term->name, ENT_QUOTES ),
 				'color' => $this->resolve_term_color( $term, $color_meta_key ),
 				'count' => $count,
 			);
@@ -1212,7 +1215,7 @@ class PF_Attributes {
 		foreach ( $terms as $term ) {
 			$tree[] = array(
 				'value'    => $term->slug,
-				'label'    => $term->name,
+				'label'    => wp_specialchars_decode( $term->name, ENT_QUOTES ), // см. build_taxonomy_group()
 				'count'    => (int) $term->count,
 				'children' => $this->get_category_tree( $taxonomy, $term->term_id, $max_depth, $level + 1 ),
 			);
