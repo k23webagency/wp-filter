@@ -1628,7 +1628,11 @@
 		if ( this.abortController ) {
 			this.abortController.abort();
 		}
-		this.abortController = new AbortController();
+		var controller = this.abortController = new AbortController();
+		// Догрузка следующей страницы (pf-pagination="more") — см. initPagination().
+		// Любой новый запрос обрывает предыдущий, поэтому флаг ставится заново.
+		var loadMore = !! opts.loadMore;
+		this._loadingMore = loadMore;
 
 		if ( this.loadingEl && ! silent ) {
 			this.loadingEl.classList.remove( 'is-hidden' );
@@ -1664,7 +1668,7 @@
 				'X-WP-Nonce': window.pfConfig.nonce,
 			},
 			body: JSON.stringify( body ),
-			signal: this.abortController.signal,
+			signal: controller.signal,
 		} )
 			.then( function ( res ) {
 				if ( ! res.ok ) {
@@ -1673,11 +1677,22 @@
 				return res.json();
 			} )
 			.then( function ( data ) {
+				if ( controller === self.abortController ) {
+					self._loadingMore = false;
+				}
 				self.handleResponse( data, { forceReplace: forceReplace, silent: silent } );
 			} )
 			.catch( function ( err ) {
 				if ( 'AbortError' === err.name ) {
 					return;
+				}
+				if ( controller === self.abortController ) {
+					self._loadingMore = false;
+					// Страница не догрузилась — номер возвращается назад,
+					// следующий клик запросит её снова.
+					if ( loadMore && self.state.paged > 1 ) {
+						self.state.paged -= 1;
+					}
 				}
 				console.error( 'PF Filter: ошибка запроса /products.', err );
 				if ( self.loadingEl ) {
@@ -1807,7 +1822,11 @@
 
 				// Уже выбранное пользователем значение не скрывается и не деактивируется
 				// своим же нулевым счётчиком — иначе снять с него галочку было бы нечем.
-				var isZero = 0 === count && ! row.classList.contains( 'is-active' );
+				// Выбранность — у checkbox/radio это input.checked (класс is-active
+				// на строке ставит не каждая разметка), у tags — is-active.
+				var rowInput  = qs( row, 'input' );
+				var isChecked = row.classList.contains( 'is-active' ) || !! ( rowInput && rowInput.checked );
+				var isZero    = 0 === count && ! isChecked;
 
 				if ( 'hide' === zeroBehavior ) {
 					row.classList.toggle( 'pf-hidden', isZero );
@@ -1823,9 +1842,8 @@
 				// checkbox/radio — нативный input.disabled, у tags (нет input) —
 				// проверка класса в обработчике клика, см. buildListGroup().
 				row.classList.toggle( 'is-disabled', isZero );
-				var input = qs( row, 'input' );
-				if ( input ) {
-					input.disabled = isZero;
+				if ( rowInput ) {
+					rowInput.disabled = isZero;
 				}
 				if ( row.parentNode && touchedParents.indexOf( row.parentNode ) === -1 ) {
 					touchedParents.push( row.parentNode );
@@ -2075,8 +2093,14 @@
 			if ( this._loadMoreBtn ) {
 				this._loadMoreBtn.addEventListener( 'click', function ( e ) {
 					e.preventDefault();
+					// Пока следующая страница грузится — повторный клик игнорируется:
+					// иначе он обрывал запрос, номер страницы уходил вперёд (страница
+					// пропадала из списка), а после последней сервер отвечал 404.
+					if ( self._loadingMore || self.state.paged >= self.totalPages ) {
+						return;
+					}
 					self.state.paged += 1;
-					self.runFilter( { forceReplace: false } );
+					self.runFilter( { forceReplace: false, loadMore: true } );
 				} );
 			}
 		}
@@ -2735,6 +2759,9 @@
 		this._suppressAutoFilter = false;
 
 		if ( hasRelevantParams ) {
+			// Галочки из URL ставятся без change — pf-filter="selected" сразу,
+			// не дожидаясь ответа сервера.
+			this.updateSelectedText();
 			this.runFilter( { forceReplace: true } );
 		}
 		return hasRelevantParams;
