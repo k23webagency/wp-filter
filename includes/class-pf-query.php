@@ -73,9 +73,14 @@ class PF_Query {
 	 * @param string $order    'ASC' | 'DESC'.
 	 * @param int    $paged    Номер страницы (с 1).
 	 * @param int    $per_page Количество товаров на странице.
+	 * @param bool   $ids_only Только ID подходящих записей, без сортировки
+	 *                         и без загрузки объектов/метаданных/термов —
+	 *                         для facet-счётчиков (PF_Renderer::matching_post_ids()).
+	 *                         На каталогах в тысячи записей полная загрузка
+	 *                         всех WP_Post занимала секунды на каждый ответ.
 	 * @return WP_Query
 	 */
-	public function build( array $filters, $logic, $orderby, $order, $paged, $per_page ) {
+	public function build( array $filters, $logic, $orderby, $order, $paged, $per_page, $ids_only = false ) {
 		// -1 — конвенция WordPress "без ограничения" (используется, например,
 		// count_meta_range_bounds() в PF_Renderer, чтобы получить ВСЕ подходящие
 		// товары для подсчёта реального min/max числового поля). absint(-1)
@@ -176,6 +181,16 @@ class PF_Query {
 				);
 			}
 			$args['post__in'] = $restricted ? $restricted : array( 0 );
+		}
+
+		if ( $ids_only ) {
+			$args['fields']                 = 'ids';
+			$args['orderby']                = 'none';
+			$args['no_found_rows']          = true;
+			$args['update_post_meta_cache'] = false;
+			$args['update_post_term_cache'] = false;
+			$args['cache_results']          = false;
+			return new WP_Query( $args );
 		}
 
 		$this->apply_orderby( $args, $orderby, $order );

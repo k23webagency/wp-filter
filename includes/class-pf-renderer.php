@@ -305,10 +305,9 @@ class PF_Renderer {
 			return $this->matching_ids_cache[ $cache_key ];
 		}
 
-		$query = $builder->build( $filters, $logic, 'menu_order', 'ASC', 1, -1 );
-		// $query->posts содержит объекты WP_Post — берём только ID для дальнейшего подсчёта.
-		$ids = wp_list_pluck( $query->posts, 'ID' );
-		wp_reset_postdata();
+		// Только ID (fields=ids): порядок и объекты записей для подсчёта не нужны.
+		$query = $builder->build( $filters, $logic, 'menu_order', 'ASC', 1, -1, true );
+		$ids   = array_map( 'intval', $query->posts );
 
 		$this->matching_ids_cache[ $cache_key ] = $ids;
 		return $ids;
