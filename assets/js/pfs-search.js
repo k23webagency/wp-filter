@@ -628,7 +628,9 @@
 			render: 1,
 		} );
 
-		fetch( url, { credentials: 'same-origin', signal: controller ? controller.signal : undefined } )
+		// no-store — см. fetchConfig() в pf-filter.js: закэшированная браузером
+		// переадресация не должна ломать поиск.
+		fetch( url, { cache: 'no-store', credentials: 'same-origin', signal: controller ? controller.signal : undefined } )
 			.then( function ( r ) {
 				if ( ! r.ok ) {
 					throw new Error( 'HTTP ' + r.status );

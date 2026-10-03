@@ -205,6 +205,7 @@ class PF_Query {
 		// (например, прогрев кэша метаданных) их не заденет.
 		add_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10, 2 );
 		add_filter( 'posts_clauses', array( $this, 'filter_discount_orderby_clauses' ), 10, 2 );
+		add_filter( 'posts_clauses', array( $this, 'filter_lookup_orderby_clauses' ), 10, 2 );
 		// Регистрируется ПОСЛЕДНИМ (см. filter_out_of_stock_last_clauses()) —
 		// должен видеть уже полностью собранный $clauses['orderby'] от двух
 		// фильтров выше и просто добавить свой ключ сортировки первым, не
@@ -213,6 +214,7 @@ class PF_Query {
 		$query = new WP_Query( $args );
 		remove_filter( 'posts_clauses', array( $this, 'filter_taxonomy_orderby_clauses' ), 10 );
 		remove_filter( 'posts_clauses', array( $this, 'filter_discount_orderby_clauses' ), 10 );
+		remove_filter( 'posts_clauses', array( $this, 'filter_lookup_orderby_clauses' ), 10 );
 		remove_filter( 'posts_clauses', array( $this, 'filter_out_of_stock_last_clauses' ), 10 );
 
 		return $query;
@@ -431,6 +433,23 @@ class PF_Query {
 			$orderby = 'menu_order';
 		}
 
+		// Цена, популярность, рейтинг — через индексированную таблицу
+		// WooCommerce wc_product_meta_lookup (как сортирует сам WooCommerce),
+		// а не через postmeta: у вариативных товаров _price — несколько строк
+		// на товар, и сортировка тысяч товаров по CAST(meta_value) занимала
+		// секунды. Нет таблицы — прежний путь через meta_value_num ниже.
+		$lookup_columns = array(
+			'price'      => 'DESC' === $order ? 'max_price' : 'min_price',
+			'popularity' => 'total_sales',
+			'rating'     => 'average_rating',
+		);
+		if ( isset( $lookup_columns[ $orderby ] ) && 'product' === PF_Config::get_post_type() && self::has_lookup_table() ) {
+			$args['orderby']           = 'pf_lookup';
+			$args['order']             = $order;
+			$args['pf_lookup_column']  = $lookup_columns[ $orderby ];
+			return;
+		}
+
 		switch ( $orderby ) {
 			case 'price':
 				$args['orderby']  = 'meta_value_num';
@@ -559,6 +578,55 @@ class PF_Query {
 	 * @param array  $args  Аргументы WP_Query (по ссылке).
 	 * @param string $order 'ASC' | 'DESC'.
 	 */
+	/**
+	 * Есть ли таблица WooCommerce wc_product_meta_lookup (WooCommerce 3.6+).
+	 * Проверяется один раз за запрос.
+	 *
+	 * @return bool
+	 */
+	public static function has_lookup_table() {
+		static $has = null;
+		if ( null === $has ) {
+			global $wpdb;
+			$table = $wpdb->prefix . 'wc_product_meta_lookup';
+			$has   = class_exists( 'WooCommerce' )
+				&& $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		}
+		return $has;
+	}
+
+	/**
+	 * posts_clauses-фильтр для сортировки по колонке wc_product_meta_lookup
+	 * (цена/популярность/рейтинг, см. apply_orderby()). Таблица — одна
+	 * строка на товар, поэтому JOIN не размножает строки; товар без строки
+	 * (NULL) уходит в конец при любом направлении. Вторым ключом — ID, как
+	 * у самого WooCommerce, чтобы порядок между страницами был стабильным.
+	 *
+	 * @param array    $clauses Части SQL-запроса (join/orderby/...).
+	 * @param WP_Query $query   Текущий запрос.
+	 * @return array
+	 */
+	public function filter_lookup_orderby_clauses( $clauses, $query ) {
+		if ( 'pf_lookup' !== $query->get( 'orderby' ) ) {
+			return $clauses;
+		}
+		$column = (string) $query->get( 'pf_lookup_column' );
+		if ( ! in_array( $column, array( 'min_price', 'max_price', 'total_sales', 'average_rating' ), true ) ) {
+			return $clauses;
+		}
+
+		global $wpdb;
+
+		$clauses['join'] .= " LEFT JOIN {$wpdb->prefix}wc_product_meta_lookup pf_lookup ON pf_lookup.product_id = {$wpdb->posts}.ID";
+
+		$direction = 'DESC' === strtoupper( (string) $query->get( 'order' ) ) ? 'DESC' : 'ASC';
+		$expr      = ! empty( $clauses['groupby'] ) ? "MIN( pf_lookup.{$column} )" : "pf_lookup.{$column}";
+
+		$clauses['orderby'] = "{$expr} IS NULL, {$expr} {$direction}, {$wpdb->posts}.ID {$direction}";
+
+		return $clauses;
+	}
+
 	private function apply_discount_orderby( array &$args, $order ) {
 		$args['orderby'] = 'pf_discount';
 		$args['order']   = $order;
@@ -621,7 +689,15 @@ class PF_Query {
 
 		global $wpdb;
 
-		$clauses['join'] .= " LEFT JOIN {$wpdb->postmeta} pf_sort_stock ON pf_sort_stock.post_id = {$wpdb->posts}.ID AND pf_sort_stock.meta_key = '_stock_status'";
+		// Наличие — из wc_product_meta_lookup (индексированная, одна строка
+		// на товар), если таблица есть; иначе из postmeta _stock_status.
+		if ( self::has_lookup_table() ) {
+			$clauses['join'] .= " LEFT JOIN {$wpdb->prefix}wc_product_meta_lookup pf_sort_stock_l ON pf_sort_stock_l.product_id = {$wpdb->posts}.ID";
+			$stock_col        = 'pf_sort_stock_l.stock_status';
+		} else {
+			$clauses['join'] .= " LEFT JOIN {$wpdb->postmeta} pf_sort_stock ON pf_sort_stock.post_id = {$wpdb->posts}.ID AND pf_sort_stock.meta_key = '_stock_status'";
+			$stock_col        = 'pf_sort_stock.meta_value';
+		}
 
 		// Если этот же запрос уже сгруппирован по wp_posts.ID (сортировка по
 		// названию термина таксономии — см. filter_taxonomy_orderby_clauses(),
@@ -633,8 +709,8 @@ class PF_Query {
 		// строку. _stock_status у товара однозначен (не многозначная meta),
 		// поэтому MIN() по группе из одного значения просто возвращает его же.
 		$expr = ! empty( $clauses['groupby'] )
-			? "MIN( pf_sort_stock.meta_value = 'outofstock' )"
-			: "( pf_sort_stock.meta_value = 'outofstock' )";
+			? "MIN( {$stock_col} = 'outofstock' )"
+			: "( {$stock_col} = 'outofstock' )";
 
 		$clauses['orderby'] = "{$expr} ASC"
 			. ( $clauses['orderby'] ? ', ' . $clauses['orderby'] : '' );

@@ -550,7 +550,12 @@
 		var url = window.pfConfig.restUrl + 'config' + ( params.length ? '?' + params.join( '&' ) : '' );
 
 		function attempt( retriesLeft, delay ) {
+			// no-store: ответ настроек не должен браться из кэша браузера. Иначе
+			// переадресация, однажды закэшированная браузером (например, пока
+			// плагин безопасности закрывал REST API), навсегда уводит запрос
+			// на HTML-страницу, и фильтр не строится.
 			return fetch( url, {
+				cache: 'no-store',
 				headers: { 'X-WP-Nonce': window.pfConfig.nonce },
 			} ).then( function ( res ) {
 				if ( ! res.ok ) {
