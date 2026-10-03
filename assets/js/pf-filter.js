@@ -467,6 +467,8 @@
 
 				if ( self.outputEl && self.templatesEl ) {
 					self.buildGroups( config.groups || [] );
+					// pf-filter="selected" — скрыть сразу, не дожидаясь первого ответа
+					self.updateSelectedText();
 					self.reinitWebflow();
 					self.dispatchBuiltEvent();
 				}
@@ -1513,6 +1515,7 @@
 	 *   Настоящее применение — только по клику [pf-filter="apply"], см. initApplyButton().
 	 */
 	PFForm.prototype.onFilterValueChanged = function ( opts ) {
+		this.updateSelectedText();
 		if ( 'manual' === this.filterMode ) {
 			this.previewFilterCounts();
 			return;
@@ -2363,9 +2366,88 @@
 		this.runFilter( { resetPage: true, forceReplace: true } );
 	};
 
+	/** Текст выбранного диапазона: «1000–5000», «от 1000», «до 5000». */
+	function rangeFilterText( range ) {
+		if ( null !== range.min && null !== range.max ) {
+			return range.min + '–' + range.max;
+		}
+		return null !== range.min ? 'от ' + range.min : 'до ' + range.max;
+	}
+
+	/**
+	 * Уместить список в ширину элемента: «Prada, Gucci, Dior» → если не
+	 * помещается — «Prada, Gucci и ещё 1», минимум одно значение. Работает,
+	 * только если ширина элемента ограничена вёрсткой (max-width / место во
+	 * flex-ряду, white-space: nowrap, overflow: hidden) — иначе текст всегда
+	 * «помещается». Скрытый элемент (ширина 0) не трогаем — посчитается,
+	 * когда появится (ResizeObserver).
+	 */
+	function fitSelectedText( el ) {
+		var labels = el._pfLabels || [];
+		el.textContent = labels.join( ', ' );
+		if ( labels.length < 2 || ! el.clientWidth || el.scrollWidth <= el.clientWidth ) {
+			return;
+		}
+		for ( var k = labels.length - 1; k >= 1; k-- ) {
+			el.textContent = labels.slice( 0, k ).join( ', ' ) + ' и ещё ' + ( labels.length - k );
+			if ( el.scrollWidth <= el.clientWidth ) {
+				return;
+			}
+		}
+	}
+
+	/**
+	 * [pf-filter="selected"] — выбранные значения группы внутри её шаблона
+	 * (например, в тогле дропдауна: «Prada, Gucci»), как pf-sort="label" у
+	 * сортировки. Пока в группе ничего не выбрано — элемент скрыт.
+	 *
+	 * @param {Object} [filters] collectFilters(); по умолчанию — текущий выбор.
+	 */
+	PFForm.prototype.updateSelectedText = function ( filters ) {
+		var self = this;
+		filters = filters || this.collectFilters();
+		Object.keys( this.groups ).forEach( function ( field ) {
+			var group = self.groups[ field ];
+			var els = qsa( group.el, '[pf-filter="selected"]' );
+			if ( ! els.length ) {
+				return;
+			}
+			var labels = [];
+			if ( self.isFieldActive( field, filters ) ) {
+				if ( 'range' === group.config.template ) {
+					labels = [ rangeFilterText( filters[ field ] ) ];
+				} else {
+					labels = ( filters[ field ] || [] ).map( function ( value ) {
+						return String( self.findValueLabel( field, value ) ).trim();
+					} );
+				}
+			}
+			els.forEach( function ( el ) {
+				el._pfLabels = labels;
+				el.classList.toggle( 'pf-hidden', ! labels.length );
+				fitSelectedText( el );
+				// Ширина может поменяться (окно, поворот экрана, появление
+				// элемента) — тогда «и ещё N» пересчитывается.
+				if ( ! el._pfFitObserved && 'ResizeObserver' in window ) {
+					el._pfFitObserved = true;
+					if ( ! self._selectedResizeObserver ) {
+						self._selectedResizeObserver = new ResizeObserver( function ( entries ) {
+							entries.forEach( function ( entry ) {
+								fitSelectedText( entry.target );
+							} );
+						} );
+					}
+					self._selectedResizeObserver.observe( el );
+				}
+			} );
+		} );
+	};
+
 	PFForm.prototype.updateActiveFilters = function () {
 		var self = this;
 		var filters = this.collectFilters();
+
+		this.updateSelectedText( filters );
 
 		qsa( this.scopeRoot, '[pf-chips="reset"]' ).forEach( function ( btn ) {
 			btn.classList.toggle( 'pf-hidden', ! self.hasActiveFilters( filters ) );
@@ -2410,15 +2492,7 @@
 					// пользователя (min/max по отдельности, либо null если ту
 					// сторону не трогали), см. там же — почему не текущее
 					// отображаемое значение.
-					var rangeFilter = filters[ field ];
-					var rangeText;
-					if ( null !== rangeFilter.min && null !== rangeFilter.max ) {
-						rangeText = rangeFilter.min + '–' + rangeFilter.max;
-					} else if ( null !== rangeFilter.min ) {
-						rangeText = 'от ' + rangeFilter.min;
-					} else {
-						rangeText = 'до ' + rangeFilter.max;
-					}
+					var rangeText = rangeFilterText( filters[ field ] );
 					self.appendChip( container, chipTpl, groupLabel + ': ' + rangeText, function () {
 						self.resetGroupFilter( field );
 					} );

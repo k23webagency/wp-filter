@@ -4,7 +4,7 @@ Tags: woocommerce, filter, ajax, catalog, facet, custom post type, multi-profile
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 3.3.2
+Stable tag: 3.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,10 @@ PF Filter работает через контракт HTML-атрибутов `
 4. Разметьте страницу каталога атрибутами `pf-filter` (форма), `pf-target` (если форм/списков на странице несколько), `pf-list`, `pf-filter="output"` с шаблонами групп внутри, `pf-profile` (если профилей на сайте несколько или блоков фильтрации на странице несколько) и т.д.
 
 == Changelog ==
+
+= 3.4.0 =
+* Новый pf-filter="selected" в шаблоне группы: выбранные значения группы через запятую («Prada, Gucci»; у диапазона — «1000–5000»), например в тогле дропдауна вместо чипов. Пока ничего не выбрано — скрыт. Обновляется сразу при выборе.
+* Если список не помещается в ширину элемента — «Prada, Gucci и ещё 3» (нужны ограниченная ширина, white-space: nowrap и overflow: hidden).
 
 = 3.3.2 =
 * Быстродействие: сортировка по цене, популярности и рейтингу — через индексированную таблицу WooCommerce wc_product_meta_lookup, как у самого WooCommerce, а не через postmeta. Правило «нет в наличии — в конец» берёт статус из той же таблицы. Без таблицы — прежний способ.
