@@ -140,6 +140,13 @@ final class PF_Plugin {
 					: get_object_taxonomies( $post_type );
 
 				$is_target_archive = ! empty( $taxonomies ) && $query->is_tax( $taxonomies );
+
+				// Встроенные рубрики и метки: для них is_tax() всегда false,
+				// у WordPress отдельные is_category()/is_tag().
+				if ( ! $is_target_archive && ! empty( $taxonomies ) ) {
+					$is_target_archive = ( in_array( 'category', $taxonomies, true ) && $query->is_category() )
+						|| ( in_array( 'post_tag', $taxonomies, true ) && $query->is_tag() );
+				}
 			}
 
 			if ( ! $is_target_archive && 'post' === $post_type ) {
@@ -179,6 +186,21 @@ final class PF_Plugin {
 			true
 		);
 
+		// Архив термина (страница категории/метки/атрибута): JS передаёт термин
+		// в каждом запросе /products, чтобы список, счётчики и пагинация не
+		// выходили за его пределы (см. PF_Query::set_archive_restriction()).
+		$archive_term = null;
+		if ( $this->is_archive_page ) {
+			$queried = get_queried_object();
+			if ( $queried instanceof WP_Term ) {
+				$archive_term = array(
+					'taxonomy' => $queried->taxonomy,
+					'term'     => (int) $queried->term_id,
+					'profile'  => PF_Config::get_active_profile_id(),
+				);
+			}
+		}
+
 		wp_localize_script(
 			'pf-filter',
 			'pfConfig',
@@ -187,6 +209,7 @@ final class PF_Plugin {
 				'nonce'         => wp_create_nonce( 'wp_rest' ),
 				'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
 				'isArchivePage' => $this->is_archive_page,
+				'archive'       => $archive_term,
 			)
 		);
 

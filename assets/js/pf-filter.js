@@ -1452,6 +1452,20 @@
 	// Сбор состояния фильтров
 	// -----------------------------------------------------------------
 
+	/**
+	 * Термин архивной страницы (категория, метка) для запросов /products —
+	 * см. pfConfig.archive, PF_Plugin::enqueue_scripts(). Только для блока
+	 * того профиля, чьим архивом является страница: встроенный блок другого
+	 * профиля на этой же странице термином не ограничивается.
+	 */
+	PFForm.prototype.archiveTerm = function () {
+		var archive = window.pfConfig ? window.pfConfig.archive : null;
+		if ( ! archive || ( this.profileId && archive.profile && this.profileId !== archive.profile ) ) {
+			return null;
+		}
+		return { taxonomy: archive.taxonomy, term: archive.term };
+	};
+
 	PFForm.prototype.collectFilters = function () {
 		var filters = {};
 
@@ -1597,6 +1611,7 @@
 			paged: 1,
 			posts_per_page: this.perPage,
 			page_url: window.location.href,
+			archive: this.archiveTerm(),
 		};
 
 		var self = this;
@@ -1677,6 +1692,7 @@
 			// Тема часто строит ссылки карточки (например «В корзину») от текущего URL —
 			// сервер подставляет этот URL на время рендера вместо адреса REST-эндпоинта.
 			page_url: window.location.href,
+			archive: this.archiveTerm(),
 		};
 
 		this.logNextSearch = false;

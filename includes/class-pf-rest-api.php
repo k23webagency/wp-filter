@@ -235,6 +235,20 @@ class PF_REST_API {
 			$this->query_builder->set_search_restriction( $search_ids );
 		}
 
+		// Блок фильтра на архивной странице термина (категория, метка): список,
+		// счётчики и пагинация — только в пределах этого термина. Термин
+		// передаёт JS (pfConfig.archive); принимается, только если таксономия
+		// относится к типу записи профиля.
+		$this->query_builder->set_archive_restriction( null );
+		$archive = ( isset( $body['archive'] ) && is_array( $body['archive'] ) ) ? $body['archive'] : array();
+		if ( ! empty( $archive['taxonomy'] ) && ! empty( $archive['term'] ) ) {
+			$archive_taxonomy = sanitize_key( (string) $archive['taxonomy'] );
+			$archive_term_id  = absint( $archive['term'] );
+			if ( taxonomy_exists( $archive_taxonomy ) && is_object_in_taxonomy( PF_Config::get_post_type(), $archive_taxonomy ) && term_exists( $archive_term_id, $archive_taxonomy ) ) {
+				$this->query_builder->set_archive_restriction( $archive_taxonomy, $archive_term_id );
+			}
+		}
+
 		$query = $this->query_builder->build( $filters, $logic, $orderby, $order, $paged, $per_page );
 
 		$page_url = isset( $body['page_url'] ) ? esc_url_raw( (string) $body['page_url'] ) : '';

@@ -31,6 +31,17 @@ class PF_Query {
 	private $search_ids = null;
 
 	/**
+	 * Термин архивной страницы, на которой стоит блок фильтра (страница
+	 * категории/метки/атрибута), — array( 'taxonomy' => ..., 'term_id' => ... )
+	 * или null. Как и поиск, действует на все запросы построителя за
+	 * REST-вызов: и список, и facet-счётчики остаются в пределах термина при
+	 * любой логике между группами.
+	 *
+	 * @var array|null
+	 */
+	private $archive_term = null;
+
+	/**
 	 * Конструктор.
 	 *
 	 * @param PF_Attributes|null $attributes Опционально — для переиспользования уже созданного экземпляра.
@@ -55,7 +66,24 @@ class PF_Query {
 	 * @return string
 	 */
 	public function get_search_restriction_key() {
-		return null === $this->search_ids ? '' : md5( implode( ',', $this->search_ids ) );
+		$archive = null === $this->archive_term ? '' : $this->archive_term['taxonomy'] . ':' . $this->archive_term['term_id'];
+		return ( null === $this->search_ids ? '' : md5( implode( ',', $this->search_ids ) ) ) . $archive;
+	}
+
+	/**
+	 * Задать (или снять — null) ограничение выборки термином архивной
+	 * страницы.
+	 *
+	 * @param string|null $taxonomy Таксономия термина.
+	 * @param int         $term_id  ID термина.
+	 */
+	public function set_archive_restriction( $taxonomy, $term_id = 0 ) {
+		$this->archive_term = ( $taxonomy && $term_id )
+			? array(
+				'taxonomy' => (string) $taxonomy,
+				'term_id'  => (int) $term_id,
+			)
+			: null;
 	}
 
 	/**
@@ -163,6 +191,24 @@ class PF_Query {
 				$post_in = ( null === $post_in ) ? $ids : array_intersect( $post_in, $ids );
 			}
 			$args['post__in'] = empty( $post_in ) ? array( 0 ) : array_values( $post_in );
+		}
+
+		// Архивная страница термина: выборка не выходит за его пределы, что бы
+		// ни было выбрано в фильтре (вложенный tax_query — AND поверх условий
+		// групп с их собственной логикой).
+		if ( null !== $this->archive_term ) {
+			$archive_clause = array(
+				'taxonomy' => $this->archive_term['taxonomy'],
+				'field'    => 'term_id',
+				'terms'    => array( $this->archive_term['term_id'] ),
+			);
+			$args['tax_query'] = isset( $args['tax_query'] ) // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- архив термина.
+				? array(
+					'relation' => 'AND',
+					$archive_clause,
+					$args['tax_query'],
+				)
+				: array( $archive_clause );
 		}
 
 		// Поиск всегда сужает выборку (AND с фильтрами при любой логике между
