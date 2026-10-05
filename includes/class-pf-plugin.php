@@ -165,6 +165,48 @@ final class PF_Plugin {
 	}
 
 	/**
+	 * Термин, архивом которого является сама страница (/product-tag/novinki/),
+	 * либо null — для каталога, блога и т.п.
+	 *
+	 * Берётся из адреса страницы, а не из get_queried_object(): выбранные
+	 * значения фильтра плагин пишет в адрес параметрами с именами таксономий
+	 * (?product_brand=alaia), и WordPress сам добавляет их в главный запрос.
+	 * Из-за этого на /shop/?product_brand=alaia «объектом запроса» становился
+	 * бренд, а на /product-tag/novinki/?product_brand=… — бренд вместо метки:
+	 * значение фильтра принималось за архив и уже не снималось (версия 3.4.3).
+	 * Термин архива — только тот, что пришёл из правила ЧПУ ($wp->matched_query).
+	 *
+	 * @return WP_Term|null
+	 */
+	private function get_archive_term() {
+		global $wp;
+
+		// Без ЧПУ адрес архива и параметр фильтра неразличимы — берём объект запроса.
+		if ( empty( $wp->matched_rule ) ) {
+			$queried = get_queried_object();
+			return $queried instanceof WP_Term ? $queried : null;
+		}
+
+		$matched = array();
+		wp_parse_str( (string) $wp->matched_query, $matched );
+
+		foreach ( get_object_taxonomies( PF_Config::get_post_type(), 'objects' ) as $taxonomy ) {
+			$query_var = $taxonomy->query_var;
+			if ( ! $query_var || empty( $matched[ $query_var ] ) || ! is_string( $matched[ $query_var ] ) ) {
+				continue;
+			}
+			// У иерархической таксономии в адресе путь «родитель/термин».
+			$slug = basename( untrailingslashit( rawurldecode( $matched[ $query_var ] ) ) );
+			$term = get_term_by( 'slug', $slug, $taxonomy->name );
+			if ( $term instanceof WP_Term ) {
+				return $term;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Подключение JS/CSS на фронтенде и передача конфигурации в window.pfConfig.
 	 *
 	 * Плагин работает через HTML-атрибуты в разметке темы, поэтому не пытается
@@ -191,7 +233,7 @@ final class PF_Plugin {
 		// выходили за его пределы (см. PF_Query::set_archive_restriction()).
 		$archive_term = null;
 		if ( $this->is_archive_page ) {
-			$queried = get_queried_object();
+			$queried = $this->get_archive_term();
 			if ( $queried instanceof WP_Term ) {
 				$archive_term = array(
 					'taxonomy' => $queried->taxonomy,
