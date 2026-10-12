@@ -565,7 +565,7 @@ class PF_Admin {
 		// пагинации. Раньше для этого нужно было вручную вписывать URL в отдельное
 		// поле настроек; теперь берём тот же URL, что уже используется как дефолт
 		// для ручной диагностики разметки.
-		$diagnostics_default_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
+		$diagnostics_default_url = $this->get_sample_markup_url( $settings );
 		$available_templates     = $this->get_available_templates( $diagnostics_default_url );
 		// Шаблон группы «Поиск по тексту» предлагается при включённом модуле
 		// поиска, даже если на образце разметки (странице магазина) его нет.
@@ -579,6 +579,14 @@ class PF_Admin {
 		$scan_dom              = $this->diagnostics->fetch_dom( $diagnostics_default_url );
 		$scan_xpath            = $scan_dom ? new DOMXPath( $scan_dom ) : null;
 		$available_pagination  = $scan_xpath ? PF_Diagnostics::detect_pagination_availability( $scan_xpath ) : null;
+		// Ни одной стратегии на образце не нашлось — значит, образец не та
+		// страница (блок фильтра может стоять на любой странице сайта), а не
+		// "в вёрстке нет пагинации". Блокировать все варианты нельзя: у
+		// заблокированных radio значение не отправляется, и стратегию было бы
+		// невозможно выбрать вообще.
+		if ( is_array( $available_pagination ) && ! in_array( true, $available_pagination, true ) ) {
+			$available_pagination = null;
+		}
 		$template_variants_map = $this->get_available_template_variants_map( $scan_xpath, $available_templates );
 
 		require PF_FILTER_PATH . 'includes/views/admin-page.php';
@@ -791,6 +799,26 @@ class PF_Admin {
 			</td>
 		</tr>
 		<?php
+	}
+
+	/**
+	 * URL страницы-образца разметки для активного профиля: страница магазина
+	 * для товаров WooCommerce, архив типа записи для остальных типов, главная —
+	 * если у типа записи архива нет.
+	 *
+	 * @param array $settings Настройки активного профиля.
+	 * @return string
+	 */
+	private function get_sample_markup_url( array $settings ) {
+		$post_type = $settings['post_type'] ?? '';
+
+		if ( 'product' === $post_type && function_exists( 'wc_get_page_permalink' ) ) {
+			return wc_get_page_permalink( 'shop' );
+		}
+
+		$archive_url = $post_type ? get_post_type_archive_link( $post_type ) : false;
+
+		return $archive_url ? $archive_url : home_url( '/' );
 	}
 
 	/**
