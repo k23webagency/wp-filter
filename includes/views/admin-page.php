@@ -128,11 +128,11 @@ defined( 'ABSPATH' ) || exit;
 					</td>
 				</tr>
 				<tr>
-					<th><?php esc_html_e( 'Показывать счётчик товаров', 'pf-filter' ); ?></th>
+					<th><?php esc_html_e( 'Показывать счётчик записей', 'pf-filter' ); ?></th>
 					<td>
 						<label><input type="checkbox" name="pf_filter_settings[show_counts]" value="1" <?php checked( ! empty( $settings['show_counts'] ) ); ?> /> <?php esc_html_e( 'включено', 'pf-filter' ); ?></label>
 						<?php if ( ! empty( $settings['show_counts'] ) && $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-filter="count"' ) ) : ?>
-							<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден ни один [pf-filter="count"] — счётчики показывать негде.', 'pf-filter' ); ?></p>
+							<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице каталога не найден ни один [pf-filter="count"] — счётчики показывать негде.', 'pf-filter' ); ?></p>
 						<?php endif; ?>
 					</td>
 				</tr>
@@ -176,7 +176,7 @@ defined( 'ABSPATH' ) || exit;
 							<p class="description">
 								<?php
 								printf(
-									/* translators: %s: URL страницы магазина */
+									/* translators: %s: URL страницы каталога */
 									esc_html__( 'Не удалось проверить разметку пагинации на странице %s — показаны все стратегии без ограничений.', 'pf-filter' ),
 									esc_html( $diagnostics_default_url )
 								);
@@ -187,7 +187,7 @@ defined( 'ABSPATH' ) || exit;
 								<?php
 								printf(
 									/* translators: 1: сохранённая стратегия, 2: стратегия по факту разметки */
-									esc_html__( 'Сохранённая стратегия «%1$s» недоступна на странице магазина — по умолчанию выбрана доступная «%2$s». Сохраните настройки, чтобы применить.', 'pf-filter' ),
+									esc_html__( 'Сохранённая стратегия «%1$s» недоступна на странице каталога — по умолчанию выбрана доступная «%2$s». Сохраните настройки, чтобы применить.', 'pf-filter' ),
 									esc_html( $pagination_labels[ $configured_strategy ] ?? $configured_strategy ),
 									esc_html( $pagination_labels[ $effective_strategy ] )
 								);
@@ -227,7 +227,7 @@ defined( 'ABSPATH' ) || exit;
 					</td>
 				</tr>
 				<tr>
-					<th><label for="pf-posts-per-page"><?php esc_html_e( 'Товаров на странице', 'pf-filter' ); ?></label></th>
+					<th><label for="pf-posts-per-page"><?php esc_html_e( 'Записей на странице', 'pf-filter' ); ?></label></th>
 					<td>
 						<input type="number" min="1" id="pf-posts-per-page" name="pf_filter_settings[posts_per_page]" value="<?php echo esc_attr( $settings['posts_per_page'] ); ?>" style="width:80px" />
 					</td>
@@ -244,7 +244,7 @@ defined( 'ABSPATH' ) || exit;
 
 		<div class="pf-tab-panel" id="pf-tab-groups" data-tab="groups" style="display:none">
 			<p><?php esc_html_e( 'Порядок строк = порядок групп в форме фильтра. Перетаскивайте за ☰.', 'pf-filter' ); ?></p>
-			<p class="description"><?php esc_html_e( 'Список групп общий для всего каталога. В конкретной категории показываются только те из включённых групп, для которых у товаров этой категории есть хотя бы одно значение — остальные скрываются автоматически.', 'pf-filter' ); ?></p>
+			<p class="description"><?php esc_html_e( 'Список групп общий для всего каталога. В конкретной категории показываются только те из включённых групп, для которых у записей этой категории есть хотя бы одно значение — остальные скрываются автоматически.', 'pf-filter' ); ?></p>
 			<div class="pf-groups-table-wrap">
 				<table class="widefat pf-groups-table" data-name-prefix="pf_filter_settings[groups]">
 					<thead>
@@ -322,7 +322,7 @@ defined( 'ABSPATH' ) || exit;
 
 		<div class="pf-tab-panel" id="pf-tab-sort" data-tab="sort" style="display:none">
 			<?php if ( $scan_xpath && ! PF_Diagnostics::has_attribute( $scan_xpath, 'pf-sort=""' ) ) : ?>
-				<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице магазина не найден [pf-sort] — блок сортировки в разметке отсутствует, эти настройки ни на что не повлияют.', 'pf-filter' ); ?></p>
+				<p class="description" style="color:#b32d2e">⚠ <?php esc_html_e( 'На странице каталога не найден [pf-sort] — блок сортировки в разметке отсутствует, эти настройки ни на что не повлияют.', 'pf-filter' ); ?></p>
 			<?php endif; ?>
 			<table class="widefat pf-sort-table">
 				<thead>

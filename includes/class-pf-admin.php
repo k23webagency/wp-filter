@@ -560,7 +560,7 @@ class PF_Admin {
 		$post_types       = $this->get_public_post_types();
 		$available_fields = array_merge( $this->attributes->get_available_taxonomy_fields(), $this->get_extra_fields() );
 		$sortable_options = $this->attributes->get_sortable_field_options();
-		// Страница магазина используется как образец разметки для двух вспомогательных
+		// Страница каталога профиля используется как образец разметки для двух вспомогательных
 		// проверок ниже — списка доступных pf-template и доступности стратегий
 		// пагинации. Раньше для этого нужно было вручную вписывать URL в отдельное
 		// поле настроек; теперь берём тот же URL, что уже используется как дефолт
@@ -568,7 +568,7 @@ class PF_Admin {
 		$diagnostics_default_url = $this->get_sample_markup_url( $settings );
 		$available_templates     = $this->get_available_templates( $diagnostics_default_url );
 		// Шаблон группы «Поиск по тексту» предлагается при включённом модуле
-		// поиска, даже если на образце разметки (странице магазина) его нет.
+		// поиска, даже если на образце разметки (странице каталога) его нет.
 		if ( class_exists( 'PF_Search_Config' ) && PF_Search_Config::is_enabled() && ! in_array( 'search', $available_templates, true ) ) {
 			$available_templates[] = 'search';
 		}

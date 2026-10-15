@@ -138,7 +138,14 @@
 				row.setAttribute( 'data-hierarchical', isHierarchical ? '1' : '0' );
 			}
 
-			var filtered = compatible ? all.filter( function ( o ) { return compatible.indexOf( o.value ) !== -1; } ) : all;
+			// Собственные имена шаблонов из вёрстки (pills и т.п.) — не встроенный
+			// тип, строятся как список значений: совместимы с любым полем, где
+			// допустим checkbox (см. PF_Attributes::resolve_group_template()).
+			var builtin = [ 'checkbox', 'radio', 'tags', 'range', 'category-tree', 'search' ];
+			var allowCustom = !! ( compatible && -1 !== compatible.indexOf( 'checkbox' ) );
+			var filtered = compatible ? all.filter( function ( o ) {
+				return compatible.indexOf( o.value ) !== -1 || ( allowCustom && -1 === builtin.indexOf( o.value ) );
+			} ) : all;
 			if ( ! filtered.length ) {
 				filtered = all; // неизвестное поле — не оставлять пустой список.
 			}

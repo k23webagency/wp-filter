@@ -249,7 +249,21 @@ class PF_Attributes {
 	private function resolve_group_template( $field, array $config, $default ) {
 		$requested  = isset( $config['template'] ) ? $config['template'] : $default;
 		$compatible = $this->get_compatible_templates( $field );
-		return in_array( $requested, $compatible, true ) ? $requested : $default;
+		if ( in_array( $requested, $compatible, true ) ) {
+			return $requested;
+		}
+
+		// Собственное имя шаблона из вёрстки (например pf-template="pills") —
+		// не встроенный тип, фронт строит его как обычный список значений
+		// (checkbox-подобно). Допустимо для любого поля с дискретными
+		// значениями; иначе сохранённый в админке шаблон молча подменялся на
+		// checkbox, которого в разметке нет, и группа не отрисовывалась.
+		$builtin = array( 'checkbox', 'radio', 'tags', 'range', 'category-tree', 'search' );
+		if ( '' !== $requested && ! in_array( $requested, $builtin, true ) && in_array( 'checkbox', $compatible, true ) ) {
+			return $requested;
+		}
+
+		return $default;
 	}
 
 	/**

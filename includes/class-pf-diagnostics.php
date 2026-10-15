@@ -779,7 +779,7 @@ class PF_Diagnostics {
 				'info',
 				sprintf(
 					/* translators: %s: название библиотеки (Swiper, Slick и т.п.) */
-					__( 'В карточках товара похоже используется %s', 'pf-filter' ),
+					__( 'В карточках списка похоже используется %s', 'pf-filter' ),
 					$label
 				),
 				sprintf(
