@@ -767,8 +767,8 @@ class PF_Admin {
 						<?php endif; ?>
 					</div>
 					<div class="pf-detail-field pf-extra-colors">
-						<label class="pf-detail-label"><?php esc_html_e( 'Цвета', 'pf-filter' ); ?></label>
-						<select name="<?php echo esc_attr( $n ); ?>[color_meta_key]" class="pf-color-meta-select" title="<?php esc_attr_e( 'Поле ACF/term meta термина, где хранится его цвет.', 'pf-filter' ); ?>">
+						<label class="pf-detail-label"><?php esc_html_e( 'Цвет / картинка', 'pf-filter' ); ?></label>
+						<select name="<?php echo esc_attr( $n ); ?>[color_meta_key]" class="pf-color-meta-select" title="<?php esc_attr_e( 'Поле ACF/term meta термина: цвет (#hex, rgb…) или картинка (ACF «Изображение» / URL). Картинка ставится в src у img с pf-filter="swatch", у других элементов — фоном.', 'pf-filter' ); ?>">
 							<option value=""><?php esc_html_e( '— нет —', 'pf-filter' ); ?></option>
 							<?php foreach ( $acf_fields as $af ) : ?>
 								<option value="<?php echo esc_attr( $af['name'] ); ?>" <?php selected( $color_meta_key, $af['name'] ); ?>><?php echo esc_html( $af['label'] . ' (' . $af['name'] . ')' ); ?></option>

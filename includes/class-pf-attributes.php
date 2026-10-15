@@ -431,6 +431,7 @@ class PF_Attributes {
 				// textContent — без раскодирования «&amp;» видно буквально.
 				'label' => wp_specialchars_decode( $term->name, ENT_QUOTES ),
 				'color' => $this->resolve_term_color( $term, $color_meta_key ),
+				'image' => $this->resolve_term_image( $term, $color_meta_key ),
 				'count' => $count,
 			);
 		}
@@ -470,8 +471,49 @@ class PF_Attributes {
 		}
 
 		$value = get_term_meta( $term->term_id, $color_meta_key, true );
-		$value = is_string( $value ) ? sanitize_text_field( $value ) : '';
-		return '' !== $value ? $value : null;
+		$value = is_string( $value ) || is_int( $value ) ? sanitize_text_field( (string) $value ) : '';
+		if ( '' === $value || null !== $this->resolve_swatch_image( $value ) ) {
+			return null;
+		}
+		return $value;
+	}
+
+	/**
+	 * Картинка swatch из того же поля термина, что и цвет: ACF-поле «Изображение»
+	 * хранит в term meta ID вложения, другие плагины — URL. Цвет и картинка
+	 * взаимоисключающие: значение, распознанное как картинка, цветом не считается.
+	 *
+	 * @param WP_Term $term           Термин таксономии.
+	 * @param string  $color_meta_key Имя term meta / ACF-поля.
+	 * @return string|null URL изображения.
+	 */
+	private function resolve_term_image( $term, $color_meta_key ) {
+		if ( '' === $color_meta_key ) {
+			return null;
+		}
+
+		$value = get_term_meta( $term->term_id, $color_meta_key, true );
+		$value = is_string( $value ) || is_int( $value ) ? sanitize_text_field( (string) $value ) : '';
+		return '' !== $value ? $this->resolve_swatch_image( $value ) : null;
+	}
+
+	/**
+	 * Распознать значение поля как картинку: ID вложения либо URL/путь.
+	 *
+	 * @param string $value Сырое значение поля.
+	 * @return string|null URL изображения или null, если это не картинка.
+	 */
+	private function resolve_swatch_image( $value ) {
+		if ( ctype_digit( $value ) ) {
+			$url = wp_get_attachment_image_url( (int) $value, 'medium' );
+			return $url ? $url : null;
+		}
+
+		if ( preg_match( '#^(https?:)?//#i', $value ) || 0 === strpos( $value, '/' ) ) {
+			return esc_url_raw( $value );
+		}
+
+		return null;
 	}
 
 	/**

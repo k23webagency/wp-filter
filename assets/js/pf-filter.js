@@ -920,7 +920,22 @@
 
 		var swatchEl = qs( rowClone, '[pf-filter="swatch"]' );
 		if ( swatchEl ) {
-			if ( value.color ) {
+			if ( value.image ) {
+				// Картинка вместо цвета (ACF-поле «Изображение» и т.п.): у <img> —
+				// src (srcset/sizes из вёрстки снимаются, иначе браузер покажет
+				// картинку-заглушку из шаблона), у остальных элементов — фон.
+				if ( 'IMG' === swatchEl.tagName ) {
+					swatchEl.removeAttribute( 'srcset' );
+					swatchEl.removeAttribute( 'sizes' );
+					swatchEl.src = value.image;
+					if ( ! swatchEl.getAttribute( 'alt' ) ) {
+						swatchEl.alt = value.label || '';
+					}
+				} else {
+					swatchEl.style.backgroundImage = 'url("' + value.image.replace( /"/g, '%22' ) + '")';
+				}
+				swatchEl.classList.remove( 'pf-hidden' );
+			} else if ( value.color ) {
 				// background-color ставится напрямую инлайн-стилем — он всегда
 				// сильнее любого правила CSS темы (в т.ч. цвета, зашитого прямо в
 				// дизайн-шаблон группы в [pf-filter="output"]), никакого дополнительного
