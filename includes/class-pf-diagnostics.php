@@ -122,9 +122,11 @@ class PF_Diagnostics {
 			$rest_ok = 200 === $code;
 			$rest_message = $rest_ok ? '200 OK' : ( 'HTTP ' . $code );
 		}
+		$checks[] = $this->check_rest_for_visitors();
+
 		$checks[] = $this->make_check(
 			'rest_api',
-			__( 'REST API отвечает', 'pf-filter' ),
+			__( 'REST API для администратора', 'pf-filter' ),
 			$rest_ok,
 			'error',
 			$rest_message
@@ -150,6 +152,61 @@ class PF_Diagnostics {
 		);
 
 		return $checks;
+	}
+
+	/**
+	 * REST API глазами посетителя: запрос к /config без cookies администратора
+	 * и без nonce. Плагины безопасности/оптимизации (Clearfy «Disable JSON REST
+	 * API» и подобные) закрывают REST только для неавторизованных — запрос с
+	 * cookies администратора при этом проходит, а у посетителей фильтр не
+	 * строится. Открытый REST отвечает собственной JSON-ошибкой плагина
+	 * pf_invalid_nonce (маршрут дошёл до плагина); всё остальное — редирект,
+	 * HTML, чужая ошибка — значит, REST для посетителей закрыт.
+	 *
+	 * @return array
+	 */
+	private function check_rest_for_visitors() {
+		$label    = __( 'REST API для посетителей', 'pf-filter' );
+		$hint     = __( 'Фильтр у посетителей работать не будет. Обычно REST закрывает плагин безопасности или оптимизации: Clearfy («Disable JSON REST API»), Disable REST API, WP Hide, Solid Security, Perfmatters и т.п. — разрешите в нём маршрут /wp-json/pf/v1/ или REST целиком.', 'pf-filter' );
+		$response = wp_remote_get(
+			rest_url( 'pf/v1/config' ),
+			array(
+				'timeout'     => 8,
+				'redirection' => 0,
+				'headers'     => array( 'Cache-Control' => 'no-cache' ),
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $this->make_check( 'rest_api_visitor', $label, false, 'error', $response->get_error_message() );
+		}
+
+		$code     = (int) wp_remote_retrieve_response_code( $response );
+		$type     = (string) wp_remote_retrieve_header( $response, 'content-type' );
+		$location = (string) wp_remote_retrieve_header( $response, 'location' );
+		$body     = json_decode( wp_remote_retrieve_body( $response ), true );
+		$error    = is_array( $body ) && isset( $body['code'] ) ? (string) $body['code'] : '';
+
+		if ( $code >= 300 && $code < 400 ) {
+			/* translators: 1: HTTP-код, 2: адрес перенаправления, 3: подсказка */
+			return $this->make_check( 'rest_api_visitor', $label, false, 'error', sprintf( __( 'Закрыт: HTTP %1$d, перенаправление на %2$s. %3$s', 'pf-filter' ), $code, $location, $hint ) );
+		}
+
+		if ( false === stripos( $type, 'json' ) || ! is_array( $body ) ) {
+			/* translators: 1: HTTP-код, 2: подсказка */
+			return $this->make_check( 'rest_api_visitor', $label, false, 'error', sprintf( __( 'Закрыт: HTTP %1$d, вместо JSON пришла HTML-страница. %2$s', 'pf-filter' ), $code, $hint ) );
+		}
+
+		if ( 200 === $code || 'pf_invalid_nonce' === $error ) {
+			return $this->make_check( 'rest_api_visitor', $label, true, 'error', __( 'открыт', 'pf-filter' ) );
+		}
+
+		if ( 'rest_no_route' === $error ) {
+			return $this->make_check( 'rest_api_visitor', $label, false, 'error', __( 'REST работает, но маршрут /wp-json/pf/v1/config не зарегистрирован — плагин не загрузился или маршрут удалён другим плагином.', 'pf-filter' ) );
+		}
+
+		/* translators: 1: HTTP-код, 2: код ошибки REST, 3: подсказка */
+		return $this->make_check( 'rest_api_visitor', $label, false, 'error', sprintf( __( 'Закрыт: HTTP %1$d (%2$s). %3$s', 'pf-filter' ), $code, $error, $hint ) );
 	}
 
 	/**
