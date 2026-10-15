@@ -4,7 +4,7 @@ Tags: woocommerce, filter, ajax, catalog, facet, custom post type, multi-profile
 Requires at least: 6.0
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 3.4.8
+Stable tag: 3.4.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -48,6 +48,9 @@ PF Filter работает через контракт HTML-атрибутов `
 4. Разметьте страницу каталога атрибутами `pf-filter` (форма), `pf-target` (если форм/списков на странице несколько), `pf-list`, `pf-filter="output"` с шаблонами групп внутри, `pf-profile` (если профилей на сайте несколько или блоков фильтрации на странице несколько) и т.д.
 
 == Changelog ==
+
+= 3.4.9 =
+* Картинка в swatch значения группы: поле термина в настройке «Цвет / картинка» может хранить картинку (ACF «Изображение» или URL). Она ставится в src у img с pf-filter="swatch" или фоном у другого элемента. Раньше ID картинки уходил как цвет, а img-swatch без цвета скрывался.
 
 = 3.4.8 =
 * Радиокнопки в своём шаблоне группы (например pf-template="pills" с input[type=radio]) получают общий name, как у встроенного radio: выбирается одно значение, имя из вёрстки не важно и не пересекается с другими радиогруппами формы.
