@@ -819,7 +819,14 @@
 		}
 
 		var rowParent = rowTpl.parentElement;
-		var isTags = 'tags' === groupConfig.template;
+		// Собственное имя шаблона из вёрстки (pf-template="pills" и т.п.) без
+		// input в строке ведёт себя как tags: клик по строке переключает
+		// is-active. С input — как checkbox. Признак запоминается в конфиге
+		// группы для collectFilters().
+		var builtinTemplates = [ 'checkbox', 'radio', 'tags', 'range', 'category-tree', 'search' ];
+		var isTags = 'tags' === groupConfig.template
+			|| ( -1 === builtinTemplates.indexOf( groupConfig.template ) && ! qs( rowTpl, 'input' ) );
+		groupConfig.chips = isTags;
 		var isRadio = 'radio' === groupConfig.template;
 		var values = groupConfig.values || [];
 
@@ -1509,7 +1516,7 @@
 				return;
 			}
 
-			if ( 'tags' === template ) {
+			if ( 'tags' === template || group.config.chips ) {
 				// Каждая строка помечена data-pf-value в fillRow(), этого достаточно
 				// чтобы найти активные теги независимо от исходной разметки шаблона.
 				var values = qsa( group.el, '[data-pf-value].is-active' ).map( function ( row ) {
