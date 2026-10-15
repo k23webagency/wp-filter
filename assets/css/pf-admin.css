@@ -168,6 +168,13 @@
 	display: none;
 }
 
+/* «Выбор: один / несколько» — только у шаблонов-списков (плашки). */
+.pf-filter-admin tr.pf-group-row[data-template="range"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-selection,
+.pf-filter-admin tr.pf-group-row[data-template="category-tree"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-selection,
+.pf-filter-admin tr.pf-group-row[data-template="search"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-selection {
+	display: none;
+}
+
 .pf-diag-section .notice.inline {
 	margin: 0 0 4px;
 }

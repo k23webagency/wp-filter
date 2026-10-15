@@ -819,15 +819,14 @@
 		}
 
 		var rowParent = rowTpl.parentElement;
-		// Собственное имя шаблона из вёрстки (pf-template="pills" и т.п.) без
-		// input в строке ведёт себя как tags: клик по строке переключает
-		// is-active. С input — как checkbox. Признак запоминается в конфиге
-		// группы для collectFilters().
-		var builtinTemplates = [ 'checkbox', 'radio', 'tags', 'range', 'category-tree', 'search' ];
-		var isTags = 'tags' === groupConfig.template
-			|| ( -1 === builtinTemplates.indexOf( groupConfig.template ) && ! qs( rowTpl, 'input' ) );
-		groupConfig.chips = isTags;
-		var isRadio = 'radio' === groupConfig.template;
+		// Поведение списка определяет разметка строки, а не имя pf-template:
+		// input[type=checkbox] — чекбоксы, input[type=radio] — радиокнопки (общий
+		// name), без input — плашки (клик переключает is-active; один или
+		// несколько выбранных — настройка группы selection). Признак плашек
+		// запоминается в конфиге группы для collectFilters().
+		var isChips = ! qs( rowTpl, 'input' );
+		var isSingle = 'single' === groupConfig.selection;
+		groupConfig.chips = isChips;
 		var values = groupConfig.values || [];
 
 		values.forEach( function ( value, index ) {
@@ -839,10 +838,9 @@
 				var id = uid( 'pf-input' );
 				input.id = id;
 				input.value = value.value;
-				// Радиокнопка в своём шаблоне (pf-template="pills" и т.п.) — тот же
-				// общий name, что у встроенного radio: не зависит от имени из
-				// вёрстки и не пересекается с другими радиогруппами формы.
-				if ( isRadio || 'radio' === input.type ) {
+				// Общий name радиогруппы — не зависит от имени из вёрстки и не
+				// пересекается с другими радиогруппами формы.
+				if ( 'radio' === input.type ) {
 					input.name = 'pf-group-' + groupConfig.field;
 				}
 				var label = qs( rowClone, 'label' );
@@ -855,7 +853,7 @@
 					}
 					self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
 				} );
-			} else if ( isTags ) {
+			} else if ( isChips ) {
 				// preventDefault обязателен: если верстальщик сделал строку через
 				// <button> (тип по умолчанию submit) внутри <form pf-filter>, клик без
 				// него реально отправляет форму — Webflow в ответ показывает свой
@@ -867,6 +865,13 @@
 					// input, поэтому клик по такой строке просто игнорируется здесь.
 					if ( rowClone.classList.contains( 'is-disabled' ) ) {
 						return;
+					}
+					// selection:'single' — выбранной остаётся одна плашка; повторный
+					// клик по ней снимает выбор (в отличие от радиокнопок).
+					if ( isSingle && ! rowClone.classList.contains( 'is-active' ) ) {
+						qsa( rowParent, '[data-pf-value].is-active' ).forEach( function ( row ) {
+							row.classList.remove( 'is-active' );
+						} );
 					}
 					rowClone.classList.toggle( 'is-active' );
 					self.onFilterValueChanged( { resetPage: true, forceReplace: true } );
@@ -1534,7 +1539,7 @@
 				return;
 			}
 
-			if ( 'tags' === template || group.config.chips ) {
+			if ( group.config.chips ) {
 				// Каждая строка помечена data-pf-value в fillRow(), этого достаточно
 				// чтобы найти активные теги независимо от исходной разметки шаблона.
 				var values = qsa( group.el, '[data-pf-value].is-active' ).map( function ( row ) {

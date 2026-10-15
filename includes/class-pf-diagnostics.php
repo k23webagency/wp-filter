@@ -514,12 +514,10 @@ class PF_Diagnostics {
 	private function check_group_templates( DOMXPath $xpath, array $found_templates ) {
 		$checks = array();
 
-		// [pf-filter="row"] / [pf-filter="value"] — общая зацепка только для этих
-		// шаблонов. У range и category-tree — свои зацепки (pf-filter="slider"/
+		// [pf-filter="row"] / [pf-filter="value"] — общая зацепка шаблонов-списков.
+		// У range и category-tree — свои зацепки (pf-filter="slider"/
 		// pf-filter="min|max" и pf-filter="list" соответственно), проверять их
 		// по общему правилу неверно — это всегда давало бы ложную ошибку.
-		$row_value_templates = array( 'checkbox', 'radio', 'tags' );
-
 		foreach ( $found_templates as $template ) {
 			$template_nodes = $xpath->query( '//*[@pf-template=' . self::xpath_literal( $template ) . ']' );
 			if ( ! $template_nodes || 0 === $template_nodes->length ) {
@@ -593,10 +591,8 @@ class PF_Diagnostics {
 					continue;
 				}
 
-				if ( ! in_array( $template, $row_value_templates, true ) ) {
-					continue; // Незнакомый/кастомный тип шаблона — общую зацепку не проверяем.
-				}
-
+				// Любой другой шаблон — список значений (чекбоксы, радио, плашки;
+				// поведение определяет разметка строки, а не имя шаблона).
 				$has_row  = $xpath->query( './/*[@pf-filter="row"]', $node )->length > 0;
 				$checks[] = $this->result(
 					$has_row ? 'ok' : 'error',

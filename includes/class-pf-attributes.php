@@ -46,6 +46,14 @@ class PF_Attributes {
 	const ZERO_VALUES_OPTIONS = array( 'none', 'hide', 'disable' );
 
 	/**
+	 * Сколько значений группы-плашек (строки без input) можно выбрать: несколько
+	 * или одно. У чекбоксов и радиокнопок это определяет сама разметка.
+	 *
+	 * @var array
+	 */
+	const SELECTION_OPTIONS = array( 'multiple', 'single' );
+
+	/**
 	 * Глубина дерева категорий, если группа с шаблоном category-tree (или
 	 * депth-ограничение для плоского шаблона на иерархической таксономии, см.
 	 * build_taxonomy_group()) не задала свою явно. Раньше была отдельной
@@ -450,6 +458,7 @@ class PF_Attributes {
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
+			'selection'        => in_array( $config['selection'] ?? '', self::SELECTION_OPTIONS, true ) ? $config['selection'] : 'multiple',
 			'values'           => $values,
 		);
 	}
@@ -933,6 +942,7 @@ class PF_Attributes {
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
+			'selection'        => in_array( $config['selection'] ?? '', self::SELECTION_OPTIONS, true ) ? $config['selection'] : 'multiple',
 			'values'           => $values,
 		);
 	}
@@ -1034,6 +1044,7 @@ class PF_Attributes {
 			'logic'            => isset( $config['logic'] ) ? $config['logic'] : 'or',
 			'search'           => ! array_key_exists( 'search', $config ) || false !== $config['search'],
 			'zero_values'      => in_array( $config['zero_values'] ?? '', self::ZERO_VALUES_OPTIONS, true ) ? $config['zero_values'] : 'none',
+			'selection'        => in_array( $config['selection'] ?? '', self::SELECTION_OPTIONS, true ) ? $config['selection'] : 'multiple',
 			'values'           => $values,
 		);
 	}

@@ -376,6 +376,7 @@ class PF_Admin {
 				'search'     => ! empty( $group['search'] ),
 				'value_sort' => in_array( $group['value_sort'] ?? '', PF_Attributes::VALUE_SORT_OPTIONS, true ) ? $group['value_sort'] : 'name_asc',
 				'zero_values' => in_array( $group['zero_values'] ?? '', PF_Attributes::ZERO_VALUES_OPTIONS, true ) ? $group['zero_values'] : 'none',
+				'selection'   => in_array( $group['selection'] ?? '', PF_Attributes::SELECTION_OPTIONS, true ) ? $group['selection'] : 'multiple',
 			);
 
 			if ( ! empty( $group['search_profile'] ) ) {
@@ -630,6 +631,7 @@ class PF_Admin {
 		$tree_d   = $group['tree_depth'] ?? '';
 		$value_sort = $group['value_sort'] ?? 'name_asc';
 		$zero_values = $group['zero_values'] ?? 'none';
+		$selection   = $group['selection'] ?? 'multiple';
 		$color_meta_key = $group['color_meta_key'] ?? '';
 		// Поля ACF термина ЭТОГО поля группы (если оно вообще таксономия) —
 		// список для выпадашки «поле с цветом». У кастомных атрибутов и цены
@@ -793,6 +795,13 @@ class PF_Admin {
 							<option value="none" <?php selected( $zero_values, 'none' ); ?>><?php esc_html_e( 'Не менять', 'pf-filter' ); ?></option>
 							<option value="hide" <?php selected( $zero_values, 'hide' ); ?>><?php esc_html_e( 'Скрывать', 'pf-filter' ); ?></option>
 							<option value="disable" <?php selected( $zero_values, 'disable' ); ?>><?php esc_html_e( 'Деактивировать', 'pf-filter' ); ?></option>
+						</select>
+					</div>
+					<div class="pf-detail-field pf-extra-selection">
+						<label class="pf-detail-label"><?php esc_html_e( 'Выбор', 'pf-filter' ); ?></label>
+						<select name="<?php echo esc_attr( $n ); ?>[selection]" title="<?php esc_attr_e( 'Для плашек — строк шаблона без input. У чекбоксов и радиокнопок выбор определяет сама разметка.', 'pf-filter' ); ?>">
+							<option value="multiple" <?php selected( $selection, 'multiple' ); ?>><?php esc_html_e( 'Несколько', 'pf-filter' ); ?></option>
+							<option value="single" <?php selected( $selection, 'single' ); ?>><?php esc_html_e( 'Один', 'pf-filter' ); ?></option>
 						</select>
 					</div>
 				</div>
