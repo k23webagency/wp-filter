@@ -839,7 +839,10 @@
 				var id = uid( 'pf-input' );
 				input.id = id;
 				input.value = value.value;
-				if ( isRadio ) {
+				// Радиокнопка в своём шаблоне (pf-template="pills" и т.п.) — тот же
+				// общий name, что у встроенного radio: не зависит от имени из
+				// вёрстки и не пересекается с другими радиогруппами формы.
+				if ( isRadio || 'radio' === input.type ) {
 					input.name = 'pf-group-' + groupConfig.field;
 				}
 				var label = qs( rowClone, 'label' );
