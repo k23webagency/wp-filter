@@ -136,9 +136,9 @@
 	display: flex;
 }
 
-.pf-filter-admin tr.pf-group-row[data-template="checkbox"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors,
-.pf-filter-admin tr.pf-group-row[data-template="radio"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors,
-.pf-filter-admin tr.pf-group-row[data-template="tags"] + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors {
+/* Цвета — у любого шаблона-списка значений, включая собственные имена из
+   вёрстки (pf-template="pills" и т.п.): swatch заполняет общий fillRow(). */
+.pf-filter-admin tr.pf-group-row[data-template]:not([data-template="range"]):not([data-template="category-tree"]):not([data-template="search"]) + tr.pf-group-detail-row .pf-detail-field.pf-extra-colors {
 	display: flex;
 }
 
