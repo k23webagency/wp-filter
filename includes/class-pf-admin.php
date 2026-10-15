@@ -300,11 +300,17 @@ class PF_Admin {
 
 		$url = isset( $_POST['url'] ) ? esc_url_raw( wp_unslash( $_POST['url'] ) ) : '';
 
+		// Профиль уже выбран resolve_active_profile() по $_POST['profile'] —
+		// тот же передаётся в REST-запросы, иначе они проверяли бы первый профиль.
+		$markup   = $url ? $this->diagnostics->analyze_markup( $url ) : null;
+		$rest_api = $this->diagnostics->test_rest_api( PF_Config::get_active_profile_id() );
+
 		wp_send_json_success(
 			array(
 				'environment' => $this->diagnostics->check_environment(),
-				'markup'      => $url ? $this->diagnostics->analyze_markup( $url ) : null,
-				'rest_api'    => $this->diagnostics->test_rest_api(),
+				'consistency' => $this->diagnostics->check_config_against_markup( $markup, $rest_api ),
+				'markup'      => $markup,
+				'rest_api'    => $rest_api,
 			)
 		);
 	}

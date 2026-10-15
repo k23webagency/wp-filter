@@ -168,14 +168,23 @@ class PF_Diagnostics {
 	private function check_rest_for_visitors() {
 		$label    = __( 'REST API для посетителей', 'pf-filter' );
 		$hint     = __( 'Фильтр у посетителей работать не будет. Обычно REST закрывает плагин безопасности или оптимизации: Clearfy («Disable JSON REST API»), Disable REST API, WP Hide, Solid Security, Perfmatters и т.п. — разрешите в нём маршрут /wp-json/pf/v1/ или REST целиком.', 'pf-filter' );
-		$response = wp_remote_get(
-			rest_url( 'pf/v1/config' ),
-			array(
-				'timeout'     => 8,
-				'redirection' => 0,
-				'headers'     => array( 'Cache-Control' => 'no-cache' ),
-			)
+		$args     = array(
+			'timeout'     => 8,
+			'redirection' => 0,
+			'headers'     => array( 'Cache-Control' => 'no-cache' ),
 		);
+		$response = wp_remote_get( rest_url( 'pf/v1/config' ), $args );
+
+		// Перенаправление на тот же маршрут (http → https, слеш в конце) — не
+		// закрытие REST: повторяем запрос по новому адресу один раз. Закрытие —
+		// это перенаправление на другую страницу (главную, страницу входа).
+		if ( ! is_wp_error( $response ) ) {
+			$code     = (int) wp_remote_retrieve_response_code( $response );
+			$location = (string) wp_remote_retrieve_header( $response, 'location' );
+			if ( $code >= 300 && $code < 400 && false !== strpos( untrailingslashit( (string) wp_parse_url( $location, PHP_URL_PATH ) ), '/pf/v1/config' ) ) {
+				$response = wp_remote_get( $location, $args );
+			}
+		}
 
 		if ( is_wp_error( $response ) ) {
 			return $this->make_check( 'rest_api_visitor', $label, false, 'error', $response->get_error_message() );
@@ -1126,6 +1135,64 @@ class PF_Diagnostics {
 			'config'   => $this->test_config_endpoint( $profile_id ),
 			'products' => $this->test_products_endpoint( $profile_id ),
 		);
+	}
+
+	/**
+	 * Сверка того, что /config реально отдаёт странице, с разметкой: шаблон
+	 * группы из ответа сервера (а не сохранённый в админке — сервер может его
+	 * заменить, см. PF_Attributes::resolve_group_template()) должен быть в
+	 * разметке, иначе группа молча не строится.
+	 *
+	 * @param array|null $markup   Результат analyze_markup() или null без URL.
+	 * @param array      $rest_api Результат test_rest_api().
+	 * @return array
+	 */
+	public function check_config_against_markup( $markup, array $rest_api ) {
+		$config = $rest_api['config'] ?? array();
+		if ( ! empty( $config['error'] ) ) {
+			return array(
+				$this->result( 'error', __( 'Настройки фильтра (/config)', 'pf-filter' ), __( 'Сервер не отдал настройки — фильтр на странице не построится. Подробности — в разделе REST API ниже.', 'pf-filter' ) ),
+			);
+		}
+
+		$groups = (array) ( $config['groups'] ?? array() );
+		if ( ! $groups ) {
+			return array(
+				$this->result( 'warning', __( 'Группы фильтра', 'pf-filter' ), __( 'Сервер не отдал ни одной группы: нет включённых групп или у записей нет значений этих полей.', 'pf-filter' ) ),
+			);
+		}
+
+		if ( ! is_array( $markup ) || ! isset( $markup['found_templates'] ) ) {
+			return array(
+				$this->result( 'info', __( 'Сверка с разметкой', 'pf-filter' ), __( 'Укажите URL страницы каталога — тогда шаблоны групп будут сверены с разметкой.', 'pf-filter' ) ),
+			);
+		}
+
+		$checks = array();
+		foreach ( $groups as $group ) {
+			$field    = (string) ( $group['field'] ?? '' );
+			$template = (string) ( $group['template'] ?? '' );
+			$found    = in_array( $template, (array) $markup['found_templates'], true );
+			$checks[] = $this->result(
+				$found ? 'ok' : 'error',
+				/* translators: 1: поле группы, 2: шаблон */
+				sprintf( __( 'Группа «%1$s» → [pf-template="%2$s"]', 'pf-filter' ), $field, $template ),
+				$found
+					/* translators: %d: количество значений */
+					? sprintf( __( 'есть в разметке, значений: %d', 'pf-filter' ), (int) ( $group['values_count'] ?? 0 ) )
+					: __( 'Сервер отдаёт этот шаблон, но в разметке его нет — группа не будет построена. Проверьте шаблон группы в настройках и pf-template в вёрстке.', 'pf-filter' )
+			);
+			if ( $found && 0 === (int) ( $group['values_count'] ?? 0 ) ) {
+				$checks[] = $this->result(
+					'warning',
+					/* translators: %s: поле группы */
+					sprintf( __( 'Группа «%s»: нет значений', 'pf-filter' ), $field ),
+					__( 'У записей нет значений этого поля — группа будет пустой.', 'pf-filter' )
+				);
+			}
+		}
+
+		return $checks;
 	}
 
 	/**

@@ -175,6 +175,28 @@
 	display: none;
 }
 
+.pf-diag-summary {
+	margin: 12px 0 8px;
+}
+
+.pf-diag-summary__box ul {
+	margin: 4px 0 8px 4px;
+}
+
+.pf-diag-summary__box li {
+	margin-bottom: 4px;
+}
+
+.pf-diag-passed {
+	margin: 6px 0 4px;
+}
+
+.pf-diag-passed > summary {
+	cursor: pointer;
+	color: #2271b1;
+	margin-bottom: 4px;
+}
+
 .pf-diag-section .notice.inline {
 	margin: 0 0 4px;
 }

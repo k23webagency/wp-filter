@@ -394,13 +394,19 @@ defined( 'ABSPATH' ) || exit;
 			<span class="spinner" id="pf-diag-spinner"></span>
 		</p>
 
-		<h2><?php esc_html_e( 'Окружение', 'pf-filter' ); ?></h2>
-		<div id="pf-diag-environment" class="pf-diag-section"><p class="description"><?php esc_html_e( 'Нажмите «Запустить проверку», чтобы увидеть результаты.', 'pf-filter' ); ?></p></div>
+		<div id="pf-diag-summary" class="pf-diag-summary"><p class="description"><?php esc_html_e( 'Проверка запускается при открытии вкладки; повторить — кнопкой «Запустить проверку».', 'pf-filter' ); ?></p></div>
+
+		<h2><?php esc_html_e( 'Окружение и REST API', 'pf-filter' ); ?></h2>
+		<div id="pf-diag-environment" class="pf-diag-section"></div>
+
+		<h2><?php esc_html_e( 'Настройки и разметка', 'pf-filter' ); ?></h2>
+		<p class="description"><?php esc_html_e( 'Что сервер реально отдаёт странице (шаблоны групп, значения) — сверено с разметкой.', 'pf-filter' ); ?></p>
+		<div id="pf-diag-consistency" class="pf-diag-section"></div>
 
 		<h2><?php esc_html_e( 'Анализ разметки страницы', 'pf-filter' ); ?></h2>
 		<div id="pf-diag-markup" class="pf-diag-section"></div>
 
-		<h2><?php esc_html_e( 'REST API', 'pf-filter' ); ?></h2>
+		<h2><?php esc_html_e( 'Запросы фильтра (от администратора)', 'pf-filter' ); ?></h2>
 		<div id="pf-diag-restapi" class="pf-diag-section"></div>
 	</div>
 </div>
